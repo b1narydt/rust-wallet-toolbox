@@ -63,10 +63,10 @@ use crate::wallet::validation::validate_originator;
 ///
 /// ```no_run
 /// use bsv::primitives::private_key::PrivateKey;
-/// use wallet_toolbox::wallet::setup::WalletBuilder;
-/// use wallet_toolbox::types::Chain;
+/// use bsv_wallet_toolbox::wallet::setup::WalletBuilder;
+/// use bsv_wallet_toolbox::types::Chain;
 ///
-/// # async fn example() -> wallet_toolbox::WalletResult<()> {
+/// # async fn example() -> bsv_wallet_toolbox::WalletResult<()> {
 /// let root_key = PrivateKey::from_hex("aa").unwrap();
 /// let setup = WalletBuilder::new()
 ///     .chain(Chain::Test)

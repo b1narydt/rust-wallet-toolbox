@@ -484,11 +484,11 @@ impl Monitor {
 /// ```no_run
 /// # use std::sync::Arc;
 /// # fn example(
-/// #     storage: wallet_toolbox::storage::manager::WalletStorageManager,
-/// #     services: Arc<dyn wallet_toolbox::services::traits::WalletServices>,
-/// # ) -> wallet_toolbox::WalletResult<()> {
-/// use wallet_toolbox::monitor::Monitor;
-/// use wallet_toolbox::types::Chain;
+/// #     storage: bsv_wallet_toolbox::storage::manager::WalletStorageManager,
+/// #     services: Arc<dyn bsv_wallet_toolbox::services::traits::WalletServices>,
+/// # ) -> bsv_wallet_toolbox::WalletResult<()> {
+/// use bsv_wallet_toolbox::monitor::Monitor;
+/// use bsv_wallet_toolbox::types::Chain;
 ///
 /// let monitor = Monitor::builder()
 ///     .chain(Chain::Test)

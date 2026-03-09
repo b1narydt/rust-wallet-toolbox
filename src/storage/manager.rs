@@ -41,10 +41,10 @@ use crate::wallet::types::AdminStatsResult;
 /// ```no_run
 /// # use std::sync::Arc;
 /// # fn example(
-/// #     provider: Arc<dyn wallet_toolbox::storage::traits::provider::StorageProvider>,
+/// #     provider: Arc<dyn bsv_wallet_toolbox::storage::traits::provider::StorageProvider>,
 /// # ) {
-/// use wallet_toolbox::storage::manager::WalletStorageManager;
-/// use wallet_toolbox::types::Chain;
+/// use bsv_wallet_toolbox::storage::manager::WalletStorageManager;
+/// use bsv_wallet_toolbox::types::Chain;
 ///
 /// let manager = WalletStorageManager::new(
 ///     provider,
