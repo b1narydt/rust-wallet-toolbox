@@ -1,0 +1,78 @@
+#![warn(missing_docs)]
+//! BSV Wallet Toolbox - Production-ready BSV wallet implementation in Rust.
+//!
+//! This crate provides a complete, production-ready BSV wallet with persistent
+//! storage, automatic transaction broadcasting, proof collection, and chain
+//! monitoring. It translates the TypeScript wallet-toolbox into idiomatic Rust.
+//!
+//! # Modules
+//!
+//! - [`error`] - Unified error types with WERR codes
+//! - [`status`] - Status enums for transactions, proofs, and sync
+//! - [`types`] - Shared types (`Chain`, `StorageProvidedBy`)
+//! - [`tables`] - Database table structs for all 16 entity types
+//! - [`storage`] - Storage traits, manager, and SQLx implementation
+//! - [`services`] - Network service providers (ARC, WhatsOnChain, etc.)
+//! - [`signer`] - Transaction signing with BRC-29 key derivation
+//! - [`wallet`] - High-level Wallet struct implementing WalletInterface
+//! - [`monitor`] - Background task runner for proofs, sync, and chain monitoring
+//! - [`utility`] - Cryptographic helpers and BRC-29 script templates
+//! - [`logging`] - Structured logging initialization via tracing
+
+/// Authentication manager for WAB-based wallet authentication flows.
+pub mod auth_manager;
+/// Error types for wallet operations.
+pub mod error;
+/// Structured logging initialization.
+pub mod logging;
+/// Background monitoring tasks for proofs and chain state.
+pub mod monitor;
+/// Permission management for wallet operations.
+pub mod permissions;
+/// Network service providers and traits.
+pub mod services;
+/// Transaction signing and key derivation.
+pub mod signer;
+/// Status enums for wallet entities.
+pub mod status;
+/// Storage layer: traits, manager, and implementations.
+pub mod storage;
+/// Database table structs mapping to SQL schema.
+pub mod tables;
+/// Shared types used across subsystems.
+pub mod types;
+/// Cryptographic utilities and BRC-29 script templates.
+pub mod utility;
+/// Wallet Authentication Backend (WAB) client for identity verification.
+pub mod wab_client;
+/// High-level wallet implementation.
+pub mod wallet;
+
+/// Database migration helpers (feature-gated by database backend).
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgres"))]
+pub mod migrations;
+
+/// BSV transaction type from the SDK.
+pub use bsv::transaction::Transaction;
+/// The WalletInterface trait defining all 29 wallet operations.
+pub use bsv::wallet::interfaces::WalletInterface;
+/// Key derivation for BRC-42/BRC-43 protocols.
+pub use bsv::wallet::key_deriver::KeyDeriver;
+/// Protocol wallet providing default WalletInterface implementations.
+pub use bsv::wallet::proto_wallet::ProtoWallet;
+
+/// Unified wallet error type.
+pub use error::WalletError;
+/// Convenience Result alias for wallet operations.
+pub use error::WalletResult;
+/// Status of a proven transaction request.
+pub use status::ProvenTxReqStatus;
+/// Status of wallet synchronization.
+pub use status::SyncStatus;
+/// Status of a wallet transaction.
+pub use status::TransactionStatus;
+
+/// Trait for wallet setup and configuration.
+pub use wallet::setup::SetupWallet;
+/// Builder for constructing configured Wallet instances.
+pub use wallet::setup::WalletBuilder;
