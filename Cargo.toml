@@ -7,7 +7,7 @@ description = "Pure Rust BSV wallet-toolbox implementation"
 readme = "README.md"
 repository = "https://github.com/b1narydt/rust-wallet-toolbox"
 documentation = "https://docs.rs/bsv-wallet-toolbox"
-keywords = ["bsv", "bitcoin", "blockchain", "wallet-toolbox", "cryptography", "wallet"]
+keywords = ["bsv", "bitcoin", "blockchain", "wallet", "cryptography"]
 categories = ["cryptography", "authentication", "wallet"]
 license-file = "LICENSE"
 
