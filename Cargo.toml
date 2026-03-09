@@ -9,6 +9,7 @@ repository = "https://github.com/b1narydt/rust-wallet-toolbox"
 documentation = "https://docs.rs/bsv-wallet-toolbox"
 keywords = ["bsv", "bitcoin", "blockchain", "wallet-toolbox", "cryptography", "wallet"]
 categories = ["cryptography", "authentication", "wallet"]
+license-file = "LICENSE"
 
 [lib]
 name = "bsv_wallet_toolbox"
