@@ -8,12 +8,12 @@ use std::collections::HashMap;
 
 use bsv::primitives::public_key::PublicKey;
 use bsv::primitives::transaction_signature::{SIGHASH_ALL, SIGHASH_FORKID};
-use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 use bsv::script::locking_script::LockingScript;
 use bsv::script::templates::ScriptTemplateUnlock;
 use bsv::script::unlocking_script::UnlockingScript;
 use bsv::transaction::transaction::Transaction;
 use bsv::transaction::transaction_output::TransactionOutput;
+use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 use bsv::wallet::interfaces::SignActionSpend;
 
 use crate::error::{WalletError, WalletResult};
@@ -74,7 +74,8 @@ pub fn complete_signed_transaction(
             });
         }
 
-        tx.inputs[vin].unlocking_script = Some(UnlockingScript::from_binary(&spend.unlocking_script));
+        tx.inputs[vin].unlocking_script =
+            Some(UnlockingScript::from_binary(&spend.unlocking_script));
 
         if let Some(seq) = spend.sequence_number {
             tx.inputs[vin].sequence = seq;
@@ -93,17 +94,14 @@ pub fn complete_signed_transaction(
             });
         }
 
-        let sabppp = ScriptTemplateBRC29::new(
-            pdi.derivation_prefix.clone(),
-            pdi.derivation_suffix.clone(),
-        );
+        let sabppp =
+            ScriptTemplateBRC29::new(pdi.derivation_prefix.clone(), pdi.derivation_suffix.clone());
 
         // For self-payments (change inputs), unlocker_pub_key is the identity key.
         // For received payments, it's the sender's identity key.
         let unlocker_pub_key = if let Some(ref pub_key_hex) = pdi.unlocker_pub_key {
-            PublicKey::from_string(pub_key_hex).map_err(|e| {
-                WalletError::Internal(format!("Invalid unlocker pub key: {}", e))
-            })?
+            PublicKey::from_string(pub_key_hex)
+                .map_err(|e| WalletError::Internal(format!("Invalid unlocker pub key: {}", e)))?
         } else {
             identity_pub_key.clone()
         };
@@ -175,20 +173,15 @@ mod tests {
         use bsv::transaction::transaction_output::TransactionOutput;
         tx.add_output(TransactionOutput {
             satoshis: Some(1000),
-            locking_script: LockingScript::from_binary(&[0x76, 0xa9, 0x14,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x88, 0xac]),
+            locking_script: LockingScript::from_binary(&[
+                0x76, 0xa9, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0xac,
+            ]),
             change: false,
         });
 
-        let result = complete_signed_transaction(
-            &mut tx,
-            &[],
-            &HashMap::new(),
-            &key_deriver,
-            &pub_key,
-        );
+        let result =
+            complete_signed_transaction(&mut tx, &[], &HashMap::new(), &key_deriver, &pub_key);
 
         // Should succeed with no inputs to sign
         assert!(result.is_ok());
@@ -204,7 +197,10 @@ mod tests {
         // Create a BRC-29 locking script for the source output
         let sabppp = ScriptTemplateBRC29::new("prefix1".to_string(), "suffix1".to_string());
         let lock_script_bytes = sabppp.lock(key_deriver.root_key(), &pub_key).unwrap();
-        let lock_script_hex: String = lock_script_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+        let lock_script_hex: String = lock_script_bytes
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
 
         // Build a transaction with one input that needs BRC-29 signing
         let mut tx = Transaction::new();
@@ -213,7 +209,9 @@ mod tests {
         use bsv::transaction::transaction_input::TransactionInput;
         tx.add_input(TransactionInput {
             source_transaction: None,
-            source_txid: Some("aaaa1111bbbb2222cccc3333dddd4444aaaa1111bbbb2222cccc3333dddd4444".to_string()),
+            source_txid: Some(
+                "aaaa1111bbbb2222cccc3333dddd4444aaaa1111bbbb2222cccc3333dddd4444".to_string(),
+            ),
             source_output_index: 0,
             unlocking_script: Some(UnlockingScript::from_binary(&[])),
             sequence: 0xFFFFFFFF,
@@ -223,10 +221,10 @@ mod tests {
         use bsv::transaction::transaction_output::TransactionOutput;
         tx.add_output(TransactionOutput {
             satoshis: Some(5000),
-            locking_script: LockingScript::from_binary(&[0x76, 0xa9, 0x14,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x88, 0xac]),
+            locking_script: LockingScript::from_binary(&[
+                0x76, 0xa9, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0xac,
+            ]),
             change: false,
         });
 
@@ -239,13 +237,8 @@ mod tests {
             locking_script: lock_script_hex,
         }];
 
-        let result = complete_signed_transaction(
-            &mut tx,
-            &pdi,
-            &HashMap::new(),
-            &key_deriver,
-            &pub_key,
-        );
+        let result =
+            complete_signed_transaction(&mut tx, &pdi, &HashMap::new(), &key_deriver, &pub_key);
 
         assert!(result.is_ok(), "signing should succeed: {:?}", result.err());
         let bytes = result.unwrap();
@@ -278,13 +271,8 @@ mod tests {
             locking_script: "76a914000000000000000000000000000000000000000088ac".to_string(),
         }];
 
-        let result = complete_signed_transaction(
-            &mut tx,
-            &pdi,
-            &HashMap::new(),
-            &key_deriver,
-            &pub_key,
-        );
+        let result =
+            complete_signed_transaction(&mut tx, &pdi, &HashMap::new(), &key_deriver, &pub_key);
 
         assert!(result.is_err());
     }

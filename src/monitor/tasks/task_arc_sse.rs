@@ -131,9 +131,7 @@ impl TaskArcSse {
                             .await;
 
                         // Update referenced transactions to unproven
-                        if let Ok(notify) =
-                            serde_json::from_str::<serde_json::Value>(&req.notify)
-                        {
+                        if let Ok(notify) = serde_json::from_str::<serde_json::Value>(&req.notify) {
                             if let Some(tx_ids) =
                                 notify.get("transactionIds").and_then(|v| v.as_array())
                             {
@@ -186,23 +184,18 @@ impl TaskArcSse {
                         .await;
 
                     // Update referenced transactions to failed
-                    if let Ok(notify) =
-                        serde_json::from_str::<serde_json::Value>(&req.notify)
-                    {
+                    if let Ok(notify) = serde_json::from_str::<serde_json::Value>(&req.notify) {
                         if let Some(tx_ids) =
                             notify.get("transactionIds").and_then(|v| v.as_array())
                         {
-                            let ids: Vec<i64> =
-                                tx_ids.iter().filter_map(|v| v.as_i64()).collect();
+                            let ids: Vec<i64> = tx_ids.iter().filter_map(|v| v.as_i64()).collect();
                             for id in &ids {
                                 let _ = self
                                     .storage
                                     .update_transaction(
                                         *id,
                                         &crate::storage::find_args::TransactionPartial {
-                                            status: Some(
-                                                crate::status::TransactionStatus::Failed,
-                                            ),
+                                            status: Some(crate::status::TransactionStatus::Failed),
                                             ..Default::default()
                                         },
                                         None,
@@ -211,10 +204,7 @@ impl TaskArcSse {
                             }
                         }
                     }
-                    log.push_str(&format!(
-                        "  req {} => doubleSpend\n",
-                        req.proven_tx_req_id
-                    ));
+                    log.push_str(&format!("  req {} => doubleSpend\n", req.proven_tx_req_id));
                 }
                 "REJECTED" => {
                     let update = ProvenTxReqPartial {
@@ -227,23 +217,18 @@ impl TaskArcSse {
                         .await;
 
                     // Update referenced transactions to failed
-                    if let Ok(notify) =
-                        serde_json::from_str::<serde_json::Value>(&req.notify)
-                    {
+                    if let Ok(notify) = serde_json::from_str::<serde_json::Value>(&req.notify) {
                         if let Some(tx_ids) =
                             notify.get("transactionIds").and_then(|v| v.as_array())
                         {
-                            let ids: Vec<i64> =
-                                tx_ids.iter().filter_map(|v| v.as_i64()).collect();
+                            let ids: Vec<i64> = tx_ids.iter().filter_map(|v| v.as_i64()).collect();
                             for id in &ids {
                                 let _ = self
                                     .storage
                                     .update_transaction(
                                         *id,
                                         &crate::storage::find_args::TransactionPartial {
-                                            status: Some(
-                                                crate::status::TransactionStatus::Failed,
-                                            ),
+                                            status: Some(crate::status::TransactionStatus::Failed),
                                             ..Default::default()
                                         },
                                         None,
@@ -252,10 +237,7 @@ impl TaskArcSse {
                             }
                         }
                     }
-                    log.push_str(&format!(
-                        "  req {} => invalid\n",
-                        req.proven_tx_req_id
-                    ));
+                    log.push_str(&format!("  req {} => invalid\n", req.proven_tx_req_id));
                 }
                 other => {
                     log.push_str(&format!(

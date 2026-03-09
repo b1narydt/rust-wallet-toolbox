@@ -49,9 +49,7 @@ impl ChaintracksChainTracker {
         self.service_client
             .get_header_for_height(height)
             .await?
-            .ok_or_else(|| {
-                WalletError::Internal(format!("No header found for height {}", height))
-            })
+            .ok_or_else(|| WalletError::Internal(format!("No header found for height {}", height)))
     }
 
     /// Insert a value directly into the merkle root cache.

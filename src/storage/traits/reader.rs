@@ -138,11 +138,7 @@ pub trait StorageReader: Send + Sync {
     // -----------------------------------------------------------------------
 
     /// Count users matching the given filter criteria.
-    async fn count_users(
-        &self,
-        args: &FindUsersArgs,
-        trx: Option<&TrxToken>,
-    ) -> WalletResult<i64>;
+    async fn count_users(&self, args: &FindUsersArgs, trx: Option<&TrxToken>) -> WalletResult<i64>;
 
     /// Count certificates matching the given filter criteria.
     async fn count_certificates(

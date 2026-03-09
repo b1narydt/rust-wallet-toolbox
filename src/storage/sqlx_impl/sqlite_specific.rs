@@ -21,9 +21,7 @@ use crate::storage::StorageConfig;
 /// concurrent reads. Both pools set `busy_timeout` to 30 seconds and
 /// `create_if_missing(true)`.
 #[cfg(feature = "sqlite")]
-pub async fn create_sqlite_pools(
-    config: &StorageConfig,
-) -> WalletResult<(SqlitePool, SqlitePool)> {
+pub async fn create_sqlite_pools(config: &StorageConfig) -> WalletResult<(SqlitePool, SqlitePool)> {
     let base_opts = SqliteConnectOptions::from_str(&config.url)?
         .journal_mode(SqliteJournalMode::Wal)
         .busy_timeout(std::time::Duration::from_secs(30))

@@ -116,10 +116,7 @@ fn invalid_public_key_displays_with_werr_prefix() {
 
 #[test]
 fn code_returns_correct_string_for_each_variant() {
-    assert_eq!(
-        WalletError::Internal("x".into()).code(),
-        "WERR_INTERNAL"
-    );
+    assert_eq!(WalletError::Internal("x".into()).code(), "WERR_INTERNAL");
     assert_eq!(
         WalletError::InvalidParameter {
             parameter: "p".into(),
@@ -140,10 +137,7 @@ fn code_returns_correct_string_for_each_variant() {
         WalletError::Unauthorized("x".into()).code(),
         "WERR_UNAUTHORIZED"
     );
-    assert_eq!(
-        WalletError::NotActive("x".into()).code(),
-        "WERR_NOT_ACTIVE"
-    );
+    assert_eq!(WalletError::NotActive("x".into()).code(), "WERR_NOT_ACTIVE");
     assert_eq!(
         WalletError::InvalidOperation("x".into()).code(),
         "WERR_INVALID_OPERATION"

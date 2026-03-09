@@ -202,9 +202,7 @@ impl WalletAuthenticationManager {
         let temp_key = {
             let mut pk = self.presentation_key.lock().await;
             pk.take().ok_or_else(|| {
-                WalletError::Internal(
-                    "No presentation key; call start_auth first".to_string(),
-                )
+                WalletError::Internal("No presentation key; call start_auth first".to_string())
             })?
         };
 
@@ -320,15 +318,18 @@ impl WalletAuthenticationManager {
         wallet: &(dyn WalletInterface + Send + Sync),
         faucet_response: &FaucetResponse,
     ) -> Result<(), WalletError> {
-        let k_hex = faucet_response.k.as_ref().ok_or_else(|| {
-            WalletError::Internal("Faucet response missing k value".to_string())
-        })?;
-        let txid = faucet_response.txid.as_ref().ok_or_else(|| {
-            WalletError::Internal("Faucet response missing txid".to_string())
-        })?;
-        let tx_hex = faucet_response.tx.as_ref().ok_or_else(|| {
-            WalletError::Internal("Faucet response missing tx data".to_string())
-        })?;
+        let k_hex = faucet_response
+            .k
+            .as_ref()
+            .ok_or_else(|| WalletError::Internal("Faucet response missing k value".to_string()))?;
+        let txid = faucet_response
+            .txid
+            .as_ref()
+            .ok_or_else(|| WalletError::Internal("Faucet response missing txid".to_string()))?;
+        let tx_hex = faucet_response
+            .tx
+            .as_ref()
+            .ok_or_else(|| WalletError::Internal("Faucet response missing tx data".to_string()))?;
 
         // Parse the faucet transaction BEEF
         let tx_bytes = hex_to_bytes(tx_hex)?;
@@ -365,9 +366,8 @@ impl WalletAuthenticationManager {
         })?;
 
         // Parse k-value for RPuzzle
-        let k = BigNumber::from_hex(k_hex).map_err(|e| {
-            WalletError::Internal(format!("Failed to parse faucet k value: {}", e))
-        })?;
+        let k = BigNumber::from_hex(k_hex)
+            .map_err(|e| WalletError::Internal(format!("Failed to parse faucet k value: {}", e)))?;
         let random_key = PrivateKey::from_random().map_err(|e| {
             WalletError::Internal(format!("Failed to generate random key for RPuzzle: {}", e))
         })?;
@@ -416,9 +416,9 @@ impl WalletAuthenticationManager {
             })?;
 
         // Unlock with RPuzzle (produces DER signature + sighash byte)
-        let unlocking_script = puzzle.unlock(&preimage).map_err(|e| {
-            WalletError::Internal(format!("RPuzzle unlock failed: {}", e))
-        })?;
+        let unlocking_script = puzzle
+            .unlock(&preimage)
+            .map_err(|e| WalletError::Internal(format!("RPuzzle unlock failed: {}", e)))?;
 
         // Sign the action with the RPuzzle unlocking script (binary bytes)
         let mut spends = std::collections::HashMap::new();
@@ -457,9 +457,8 @@ fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, WalletError> {
     (0..hex.len())
         .step_by(2)
         .map(|i| {
-            u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| {
-                WalletError::Internal(format!("Invalid hex at position {}: {}", i, e))
-            })
+            u8::from_str_radix(&hex[i..i + 2], 16)
+                .map_err(|e| WalletError::Internal(format!("Invalid hex at position {}: {}", i, e)))
         })
         .collect()
 }
@@ -725,101 +724,257 @@ mod tests {
             &self,
             _originator: Option<&str>,
         ) -> Result<AuthenticatedResult, bsv::wallet::error::WalletError> {
-            Ok(AuthenticatedResult { authenticated: true })
+            Ok(AuthenticatedResult {
+                authenticated: true,
+            })
         }
 
         async fn wait_for_authentication(
             &self,
             _originator: Option<&str>,
         ) -> Result<AuthenticatedResult, bsv::wallet::error::WalletError> {
-            Ok(AuthenticatedResult { authenticated: true })
+            Ok(AuthenticatedResult {
+                authenticated: true,
+            })
         }
 
-        async fn get_height(&self, _o: Option<&str>) -> Result<GetHeightResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn get_height(
+            &self,
+            _o: Option<&str>,
+        ) -> Result<GetHeightResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn get_header_for_height(&self, _a: GetHeaderArgs, _o: Option<&str>) -> Result<GetHeaderResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn get_header_for_height(
+            &self,
+            _a: GetHeaderArgs,
+            _o: Option<&str>,
+        ) -> Result<GetHeaderResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn get_network(&self, _o: Option<&str>) -> Result<GetNetworkResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn get_network(
+            &self,
+            _o: Option<&str>,
+        ) -> Result<GetNetworkResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn get_version(&self, _o: Option<&str>) -> Result<GetVersionResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn get_version(
+            &self,
+            _o: Option<&str>,
+        ) -> Result<GetVersionResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn create_action(&self, _a: CreateActionArgs, _o: Option<&str>) -> Result<CreateActionResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn create_action(
+            &self,
+            _a: CreateActionArgs,
+            _o: Option<&str>,
+        ) -> Result<CreateActionResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn sign_action(&self, _a: SignActionArgs, _o: Option<&str>) -> Result<SignActionResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn sign_action(
+            &self,
+            _a: SignActionArgs,
+            _o: Option<&str>,
+        ) -> Result<SignActionResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn abort_action(&self, _a: AbortActionArgs, _o: Option<&str>) -> Result<AbortActionResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn abort_action(
+            &self,
+            _a: AbortActionArgs,
+            _o: Option<&str>,
+        ) -> Result<AbortActionResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn list_actions(&self, _a: ListActionsArgs, _o: Option<&str>) -> Result<ListActionsResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn list_actions(
+            &self,
+            _a: ListActionsArgs,
+            _o: Option<&str>,
+        ) -> Result<ListActionsResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn internalize_action(&self, _a: InternalizeActionArgs, _o: Option<&str>) -> Result<InternalizeActionResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn internalize_action(
+            &self,
+            _a: InternalizeActionArgs,
+            _o: Option<&str>,
+        ) -> Result<InternalizeActionResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn list_outputs(&self, _a: ListOutputsArgs, _o: Option<&str>) -> Result<ListOutputsResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn list_outputs(
+            &self,
+            _a: ListOutputsArgs,
+            _o: Option<&str>,
+        ) -> Result<ListOutputsResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn relinquish_output(&self, _a: RelinquishOutputArgs, _o: Option<&str>) -> Result<RelinquishOutputResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn relinquish_output(
+            &self,
+            _a: RelinquishOutputArgs,
+            _o: Option<&str>,
+        ) -> Result<RelinquishOutputResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn get_public_key(&self, _a: GetPublicKeyArgs, _o: Option<&str>) -> Result<GetPublicKeyResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn get_public_key(
+            &self,
+            _a: GetPublicKeyArgs,
+            _o: Option<&str>,
+        ) -> Result<GetPublicKeyResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn reveal_counterparty_key_linkage(&self, _a: RevealCounterpartyKeyLinkageArgs, _o: Option<&str>) -> Result<RevealCounterpartyKeyLinkageResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn reveal_counterparty_key_linkage(
+            &self,
+            _a: RevealCounterpartyKeyLinkageArgs,
+            _o: Option<&str>,
+        ) -> Result<RevealCounterpartyKeyLinkageResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn reveal_specific_key_linkage(&self, _a: RevealSpecificKeyLinkageArgs, _o: Option<&str>) -> Result<RevealSpecificKeyLinkageResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn reveal_specific_key_linkage(
+            &self,
+            _a: RevealSpecificKeyLinkageArgs,
+            _o: Option<&str>,
+        ) -> Result<RevealSpecificKeyLinkageResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn encrypt(&self, _a: EncryptArgs, _o: Option<&str>) -> Result<EncryptResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn encrypt(
+            &self,
+            _a: EncryptArgs,
+            _o: Option<&str>,
+        ) -> Result<EncryptResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn decrypt(&self, _a: DecryptArgs, _o: Option<&str>) -> Result<DecryptResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn decrypt(
+            &self,
+            _a: DecryptArgs,
+            _o: Option<&str>,
+        ) -> Result<DecryptResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn create_hmac(&self, _a: CreateHmacArgs, _o: Option<&str>) -> Result<CreateHmacResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn create_hmac(
+            &self,
+            _a: CreateHmacArgs,
+            _o: Option<&str>,
+        ) -> Result<CreateHmacResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn verify_hmac(&self, _a: VerifyHmacArgs, _o: Option<&str>) -> Result<VerifyHmacResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn verify_hmac(
+            &self,
+            _a: VerifyHmacArgs,
+            _o: Option<&str>,
+        ) -> Result<VerifyHmacResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn create_signature(&self, _a: CreateSignatureArgs, _o: Option<&str>) -> Result<CreateSignatureResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn create_signature(
+            &self,
+            _a: CreateSignatureArgs,
+            _o: Option<&str>,
+        ) -> Result<CreateSignatureResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn verify_signature(&self, _a: VerifySignatureArgs, _o: Option<&str>) -> Result<VerifySignatureResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn verify_signature(
+            &self,
+            _a: VerifySignatureArgs,
+            _o: Option<&str>,
+        ) -> Result<VerifySignatureResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn acquire_certificate(&self, _a: AcquireCertificateArgs, _o: Option<&str>) -> Result<Certificate, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn acquire_certificate(
+            &self,
+            _a: AcquireCertificateArgs,
+            _o: Option<&str>,
+        ) -> Result<Certificate, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn list_certificates(&self, _a: ListCertificatesArgs, _o: Option<&str>) -> Result<ListCertificatesResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn list_certificates(
+            &self,
+            _a: ListCertificatesArgs,
+            _o: Option<&str>,
+        ) -> Result<ListCertificatesResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn prove_certificate(&self, _a: ProveCertificateArgs, _o: Option<&str>) -> Result<ProveCertificateResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn prove_certificate(
+            &self,
+            _a: ProveCertificateArgs,
+            _o: Option<&str>,
+        ) -> Result<ProveCertificateResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn relinquish_certificate(&self, _a: RelinquishCertificateArgs, _o: Option<&str>) -> Result<RelinquishCertificateResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn relinquish_certificate(
+            &self,
+            _a: RelinquishCertificateArgs,
+            _o: Option<&str>,
+        ) -> Result<RelinquishCertificateResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn discover_by_identity_key(&self, _a: DiscoverByIdentityKeyArgs, _o: Option<&str>) -> Result<DiscoverCertificatesResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn discover_by_identity_key(
+            &self,
+            _a: DiscoverByIdentityKeyArgs,
+            _o: Option<&str>,
+        ) -> Result<DiscoverCertificatesResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
-        async fn discover_by_attributes(&self, _a: DiscoverByAttributesArgs, _o: Option<&str>) -> Result<DiscoverCertificatesResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("mock".into()))
+        async fn discover_by_attributes(
+            &self,
+            _a: DiscoverByAttributesArgs,
+            _o: Option<&str>,
+        ) -> Result<DiscoverCertificatesResult, bsv::wallet::error::WalletError> {
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "mock".into(),
+            ))
         }
     }
 
     fn make_builder() -> WalletBuilderFn {
         Box::new(|_root_key, _pkm| {
             Box::pin(async move {
-                let mock: Arc<dyn WalletInterface + Send + Sync> =
-                    Arc::new(MockWallet);
+                let mock: Arc<dyn WalletInterface + Send + Sync> = Arc::new(MockWallet);
                 Ok(mock)
             })
         })
@@ -881,14 +1036,16 @@ mod tests {
 
         // Manually set inner wallet to simulate auth completion
         {
-            let mock: Arc<dyn WalletInterface + Send + Sync> =
-                Arc::new(MockWallet);
+            let mock: Arc<dyn WalletInterface + Send + Sync> = Arc::new(MockWallet);
             let mut inner = mgr.inner.write().await;
             *inner = Some(mock);
         }
 
         // After auth
         let auth = mgr.is_authenticated(None).await.unwrap();
-        assert!(auth.authenticated, "Should be authenticated after setting inner");
+        assert!(
+            auth.authenticated,
+            "Should be authenticated after setting inner"
+        );
     }
 }

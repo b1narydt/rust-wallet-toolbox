@@ -136,10 +136,7 @@ impl PostBeefResult {
         PostBeefResult {
             name: provider_name.to_string(),
             status: "error".to_string(),
-            error: Some(format!(
-                "Service timeout after {}ms",
-                timeout_ms
-            )),
+            error: Some(format!("Service timeout after {}ms", timeout_ms)),
             txid_results: txids
                 .iter()
                 .map(|txid| PostTxResultForTxid {
@@ -592,9 +589,9 @@ impl From<Chain> for ServicesConfig {
             chaintracks_fiat_exchange_rates_url: None,
             exchangeratesapi_key: None,
             bsv_exchange_rate: BsvExchangeRate::default(),
-            bsv_update_msecs: 15 * 60 * 1000,       // 15 minutes
+            bsv_update_msecs: 15 * 60 * 1000, // 15 minutes
             fiat_exchange_rates: FiatExchangeRates::default(),
-            fiat_update_msecs: 24 * 60 * 60 * 1000,  // 24 hours
+            fiat_update_msecs: 24 * 60 * 60 * 1000, // 24 hours
             post_beef_soft_timeout_ms: 5000,
             post_beef_soft_timeout_per_kb_ms: 50,
             post_beef_soft_timeout_max_ms: 30000,

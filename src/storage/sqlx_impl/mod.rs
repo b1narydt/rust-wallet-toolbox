@@ -77,8 +77,7 @@ pub type SqliteStorage = StorageSqlx<sqlx::Sqlite>;
 impl SqliteStorage {
     /// Create a new SQLite storage with dual-pool WAL mode.
     pub async fn new_sqlite(config: StorageConfig, chain: Chain) -> WalletResult<Self> {
-        let (write_pool, read_pool) =
-            sqlite_specific::create_sqlite_pools(&config).await?;
+        let (write_pool, read_pool) = sqlite_specific::create_sqlite_pools(&config).await?;
         Ok(Self {
             write_pool,
             read_pool: Some(read_pool),
@@ -91,25 +90,17 @@ impl SqliteStorage {
     }
 
     /// Begin a SQLite transaction. Returns a TrxToken wrapping the transaction.
-    pub async fn begin_sqlite_transaction(
-        &self,
-    ) -> WalletResult<trx_token::TrxToken> {
+    pub async fn begin_sqlite_transaction(&self) -> WalletResult<trx_token::TrxToken> {
         let tx = self.write_pool.begin().await?;
-        let inner: SqliteTrxInner =
-            std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
+        let inner: SqliteTrxInner = std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
         Ok(trx_token::TrxToken::new(inner))
     }
 
     /// Extract the SQLite transaction inner handle from a TrxToken.
-    pub fn extract_sqlite_trx(
-        trx: &trx_token::TrxToken,
-    ) -> WalletResult<&SqliteTrxInner> {
-        trx.downcast_ref::<SqliteTrxInner>()
-            .ok_or_else(|| {
-                WalletError::Internal(
-                    "TrxToken does not contain a SQLite transaction".to_string(),
-                )
-            })
+    pub fn extract_sqlite_trx(trx: &trx_token::TrxToken) -> WalletResult<&SqliteTrxInner> {
+        trx.downcast_ref::<SqliteTrxInner>().ok_or_else(|| {
+            WalletError::Internal("TrxToken does not contain a SQLite transaction".to_string())
+        })
     }
 }
 
@@ -117,9 +108,8 @@ impl SqliteStorage {
 /// Wrapped in `Arc<Mutex<Option<...>>>` to allow shared ownership and
 /// "take" semantics for commit/rollback.
 #[cfg(feature = "sqlite")]
-pub type SqliteTrxInner = std::sync::Arc<
-    tokio::sync::Mutex<Option<sqlx::Transaction<'static, sqlx::Sqlite>>>,
->;
+pub type SqliteTrxInner =
+    std::sync::Arc<tokio::sync::Mutex<Option<sqlx::Transaction<'static, sqlx::Sqlite>>>>;
 
 // ---------------------------------------------------------------------------
 // MySQL-specific constructor and type alias
@@ -130,9 +120,8 @@ pub type MysqlStorage = StorageSqlx<sqlx::MySql>;
 
 /// The concrete inner type for MySQL transactions.
 #[cfg(feature = "mysql")]
-pub type MysqlTrxInner = std::sync::Arc<
-    tokio::sync::Mutex<Option<sqlx::Transaction<'static, sqlx::MySql>>>,
->;
+pub type MysqlTrxInner =
+    std::sync::Arc<tokio::sync::Mutex<Option<sqlx::Transaction<'static, sqlx::MySql>>>>;
 
 #[cfg(feature = "mysql")]
 impl MysqlStorage {
@@ -162,21 +151,15 @@ impl MysqlStorage {
     /// Begin a MySQL transaction. Returns a TrxToken wrapping the transaction.
     pub async fn begin_mysql_transaction(&self) -> WalletResult<trx_token::TrxToken> {
         let tx = self.write_pool.begin().await?;
-        let inner: MysqlTrxInner =
-            std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
+        let inner: MysqlTrxInner = std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
         Ok(trx_token::TrxToken::new(inner))
     }
 
     /// Extract the MySQL transaction inner handle from a TrxToken.
-    pub fn extract_mysql_trx(
-        trx: &trx_token::TrxToken,
-    ) -> WalletResult<&MysqlTrxInner> {
-        trx.downcast_ref::<MysqlTrxInner>()
-            .ok_or_else(|| {
-                WalletError::Internal(
-                    "TrxToken does not contain a MySQL transaction".to_string(),
-                )
-            })
+    pub fn extract_mysql_trx(trx: &trx_token::TrxToken) -> WalletResult<&MysqlTrxInner> {
+        trx.downcast_ref::<MysqlTrxInner>().ok_or_else(|| {
+            WalletError::Internal("TrxToken does not contain a MySQL transaction".to_string())
+        })
     }
 }
 
@@ -189,9 +172,8 @@ pub type PgStorage = StorageSqlx<sqlx::Postgres>;
 
 /// The concrete inner type for PostgreSQL transactions.
 #[cfg(feature = "postgres")]
-pub type PgTrxInner = std::sync::Arc<
-    tokio::sync::Mutex<Option<sqlx::Transaction<'static, sqlx::Postgres>>>,
->;
+pub type PgTrxInner =
+    std::sync::Arc<tokio::sync::Mutex<Option<sqlx::Transaction<'static, sqlx::Postgres>>>>;
 
 #[cfg(feature = "postgres")]
 impl PgStorage {
@@ -221,20 +203,14 @@ impl PgStorage {
     /// Begin a PostgreSQL transaction. Returns a TrxToken wrapping the transaction.
     pub async fn begin_pg_transaction(&self) -> WalletResult<trx_token::TrxToken> {
         let tx = self.write_pool.begin().await?;
-        let inner: PgTrxInner =
-            std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
+        let inner: PgTrxInner = std::sync::Arc::new(tokio::sync::Mutex::new(Some(tx)));
         Ok(trx_token::TrxToken::new(inner))
     }
 
     /// Extract the PostgreSQL transaction inner handle from a TrxToken.
-    pub fn extract_pg_trx(
-        trx: &trx_token::TrxToken,
-    ) -> WalletResult<&PgTrxInner> {
-        trx.downcast_ref::<PgTrxInner>()
-            .ok_or_else(|| {
-                WalletError::Internal(
-                    "TrxToken does not contain a PostgreSQL transaction".to_string(),
-                )
-            })
+    pub fn extract_pg_trx(trx: &trx_token::TrxToken) -> WalletResult<&PgTrxInner> {
+        trx.downcast_ref::<PgTrxInner>().ok_or_else(|| {
+            WalletError::Internal("TrxToken does not contain a PostgreSQL transaction".to_string())
+        })
     }
 }

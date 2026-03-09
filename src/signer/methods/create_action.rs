@@ -105,8 +105,9 @@ pub async fn signer_create_action(
     if args.is_sign_action {
         // Serialize unsigned tx for later recovery
         let mut tx_bytes = Vec::new();
-        tx.to_binary(&mut tx_bytes)
-            .map_err(|e| WalletError::Internal(format!("Failed to serialize unsigned tx: {}", e)))?;
+        tx.to_binary(&mut tx_bytes).map_err(|e| {
+            WalletError::Internal(format!("Failed to serialize unsigned tx: {}", e))
+        })?;
 
         let pending = PendingSignAction {
             reference: reference.clone(),

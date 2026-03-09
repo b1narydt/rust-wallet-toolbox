@@ -9,8 +9,8 @@ use async_trait::async_trait;
 use chrono::Utc;
 
 use bsv::primitives::private_key::PrivateKey;
-use bsv::transaction::Beef;
 use bsv::transaction::chain_tracker::ChainTracker;
+use bsv::transaction::Beef;
 use bsv::transaction::TransactionError;
 
 use bsv_wallet_toolbox::error::{WalletError, WalletResult};
@@ -115,11 +115,7 @@ impl WalletServices for MockWalletServices {
         Ok(Box::new(MockChainTracker))
     }
 
-    async fn get_merkle_path(
-        &self,
-        _txid: &str,
-        _use_next: bool,
-    ) -> types::GetMerklePathResult {
+    async fn get_merkle_path(&self, _txid: &str, _use_next: bool) -> types::GetMerklePathResult {
         types::GetMerklePathResult {
             name: Some("mock".to_string()),
             merkle_path: None,
@@ -137,11 +133,7 @@ impl WalletServices for MockWalletServices {
         }
     }
 
-    async fn post_beef(
-        &self,
-        _beef: &[u8],
-        _txids: &[String],
-    ) -> Vec<types::PostBeefResult> {
+    async fn post_beef(&self, _beef: &[u8], _txids: &[String]) -> Vec<types::PostBeefResult> {
         vec![]
     }
 
@@ -199,10 +191,7 @@ impl WalletServices for MockWalletServices {
         Ok(100_000)
     }
 
-    async fn n_lock_time_is_final(
-        &self,
-        _input: types::NLockTimeInput,
-    ) -> WalletResult<bool> {
+    async fn n_lock_time_is_final(&self, _input: types::NLockTimeInput) -> WalletResult<bool> {
         Ok(true)
     }
 
@@ -226,9 +215,7 @@ impl WalletServices for MockWalletServices {
     }
 
     fn get_services_call_history(&self, _reset: bool) -> types::ServicesCallHistory {
-        types::ServicesCallHistory {
-            services: vec![],
-        }
+        types::ServicesCallHistory { services: vec![] }
     }
 
     async fn get_beef_for_txid(&self, _txid: &str) -> WalletResult<Beef> {
@@ -239,12 +226,7 @@ impl WalletServices for MockWalletServices {
         String::new()
     }
 
-    async fn is_utxo(
-        &self,
-        _locking_script: &[u8],
-        _txid: &str,
-        _vout: u32,
-    ) -> WalletResult<bool> {
+    async fn is_utxo(&self, _locking_script: &[u8], _txid: &str, _vout: u32) -> WalletResult<bool> {
         Ok(false)
     }
 }

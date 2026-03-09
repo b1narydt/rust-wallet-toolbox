@@ -276,9 +276,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         },
         ..Default::default()
     };
-    let mut available_change_outputs = storage
-        .find_outputs(&change_find_args, trx_opt)
-        .await?;
+    let mut available_change_outputs = storage.find_outputs(&change_find_args, trx_opt).await?;
     // Filter out any that already have a spentBy value
     available_change_outputs.retain(|o| o.spent_by.is_none());
     // Sort by satoshis ascending (prefer smaller)
@@ -295,8 +293,8 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
 
     // --- Generate change ---
     let fee_model = default_fee_model();
-    let target_net_count = change_basket.number_of_desired_utxos as i64
-        - available_change.len() as i64;
+    let target_net_count =
+        change_basket.number_of_desired_utxos as i64 - available_change.len() as i64;
 
     let change_args = GenerateChangeSdkArgs {
         fixed_inputs: fixed_inputs.clone(),
@@ -527,7 +525,9 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
 mod tests {
     use super::*;
     use crate::storage::action_types::StorageCreateActionOutput;
-    use crate::storage::find_args::{FindOutputsArgs, FindTransactionsArgs, OutputPartial, TransactionPartial};
+    use crate::storage::find_args::{
+        FindOutputsArgs, FindTransactionsArgs, OutputPartial, TransactionPartial,
+    };
     use crate::storage::sqlx_impl::SqliteStorage;
     use crate::storage::traits::provider::StorageProvider;
     use crate::storage::traits::reader::StorageReader;
@@ -577,7 +577,9 @@ mod tests {
             description: "source tx".to_string(),
             version: Some(1),
             lock_time: Some(0),
-            txid: Some("aaaa1111bbbb2222cccc3333dddd4444aaaa1111bbbb2222cccc3333dddd4444".to_string()),
+            txid: Some(
+                "aaaa1111bbbb2222cccc3333dddd4444aaaa1111bbbb2222cccc3333dddd4444".to_string(),
+            ),
             input_beef: None,
             raw_tx: None,
         };
@@ -603,7 +605,9 @@ mod tests {
                 provided_by: StorageProvidedBy::Storage,
                 purpose: "change".to_string(),
                 output_type: "P2PKH".to_string(),
-                txid: Some("aaaa1111bbbb2222cccc3333dddd4444aaaa1111bbbb2222cccc3333dddd4444".to_string()),
+                txid: Some(
+                    "aaaa1111bbbb2222cccc3333dddd4444aaaa1111bbbb2222cccc3333dddd4444".to_string(),
+                ),
                 sender_identity_key: None,
                 derivation_prefix: Some("testprefix".to_string()),
                 derivation_suffix: Some(format!("suffix{}", i)),
@@ -613,7 +617,10 @@ mod tests {
                 spending_description: None,
                 script_length: Some(25),
                 script_offset: None,
-                locking_script: Some(vec![0x76, 0xa9, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0xac]),
+                locking_script: Some(vec![
+                    0x76, 0xa9, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0xac,
+                ]),
             };
             storage
                 .insert_output(&output, None)
@@ -821,7 +828,10 @@ mod tests {
             .expect("find change outputs");
 
         // At least one should be spent (has spentBy set)
-        let spent_count = change_outputs.iter().filter(|o| o.spent_by.is_some()).count();
+        let spent_count = change_outputs
+            .iter()
+            .filter(|o| o.spent_by.is_some())
+            .count();
         assert!(
             spent_count > 0,
             "at least one change UTXO should be allocated (spentBy set)"

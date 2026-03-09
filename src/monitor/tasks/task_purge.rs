@@ -51,8 +51,7 @@ impl WalletMonitorTask for TaskPurge {
 
     fn trigger(&mut self, now_msecs: u64) -> bool {
         self.check_now
-            || (self.trigger_msecs > 0
-                && now_msecs > self.last_run_msecs + self.trigger_msecs)
+            || (self.trigger_msecs > 0 && now_msecs > self.last_run_msecs + self.trigger_msecs)
     }
 
     async fn run_task(&mut self) -> Result<String, WalletError> {

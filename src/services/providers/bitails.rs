@@ -189,30 +189,30 @@ impl PostBeefProvider for Bitails {
 
     async fn post_beef(&self, beef: &[u8], txids: &[String]) -> PostBeefResult {
         // Bitails does not accept BEEF directly. Decompose into individual raw transactions.
-        let parsed_beef =
-            match bsv::transaction::Beef::from_binary(&mut std::io::Cursor::new(beef)) {
-                Ok(b) => b,
-                Err(e) => {
-                    return PostBeefResult {
-                        name: "Bitails".to_string(),
-                        status: "error".to_string(),
-                        error: Some(format!("Failed to parse BEEF: {}", e)),
-                        txid_results: txids
-                            .iter()
-                            .map(|txid| PostTxResultForTxid {
-                                txid: txid.clone(),
-                                status: "error".to_string(),
-                                already_known: None,
-                                double_spend: None,
-                                block_hash: None,
-                                block_height: None,
-                                competing_txs: None,
-                                service_error: Some(true),
-                            })
-                            .collect(),
-                    };
-                }
-            };
+        let parsed_beef = match bsv::transaction::Beef::from_binary(&mut std::io::Cursor::new(beef))
+        {
+            Ok(b) => b,
+            Err(e) => {
+                return PostBeefResult {
+                    name: "Bitails".to_string(),
+                    status: "error".to_string(),
+                    error: Some(format!("Failed to parse BEEF: {}", e)),
+                    txid_results: txids
+                        .iter()
+                        .map(|txid| PostTxResultForTxid {
+                            txid: txid.clone(),
+                            status: "error".to_string(),
+                            already_known: None,
+                            double_spend: None,
+                            block_hash: None,
+                            block_height: None,
+                            competing_txs: None,
+                            service_error: Some(true),
+                        })
+                        .collect(),
+                };
+            }
+        };
 
         // Extract raw hex strings for all txids
         let mut raws: Vec<String> = Vec::new();

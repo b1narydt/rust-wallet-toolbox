@@ -13,9 +13,7 @@ use bsv::wallet::interfaces::{
 ///
 /// If any result has a status other than `Unproven`, returns a `WalletError::Internal`
 /// with details about the unsuccessful results.
-pub fn throw_if_any_unsuccessful_create_actions(
-    r: &CreateActionResult,
-) -> Result<(), WalletError> {
+pub fn throw_if_any_unsuccessful_create_actions(r: &CreateActionResult) -> Result<(), WalletError> {
     let failures: Vec<String> = r
         .send_with_results
         .iter()

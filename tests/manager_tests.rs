@@ -50,11 +50,8 @@ mod manager_tests {
     }
 
     /// Create a WalletStorageManager with active + backup providers (separate in-memory DBs).
-    async fn setup_dual_provider() -> WalletResult<(
-        WalletStorageManager,
-        Arc<SqliteStorage>,
-        Arc<SqliteStorage>,
-    )> {
+    async fn setup_dual_provider(
+    ) -> WalletResult<(WalletStorageManager, Arc<SqliteStorage>, Arc<SqliteStorage>)> {
         let active = Arc::new(create_storage().await?);
         let backup = Arc::new(create_storage().await?);
         let manager = WalletStorageManager::new(
@@ -247,7 +244,10 @@ mod manager_tests {
     #[tokio::test]
     async fn test_accessor_methods() {
         let (single_mgr, _active) = setup_single_provider().await.unwrap();
-        assert!(!single_mgr.has_backup(), "Single provider should have no backup");
+        assert!(
+            !single_mgr.has_backup(),
+            "Single provider should have no backup"
+        );
         assert!(single_mgr.backup().is_none());
 
         let (dual_mgr, _active, _backup) = setup_dual_provider().await.unwrap();

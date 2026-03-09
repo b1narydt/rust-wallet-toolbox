@@ -181,9 +181,18 @@ mod tests {
 
     #[test]
     fn test_permission_type_equality() {
-        assert_eq!(PermissionType::ProtocolPermission, PermissionType::ProtocolPermission);
-        assert_ne!(PermissionType::ProtocolPermission, PermissionType::BasketAccess);
-        assert_ne!(PermissionType::CertificateAccess, PermissionType::SpendingAuthorization);
+        assert_eq!(
+            PermissionType::ProtocolPermission,
+            PermissionType::ProtocolPermission
+        );
+        assert_ne!(
+            PermissionType::ProtocolPermission,
+            PermissionType::BasketAccess
+        );
+        assert_ne!(
+            PermissionType::CertificateAccess,
+            PermissionType::SpendingAuthorization
+        );
 
         // Test Copy trait
         let a = PermissionType::BasketAccess;

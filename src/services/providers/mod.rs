@@ -14,5 +14,7 @@ pub mod whats_on_chain;
 pub use arc::ArcProvider;
 pub use arc_sse_client::ArcSseClient;
 pub use bitails::Bitails;
-pub use exchange_rates::{fetch_bsv_exchange_rate, fetch_fiat_exchange_rate, fetch_fiat_exchange_rates};
+pub use exchange_rates::{
+    fetch_bsv_exchange_rate, fetch_fiat_exchange_rate, fetch_fiat_exchange_rates,
+};
 pub use whats_on_chain::WhatsOnChain;

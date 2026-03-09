@@ -34,9 +34,9 @@ mod sqlite_impl {
         if let Some(trx_token) = trx {
             let inner = StorageSqlx::<Sqlite>::extract_sqlite_trx(trx_token)?;
             let mut guard = inner.lock().await;
-            let tx = guard.as_mut().ok_or_else(|| {
-                WalletError::Internal("Transaction already consumed".to_string())
-            })?;
+            let tx = guard
+                .as_mut()
+                .ok_or_else(|| WalletError::Internal("Transaction already consumed".to_string()))?;
             let mut q = sqlx::query(sql);
             for bind in binds {
                 q = match bind {
@@ -216,10 +216,7 @@ mod sqlite_impl {
                 binds.push(BindVal::String(v.clone()));
             }
             sets.push("updated_at = datetime('now')");
-            let sql = format!(
-                "UPDATE monitor_events SET {} WHERE id = ?",
-                sets.join(", ")
-            );
+            let sql = format!("UPDATE monitor_events SET {} WHERE id = ?", sets.join(", "));
             binds.push(BindVal::Int64(id));
             exec_update(self, &sql, &binds, trx).await
         }
@@ -374,10 +371,7 @@ mod sqlite_impl {
                 binds.push(BindVal::Int64(*v));
             }
             sets.push("updated_at = datetime('now')");
-            let sql = format!(
-                "UPDATE outputs SET {} WHERE outputId = ?",
-                sets.join(", ")
-            );
+            let sql = format!("UPDATE outputs SET {} WHERE outputId = ?", sets.join(", "));
             binds.push(BindVal::Int64(id));
             exec_update(self, &sql, &binds, trx).await
         }

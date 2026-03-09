@@ -7,9 +7,9 @@ pub mod dev_console;
 pub mod persona;
 pub mod twilio;
 
-use async_trait::async_trait;
 use crate::error::WalletError;
 use crate::wab_client::types::{CompleteAuthResponse, StartAuthResponse};
+use async_trait::async_trait;
 
 pub use dev_console::DevConsoleInteractor;
 pub use persona::PersonaIDInteractor;

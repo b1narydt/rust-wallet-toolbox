@@ -53,10 +53,7 @@ pub async fn signer_sign_action(
         .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {}", e)))?;
 
     // --- Step 3: Build BEEF ---
-    let beef_bytes = super::create_action::build_beef_bytes(
-        &tx,
-        &pending.dcr.input_beef,
-    )?;
+    let beef_bytes = super::create_action::build_beef_bytes(&tx, &pending.dcr.input_beef)?;
 
     // --- Step 4: Process action in storage ---
     let process_args = StorageProcessActionArgs {

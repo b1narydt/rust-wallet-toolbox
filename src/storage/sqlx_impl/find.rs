@@ -38,9 +38,9 @@ mod sqlite_impl {
         if let Some(trx_token) = trx {
             let inner = StorageSqlx::<Sqlite>::extract_sqlite_trx(trx_token)?;
             let mut guard = inner.lock().await;
-            let tx = guard.as_mut().ok_or_else(|| {
-                WalletError::Internal("Transaction already consumed".to_string())
-            })?;
+            let tx = guard
+                .as_mut()
+                .ok_or_else(|| WalletError::Internal("Transaction already consumed".to_string()))?;
             let mut q = sqlx::query_as::<_, T>(sql);
             for bind in &binds {
                 q = bind_value(q, bind);
@@ -68,9 +68,9 @@ mod sqlite_impl {
         if let Some(trx_token) = trx {
             let inner = StorageSqlx::<Sqlite>::extract_sqlite_trx(trx_token)?;
             let mut guard = inner.lock().await;
-            let tx = guard.as_mut().ok_or_else(|| {
-                WalletError::Internal("Transaction already consumed".to_string())
-            })?;
+            let tx = guard
+                .as_mut()
+                .ok_or_else(|| WalletError::Internal("Transaction already consumed".to_string()))?;
             let mut q = sqlx::query(sql);
             for bind in &binds {
                 q = bind_value_raw(q, bind);
@@ -153,7 +153,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -207,7 +209,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -243,7 +247,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -281,7 +287,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -290,9 +298,7 @@ mod sqlite_impl {
         (sql, binds)
     }
 
-    fn build_monitor_events_where(
-        args: &FindMonitorEventsArgs,
-    ) -> (String, Vec<SqliteBindValue>) {
+    fn build_monitor_events_where(args: &FindMonitorEventsArgs) -> (String, Vec<SqliteBindValue>) {
         let mut wb = WhereBuilder::new_sqlite();
         let mut binds = Vec::new();
         if let Some(v) = &args.partial.id {
@@ -305,7 +311,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -314,9 +322,7 @@ mod sqlite_impl {
         (sql, binds)
     }
 
-    fn build_output_baskets_where(
-        args: &FindOutputBasketsArgs,
-    ) -> (String, Vec<SqliteBindValue>) {
+    fn build_output_baskets_where(args: &FindOutputBasketsArgs) -> (String, Vec<SqliteBindValue>) {
         let mut wb = WhereBuilder::new_sqlite();
         let mut binds = Vec::new();
         if let Some(v) = &args.partial.basket_id {
@@ -337,7 +343,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -346,9 +354,7 @@ mod sqlite_impl {
         (sql, binds)
     }
 
-    fn build_output_tag_maps_where(
-        args: &FindOutputTagMapsArgs,
-    ) -> (String, Vec<SqliteBindValue>) {
+    fn build_output_tag_maps_where(args: &FindOutputTagMapsArgs) -> (String, Vec<SqliteBindValue>) {
         let mut wb = WhereBuilder::new_sqlite();
         let mut binds = Vec::new();
         if let Some(v) = &args.partial.output_tag_id {
@@ -365,7 +371,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -395,7 +403,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -465,7 +475,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -495,7 +507,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -504,9 +518,7 @@ mod sqlite_impl {
         (sql, binds)
     }
 
-    fn build_proven_tx_reqs_where(
-        args: &FindProvenTxReqsArgs,
-    ) -> (String, Vec<SqliteBindValue>) {
+    fn build_proven_tx_reqs_where(args: &FindProvenTxReqsArgs) -> (String, Vec<SqliteBindValue>) {
         let mut wb = WhereBuilder::new_sqlite();
         let mut binds = Vec::new();
         if let Some(v) = &args.partial.proven_tx_req_id {
@@ -543,7 +555,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -569,7 +583,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -607,7 +623,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -616,9 +634,7 @@ mod sqlite_impl {
         (sql, binds)
     }
 
-    fn build_transactions_where(
-        args: &FindTransactionsArgs,
-    ) -> (String, Vec<SqliteBindValue>) {
+    fn build_transactions_where(args: &FindTransactionsArgs) -> (String, Vec<SqliteBindValue>) {
         let mut wb = WhereBuilder::new_sqlite();
         let mut binds = Vec::new();
         if let Some(v) = &args.partial.transaction_id {
@@ -651,7 +667,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -660,9 +678,7 @@ mod sqlite_impl {
         (sql, binds)
     }
 
-    fn build_tx_label_maps_where(
-        args: &FindTxLabelMapsArgs,
-    ) -> (String, Vec<SqliteBindValue>) {
+    fn build_tx_label_maps_where(args: &FindTxLabelMapsArgs) -> (String, Vec<SqliteBindValue>) {
         let mut wb = WhereBuilder::new_sqlite();
         let mut binds = Vec::new();
         if let Some(v) = &args.partial.tx_label_id {
@@ -679,7 +695,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -709,7 +727,9 @@ mod sqlite_impl {
         }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -730,7 +750,9 @@ mod sqlite_impl {
         binds.push(SqliteBindValue::Int64(args.user_id));
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
-            binds.push(SqliteBindValue::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+            binds.push(SqliteBindValue::String(
+                v.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ));
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
@@ -1317,234 +1339,570 @@ macro_rules! impl_storage_reader_find {
             fn build_users_where(args: &FindUsersArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.user_id { w.add_eq("userId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.identity_key { w.add_eq("identityKey"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.active_storage { w.add_eq("activeStorage"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.user_id {
+                    w.add_eq("userId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.identity_key {
+                    w.add_eq("identityKey");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.active_storage {
+                    w.add_eq("activeStorage");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_certificates_where(args: &FindCertificatesArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.certificate_id { w.add_eq("certificateId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.user_id { w.add_eq("userId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.cert_type { w.add_eq("type"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.serial_number { w.add_eq("serialNumber"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.certifier { w.add_eq("certifier"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.subject { w.add_eq("subject"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.verifier { w.add_eq("verifier"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.revocation_outpoint { w.add_eq("revocationOutpoint"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.signature { w.add_eq("signature"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.is_deleted { w.add_eq("isDeleted"); binds.push(BindVal::Bool(*v)); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.certificate_id {
+                    w.add_eq("certificateId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.user_id {
+                    w.add_eq("userId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.cert_type {
+                    w.add_eq("type");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.serial_number {
+                    w.add_eq("serialNumber");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.certifier {
+                    w.add_eq("certifier");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.subject {
+                    w.add_eq("subject");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.verifier {
+                    w.add_eq("verifier");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.revocation_outpoint {
+                    w.add_eq("revocationOutpoint");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.signature {
+                    w.add_eq("signature");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.is_deleted {
+                    w.add_eq("isDeleted");
+                    binds.push(BindVal::Bool(*v));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
-            fn build_certificate_fields_where(args: &FindCertificateFieldsArgs) -> (String, Vec<BindVal>) {
+            fn build_certificate_fields_where(
+                args: &FindCertificateFieldsArgs,
+            ) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.certificate_id { w.add_eq("certificateId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.user_id { w.add_eq("userId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.field_name { w.add_eq("fieldName"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.field_value { w.add_eq("fieldValue"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.master_key { w.add_eq("masterKey"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.certificate_id {
+                    w.add_eq("certificateId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.user_id {
+                    w.add_eq("userId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.field_name {
+                    w.add_eq("fieldName");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.field_value {
+                    w.add_eq("fieldValue");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.master_key {
+                    w.add_eq("masterKey");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_commissions_where(args: &FindCommissionsArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.commission_id { w.add_eq("commissionId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.user_id { w.add_eq("userId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.transaction_id { w.add_eq("transactionId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.satoshis { w.add_eq("satoshis"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.key_offset { w.add_eq("keyOffset"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.is_redeemed { w.add_eq("isRedeemed"); binds.push(BindVal::Bool(*v)); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.commission_id {
+                    w.add_eq("commissionId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.user_id {
+                    w.add_eq("userId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.transaction_id {
+                    w.add_eq("transactionId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.satoshis {
+                    w.add_eq("satoshis");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.key_offset {
+                    w.add_eq("keyOffset");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.is_redeemed {
+                    w.add_eq("isRedeemed");
+                    binds.push(BindVal::Bool(*v));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_monitor_events_where(args: &FindMonitorEventsArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.id { w.add_eq("id"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.event { w.add_eq("event"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.id {
+                    w.add_eq("id");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.event {
+                    w.add_eq("event");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_output_baskets_where(args: &FindOutputBasketsArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.basket_id { w.add_eq("basketId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.user_id { w.add_eq("userId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.name { w.add_eq("name"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.is_deleted { w.add_eq("isDeleted"); binds.push(BindVal::Bool(*v)); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.basket_id {
+                    w.add_eq("basketId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.user_id {
+                    w.add_eq("userId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.name {
+                    w.add_eq("name");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.is_deleted {
+                    w.add_eq("isDeleted");
+                    binds.push(BindVal::Bool(*v));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_output_tag_maps_where(args: &FindOutputTagMapsArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.output_tag_id { w.add_eq("outputTagId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.output_id { w.add_eq("outputId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.is_deleted { w.add_eq("isDeleted"); binds.push(BindVal::Bool(*v)); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.output_tag_id {
+                    w.add_eq("outputTagId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.output_id {
+                    w.add_eq("outputId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.is_deleted {
+                    w.add_eq("isDeleted");
+                    binds.push(BindVal::Bool(*v));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_output_tags_where(args: &FindOutputTagsArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.output_tag_id { w.add_eq("outputTagId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.user_id { w.add_eq("userId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.tag { w.add_eq("tag"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.is_deleted { w.add_eq("isDeleted"); binds.push(BindVal::Bool(*v)); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.output_tag_id {
+                    w.add_eq("outputTagId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.user_id {
+                    w.add_eq("userId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.tag {
+                    w.add_eq("tag");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.is_deleted {
+                    w.add_eq("isDeleted");
+                    binds.push(BindVal::Bool(*v));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_outputs_where(args: &FindOutputsArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.output_id { w.add_eq("outputId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.user_id { w.add_eq("userId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.transaction_id { w.add_eq("transactionId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.basket_id { w.add_eq("basketId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.spendable { w.add_eq("spendable"); binds.push(BindVal::Bool(*v)); }
-                if let Some(v) = &args.partial.change { w.add_eq("change"); binds.push(BindVal::Bool(*v)); }
-                if let Some(v) = &args.partial.vout { w.add_eq("vout"); binds.push(BindVal::Int32(*v)); }
-                if let Some(v) = &args.partial.satoshis { w.add_eq("satoshis"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.provided_by { w.add_eq("providedBy"); binds.push(BindVal::String(v.to_string())); }
-                if let Some(v) = &args.partial.purpose { w.add_eq("purpose"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.output_type { w.add_eq("type"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.txid { w.add_eq("txid"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.sender_identity_key { w.add_eq("senderIdentityKey"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.spent_by { w.add_eq("spentBy"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.output_id {
+                    w.add_eq("outputId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.user_id {
+                    w.add_eq("userId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.transaction_id {
+                    w.add_eq("transactionId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.basket_id {
+                    w.add_eq("basketId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.spendable {
+                    w.add_eq("spendable");
+                    binds.push(BindVal::Bool(*v));
+                }
+                if let Some(v) = &args.partial.change {
+                    w.add_eq("change");
+                    binds.push(BindVal::Bool(*v));
+                }
+                if let Some(v) = &args.partial.vout {
+                    w.add_eq("vout");
+                    binds.push(BindVal::Int32(*v));
+                }
+                if let Some(v) = &args.partial.satoshis {
+                    w.add_eq("satoshis");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.provided_by {
+                    w.add_eq("providedBy");
+                    binds.push(BindVal::String(v.to_string()));
+                }
+                if let Some(v) = &args.partial.purpose {
+                    w.add_eq("purpose");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.output_type {
+                    w.add_eq("type");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.txid {
+                    w.add_eq("txid");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.sender_identity_key {
+                    w.add_eq("senderIdentityKey");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.spent_by {
+                    w.add_eq("spentBy");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_proven_txs_where(args: &FindProvenTxsArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.proven_tx_id { w.add_eq("provenTxId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.txid { w.add_eq("txid"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.height { w.add_eq("height"); binds.push(BindVal::Int32(*v)); }
-                if let Some(v) = &args.partial.block_hash { w.add_eq("blockHash"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.proven_tx_id {
+                    w.add_eq("provenTxId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.txid {
+                    w.add_eq("txid");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.height {
+                    w.add_eq("height");
+                    binds.push(BindVal::Int32(*v));
+                }
+                if let Some(v) = &args.partial.block_hash {
+                    w.add_eq("blockHash");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_proven_tx_reqs_where(args: &FindProvenTxReqsArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.proven_tx_req_id { w.add_eq("provenTxReqId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.proven_tx_id { w.add_eq("provenTxId"); binds.push(BindVal::Int64(*v)); }
+                if let Some(v) = &args.partial.proven_tx_req_id {
+                    w.add_eq("provenTxReqId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.proven_tx_id {
+                    w.add_eq("provenTxId");
+                    binds.push(BindVal::Int64(*v));
+                }
                 // Multi-status filter takes precedence over single partial.status
                 if let Some(statuses) = &args.statuses {
                     if !statuses.is_empty() {
                         w.add_in("status", statuses.len());
-                        for s in statuses { binds.push(BindVal::String(s.to_string())); }
+                        for s in statuses {
+                            binds.push(BindVal::String(s.to_string()));
+                        }
                     }
-                } else if let Some(v) = &args.partial.status { w.add_eq("status"); binds.push(BindVal::String(v.to_string())); }
-                if let Some(v) = &args.partial.txid { w.add_eq("txid"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.batch { w.add_eq("batch"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.notified { w.add_eq("notified"); binds.push(BindVal::Bool(*v)); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                } else if let Some(v) = &args.partial.status {
+                    w.add_eq("status");
+                    binds.push(BindVal::String(v.to_string()));
+                }
+                if let Some(v) = &args.partial.txid {
+                    w.add_eq("txid");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.batch {
+                    w.add_eq("batch");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.notified {
+                    w.add_eq("notified");
+                    binds.push(BindVal::Bool(*v));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_settings_where(args: &FindSettingsArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.storage_identity_key { w.add_eq("storageIdentityKey"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.storage_name { w.add_eq("storageName"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.chain { w.add_eq("chain"); binds.push(BindVal::String(v.to_string())); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.storage_identity_key {
+                    w.add_eq("storageIdentityKey");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.storage_name {
+                    w.add_eq("storageName");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.chain {
+                    w.add_eq("chain");
+                    binds.push(BindVal::String(v.to_string()));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_sync_states_where(args: &FindSyncStatesArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.sync_state_id { w.add_eq("syncStateId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.user_id { w.add_eq("userId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.storage_identity_key { w.add_eq("storageIdentityKey"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.storage_name { w.add_eq("storageName"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.status { w.add_eq("status"); binds.push(BindVal::String(v.to_string())); }
-                if let Some(v) = &args.partial.init { w.add_eq("init"); binds.push(BindVal::Bool(*v)); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.sync_state_id {
+                    w.add_eq("syncStateId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.user_id {
+                    w.add_eq("userId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.storage_identity_key {
+                    w.add_eq("storageIdentityKey");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.storage_name {
+                    w.add_eq("storageName");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.status {
+                    w.add_eq("status");
+                    binds.push(BindVal::String(v.to_string()));
+                }
+                if let Some(v) = &args.partial.init {
+                    w.add_eq("init");
+                    binds.push(BindVal::Bool(*v));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_transactions_where(args: &FindTransactionsArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.transaction_id { w.add_eq("transactionId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.user_id { w.add_eq("userId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.proven_tx_id { w.add_eq("provenTxId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.status { w.add_eq("status"); binds.push(BindVal::String(v.to_string())); }
-                if let Some(v) = &args.partial.reference { w.add_eq("reference"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.is_outgoing { w.add_eq("isOutgoing"); binds.push(BindVal::Bool(*v)); }
-                if let Some(v) = &args.partial.txid { w.add_eq("txid"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.transaction_id {
+                    w.add_eq("transactionId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.user_id {
+                    w.add_eq("userId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.proven_tx_id {
+                    w.add_eq("provenTxId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.status {
+                    w.add_eq("status");
+                    binds.push(BindVal::String(v.to_string()));
+                }
+                if let Some(v) = &args.partial.reference {
+                    w.add_eq("reference");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.is_outgoing {
+                    w.add_eq("isOutgoing");
+                    binds.push(BindVal::Bool(*v));
+                }
+                if let Some(v) = &args.partial.txid {
+                    w.add_eq("txid");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_tx_label_maps_where(args: &FindTxLabelMapsArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.tx_label_id { w.add_eq("txLabelId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.transaction_id { w.add_eq("transactionId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.is_deleted { w.add_eq("isDeleted"); binds.push(BindVal::Bool(*v)); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.tx_label_id {
+                    w.add_eq("txLabelId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.transaction_id {
+                    w.add_eq("transactionId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.is_deleted {
+                    w.add_eq("isDeleted");
+                    binds.push(BindVal::Bool(*v));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
             fn build_tx_labels_where(args: &FindTxLabelsArgs) -> (String, Vec<BindVal>) {
                 let mut w = wb();
                 let mut binds = Vec::new();
-                if let Some(v) = &args.partial.tx_label_id { w.add_eq("txLabelId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.user_id { w.add_eq("userId"); binds.push(BindVal::Int64(*v)); }
-                if let Some(v) = &args.partial.label { w.add_eq("label"); binds.push(BindVal::String(v.clone())); }
-                if let Some(v) = &args.partial.is_deleted { w.add_eq("isDeleted"); binds.push(BindVal::Bool(*v)); }
-                if let Some(v) = &args.since { w.add_gte("updated_at"); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string())); }
+                if let Some(v) = &args.partial.tx_label_id {
+                    w.add_eq("txLabelId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.user_id {
+                    w.add_eq("userId");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.label {
+                    w.add_eq("label");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.is_deleted {
+                    w.add_eq("isDeleted");
+                    binds.push(BindVal::Bool(*v));
+                }
+                if let Some(v) = &args.since {
+                    w.add_gte("updated_at");
+                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                }
                 let mut sql = w.build_where();
-                if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                if let Some(paged) = &args.paged {
+                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                }
                 (sql, binds)
             }
 
@@ -1556,189 +1914,433 @@ macro_rules! impl_storage_reader_find {
             // StorageReader implementation
             #[async_trait]
             impl StorageReader for StorageSqlx<$db> {
-                async fn find_users(&self, args: &FindUsersArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<User>> {
+                async fn find_users(
+                    &self,
+                    args: &FindUsersArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<User>> {
                     let (w, b) = build_users_where(args);
                     query_rows(self, &format!("SELECT * FROM users{}", w), b, trx).await
                 }
-                async fn count_users(&self, args: &FindUsersArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_users(
+                    &self,
+                    args: &FindUsersArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_users_where(args);
                     query_count(self, &format!("SELECT COUNT(*) FROM users{}", w), b, trx).await
                 }
-                async fn find_certificates(&self, args: &FindCertificatesArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<Certificate>> {
+                async fn find_certificates(
+                    &self,
+                    args: &FindCertificatesArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<Certificate>> {
                     let (w, b) = build_certificates_where(args);
                     query_rows(self, &format!("SELECT * FROM certificates{}", w), b, trx).await
                 }
-                async fn count_certificates(&self, args: &FindCertificatesArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_certificates(
+                    &self,
+                    args: &FindCertificatesArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_certificates_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM certificates{}", w), b, trx).await
+                    query_count(
+                        self,
+                        &format!("SELECT COUNT(*) FROM certificates{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
-                async fn find_certificate_fields(&self, args: &FindCertificateFieldsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<CertificateField>> {
+                async fn find_certificate_fields(
+                    &self,
+                    args: &FindCertificateFieldsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<CertificateField>> {
                     let (w, b) = build_certificate_fields_where(args);
-                    query_rows(self, &format!("SELECT * FROM certificate_fields{}", w), b, trx).await
+                    query_rows(
+                        self,
+                        &format!("SELECT * FROM certificate_fields{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
-                async fn count_certificate_fields(&self, args: &FindCertificateFieldsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_certificate_fields(
+                    &self,
+                    args: &FindCertificateFieldsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_certificate_fields_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM certificate_fields{}", w), b, trx).await
+                    query_count(
+                        self,
+                        &format!("SELECT COUNT(*) FROM certificate_fields{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
-                async fn find_commissions(&self, args: &FindCommissionsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<Commission>> {
+                async fn find_commissions(
+                    &self,
+                    args: &FindCommissionsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<Commission>> {
                     let (w, b) = build_commissions_where(args);
                     query_rows(self, &format!("SELECT * FROM commissions{}", w), b, trx).await
                 }
-                async fn count_commissions(&self, args: &FindCommissionsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_commissions(
+                    &self,
+                    args: &FindCommissionsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_commissions_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM commissions{}", w), b, trx).await
+                    query_count(
+                        self,
+                        &format!("SELECT COUNT(*) FROM commissions{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
-                async fn find_monitor_events(&self, args: &FindMonitorEventsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<MonitorEvent>> {
+                async fn find_monitor_events(
+                    &self,
+                    args: &FindMonitorEventsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<MonitorEvent>> {
                     let (w, b) = build_monitor_events_where(args);
                     query_rows(self, &format!("SELECT * FROM monitor_events{}", w), b, trx).await
                 }
-                async fn count_monitor_events(&self, args: &FindMonitorEventsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_monitor_events(
+                    &self,
+                    args: &FindMonitorEventsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_monitor_events_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM monitor_events{}", w), b, trx).await
+                    query_count(
+                        self,
+                        &format!("SELECT COUNT(*) FROM monitor_events{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
-                async fn find_output_baskets(&self, args: &FindOutputBasketsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<OutputBasket>> {
+                async fn find_output_baskets(
+                    &self,
+                    args: &FindOutputBasketsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<OutputBasket>> {
                     let (w, b) = build_output_baskets_where(args);
                     query_rows(self, &format!("SELECT * FROM output_baskets{}", w), b, trx).await
                 }
-                async fn count_output_baskets(&self, args: &FindOutputBasketsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_output_baskets(
+                    &self,
+                    args: &FindOutputBasketsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_output_baskets_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM output_baskets{}", w), b, trx).await
+                    query_count(
+                        self,
+                        &format!("SELECT COUNT(*) FROM output_baskets{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
-                async fn find_output_tag_maps(&self, args: &FindOutputTagMapsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<OutputTagMap>> {
+                async fn find_output_tag_maps(
+                    &self,
+                    args: &FindOutputTagMapsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<OutputTagMap>> {
                     let (w, b) = build_output_tag_maps_where(args);
                     query_rows(self, &format!("SELECT * FROM output_tags_map{}", w), b, trx).await
                 }
-                async fn count_output_tag_maps(&self, args: &FindOutputTagMapsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_output_tag_maps(
+                    &self,
+                    args: &FindOutputTagMapsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_output_tag_maps_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM output_tags_map{}", w), b, trx).await
+                    query_count(
+                        self,
+                        &format!("SELECT COUNT(*) FROM output_tags_map{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
-                async fn find_output_tags(&self, args: &FindOutputTagsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<OutputTag>> {
+                async fn find_output_tags(
+                    &self,
+                    args: &FindOutputTagsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<OutputTag>> {
                     let (w, b) = build_output_tags_where(args);
                     query_rows(self, &format!("SELECT * FROM output_tags{}", w), b, trx).await
                 }
-                async fn count_output_tags(&self, args: &FindOutputTagsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_output_tags(
+                    &self,
+                    args: &FindOutputTagsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_output_tags_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM output_tags{}", w), b, trx).await
+                    query_count(
+                        self,
+                        &format!("SELECT COUNT(*) FROM output_tags{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
-                async fn find_outputs(&self, args: &FindOutputsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<Output>> {
+                async fn find_outputs(
+                    &self,
+                    args: &FindOutputsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<Output>> {
                     let (w, b) = build_outputs_where(args);
                     query_rows(self, &format!("SELECT * FROM outputs{}", w), b, trx).await
                 }
-                async fn count_outputs(&self, args: &FindOutputsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_outputs(
+                    &self,
+                    args: &FindOutputsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_outputs_where(args);
                     query_count(self, &format!("SELECT COUNT(*) FROM outputs{}", w), b, trx).await
                 }
-                async fn find_proven_txs(&self, args: &FindProvenTxsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<ProvenTx>> {
+                async fn find_proven_txs(
+                    &self,
+                    args: &FindProvenTxsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<ProvenTx>> {
                     let (w, b) = build_proven_txs_where(args);
                     query_rows(self, &format!("SELECT * FROM proven_txs{}", w), b, trx).await
                 }
-                async fn count_proven_txs(&self, args: &FindProvenTxsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_proven_txs(
+                    &self,
+                    args: &FindProvenTxsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_proven_txs_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM proven_txs{}", w), b, trx).await
+                    query_count(
+                        self,
+                        &format!("SELECT COUNT(*) FROM proven_txs{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
-                async fn find_proven_tx_reqs(&self, args: &FindProvenTxReqsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<ProvenTxReq>> {
+                async fn find_proven_tx_reqs(
+                    &self,
+                    args: &FindProvenTxReqsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<ProvenTxReq>> {
                     let (w, b) = build_proven_tx_reqs_where(args);
                     query_rows(self, &format!("SELECT * FROM proven_tx_reqs{}", w), b, trx).await
                 }
-                async fn count_proven_tx_reqs(&self, args: &FindProvenTxReqsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_proven_tx_reqs(
+                    &self,
+                    args: &FindProvenTxReqsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_proven_tx_reqs_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM proven_tx_reqs{}", w), b, trx).await
+                    query_count(
+                        self,
+                        &format!("SELECT COUNT(*) FROM proven_tx_reqs{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
-                async fn find_settings(&self, args: &FindSettingsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<Settings>> {
+                async fn find_settings(
+                    &self,
+                    args: &FindSettingsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<Settings>> {
                     let (w, b) = build_settings_where(args);
                     query_rows(self, &format!("SELECT * FROM settings{}", w), b, trx).await
                 }
-                async fn count_settings(&self, args: &FindSettingsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_settings(
+                    &self,
+                    args: &FindSettingsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_settings_where(args);
                     query_count(self, &format!("SELECT COUNT(*) FROM settings{}", w), b, trx).await
                 }
-                async fn find_sync_states(&self, args: &FindSyncStatesArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<SyncState>> {
+                async fn find_sync_states(
+                    &self,
+                    args: &FindSyncStatesArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<SyncState>> {
                     let (w, b) = build_sync_states_where(args);
                     query_rows(self, &format!("SELECT * FROM sync_states{}", w), b, trx).await
                 }
-                async fn count_sync_states(&self, args: &FindSyncStatesArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_sync_states(
+                    &self,
+                    args: &FindSyncStatesArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_sync_states_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM sync_states{}", w), b, trx).await
+                    query_count(
+                        self,
+                        &format!("SELECT COUNT(*) FROM sync_states{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
-                async fn find_transactions(&self, args: &FindTransactionsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<Transaction>> {
+                async fn find_transactions(
+                    &self,
+                    args: &FindTransactionsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<Transaction>> {
                     let (w, b) = build_transactions_where(args);
                     query_rows(self, &format!("SELECT * FROM transactions{}", w), b, trx).await
                 }
-                async fn count_transactions(&self, args: &FindTransactionsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_transactions(
+                    &self,
+                    args: &FindTransactionsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_transactions_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM transactions{}", w), b, trx).await
+                    query_count(
+                        self,
+                        &format!("SELECT COUNT(*) FROM transactions{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
-                async fn find_tx_label_maps(&self, args: &FindTxLabelMapsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<TxLabelMap>> {
+                async fn find_tx_label_maps(
+                    &self,
+                    args: &FindTxLabelMapsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<TxLabelMap>> {
                     let (w, b) = build_tx_label_maps_where(args);
                     query_rows(self, &format!("SELECT * FROM tx_labels_map{}", w), b, trx).await
                 }
-                async fn count_tx_label_maps(&self, args: &FindTxLabelMapsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_tx_label_maps(
+                    &self,
+                    args: &FindTxLabelMapsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_tx_label_maps_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM tx_labels_map{}", w), b, trx).await
+                    query_count(
+                        self,
+                        &format!("SELECT COUNT(*) FROM tx_labels_map{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
-                async fn find_tx_labels(&self, args: &FindTxLabelsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<TxLabel>> {
+                async fn find_tx_labels(
+                    &self,
+                    args: &FindTxLabelsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<TxLabel>> {
                     let (w, b) = build_tx_labels_where(args);
                     query_rows(self, &format!("SELECT * FROM tx_labels{}", w), b, trx).await
                 }
-                async fn count_tx_labels(&self, args: &FindTxLabelsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                async fn count_tx_labels(
+                    &self,
+                    args: &FindTxLabelsArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let (w, b) = build_tx_labels_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM tx_labels{}", w), b, trx).await
+                    query_count(
+                        self,
+                        &format!("SELECT COUNT(*) FROM tx_labels{}", w),
+                        b,
+                        trx,
+                    )
+                    .await
                 }
 
                 // For-user methods use JOIN queries with dialect-specific placeholders
-                async fn get_proven_txs_for_user(&self, args: &FindForUserSincePagedArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<ProvenTx>> {
+                async fn get_proven_txs_for_user(
+                    &self,
+                    args: &FindForUserSincePagedArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<ProvenTx>> {
                     let mut sql = format!(
                         "SELECT DISTINCT pt.* FROM proven_txs pt \
                          INNER JOIN transactions t ON t.provenTxId = pt.provenTxId \
-                         WHERE t.userId = {}", ph(1));
+                         WHERE t.userId = {}",
+                        ph(1)
+                    );
                     let mut binds = vec![BindVal::Int64(args.user_id)];
                     if let Some(v) = &args.since {
                         sql.push_str(&format!(" AND pt.updated_at >= {}", ph(2)));
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
-                    if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    }
                     query_rows(self, &sql, binds, trx).await
                 }
 
-                async fn get_proven_tx_reqs_for_user(&self, args: &FindForUserSincePagedArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<ProvenTxReq>> {
+                async fn get_proven_tx_reqs_for_user(
+                    &self,
+                    args: &FindForUserSincePagedArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<ProvenTxReq>> {
                     let mut sql = format!(
                         "SELECT DISTINCT ptr.* FROM proven_tx_reqs ptr \
                          INNER JOIN transactions t ON t.txid = ptr.txid \
-                         WHERE t.userId = {}", ph(1));
+                         WHERE t.userId = {}",
+                        ph(1)
+                    );
                     let mut binds = vec![BindVal::Int64(args.user_id)];
                     if let Some(v) = &args.since {
                         sql.push_str(&format!(" AND ptr.updated_at >= {}", ph(2)));
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
-                    if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    }
                     query_rows(self, &sql, binds, trx).await
                 }
 
-                async fn get_tx_label_maps_for_user(&self, args: &FindForUserSincePagedArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<TxLabelMap>> {
+                async fn get_tx_label_maps_for_user(
+                    &self,
+                    args: &FindForUserSincePagedArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<TxLabelMap>> {
                     let mut sql = format!(
                         "SELECT DISTINCT tlm.* FROM tx_labels_map tlm \
                          INNER JOIN tx_labels tl ON tl.txLabelId = tlm.txLabelId \
-                         WHERE tl.userId = {}", ph(1));
+                         WHERE tl.userId = {}",
+                        ph(1)
+                    );
                     let mut binds = vec![BindVal::Int64(args.user_id)];
                     if let Some(v) = &args.since {
                         sql.push_str(&format!(" AND tlm.updated_at >= {}", ph(2)));
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
-                    if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    }
                     query_rows(self, &sql, binds, trx).await
                 }
 
-                async fn get_output_tag_maps_for_user(&self, args: &FindForUserSincePagedArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<OutputTagMap>> {
+                async fn get_output_tag_maps_for_user(
+                    &self,
+                    args: &FindForUserSincePagedArgs,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<Vec<OutputTagMap>> {
                     let mut sql = format!(
                         "SELECT DISTINCT otm.* FROM output_tags_map otm \
                          INNER JOIN output_tags ot ON ot.outputTagId = otm.outputTagId \
-                         WHERE ot.userId = {}", ph(1));
+                         WHERE ot.userId = {}",
+                        ph(1)
+                    );
                     let mut binds = vec![BindVal::Int64(args.user_id)];
                     if let Some(v) = &args.since {
                         sql.push_str(&format!(" AND otm.updated_at >= {}", ph(2)));
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
-                    if let Some(paged) = &args.paged { sql.push_str(&WhereBuilder::build_limit_offset(paged)); }
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    }
                     query_rows(self, &sql, binds, trx).await
                 }
             }

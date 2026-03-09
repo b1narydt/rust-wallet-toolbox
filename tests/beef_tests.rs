@@ -69,15 +69,10 @@ mod beef_tests {
         let _user_id = insert_test_user(&storage, "02beef01").await;
 
         let known_txids = HashSet::new();
-        let result = get_valid_beef_for_txid(
-            &storage,
-            TXID_UNKNOWN,
-            TrustSelf::No,
-            &known_txids,
-            None,
-        )
-        .await
-        .unwrap();
+        let result =
+            get_valid_beef_for_txid(&storage, TXID_UNKNOWN, TrustSelf::No, &known_txids, None)
+                .await
+                .unwrap();
 
         assert!(result.is_none(), "unknown txid should return None");
     }
@@ -99,17 +94,14 @@ mod beef_tests {
         let mut known_txids = HashSet::new();
         known_txids.insert(TXID_A.to_string());
 
-        let result = get_valid_beef_for_txid(
-            &storage,
-            TXID_A,
-            TrustSelf::No,
-            &known_txids,
-            None,
-        )
-        .await
-        .unwrap();
+        let result = get_valid_beef_for_txid(&storage, TXID_A, TrustSelf::No, &known_txids, None)
+            .await
+            .unwrap();
 
-        assert!(result.is_some(), "known txid should produce BEEF bytes (txid-only entry)");
+        assert!(
+            result.is_some(),
+            "known txid should produce BEEF bytes (txid-only entry)"
+        );
         let bytes = result.unwrap();
         assert!(!bytes.is_empty(), "BEEF bytes should not be empty");
     }
@@ -135,7 +127,8 @@ mod beef_tests {
             merkle_path: vec![0x01, 0x02, 0x03],
             raw_tx: vec![0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
             block_hash: "00000000000000000004block".to_string(),
-            merkle_root: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string(),
+            merkle_root: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+                .to_string(),
         };
         storage.insert_proven_tx(&proven, None).await.unwrap();
 
@@ -143,18 +136,19 @@ mod beef_tests {
 
         // With TrustSelf::Known, proven txs are included as txid-only
         // (no raw_tx parsing, no merkle_path parsing needed)
-        let result = get_valid_beef_for_txid(
-            &storage,
-            TXID_B,
-            TrustSelf::Known,
-            &known_txids,
-            None,
-        )
-        .await;
+        let result =
+            get_valid_beef_for_txid(&storage, TXID_B, TrustSelf::Known, &known_txids, None).await;
 
-        assert!(result.is_ok(), "TrustSelf::Known should not fail: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "TrustSelf::Known should not fail: {:?}",
+            result.err()
+        );
         let bytes = result.unwrap();
-        assert!(bytes.is_some(), "should produce BEEF bytes for trusted proven tx");
+        assert!(
+            bytes.is_some(),
+            "should produce BEEF bytes for trusted proven tx"
+        );
         assert!(!bytes.unwrap().is_empty(), "BEEF bytes should not be empty");
     }
 
@@ -189,15 +183,9 @@ mod beef_tests {
         storage.insert_transaction(&tx, None).await.unwrap();
 
         let known_txids = HashSet::new();
-        let result = get_valid_beef_for_txid(
-            &storage,
-            TXID_C,
-            TrustSelf::No,
-            &known_txids,
-            None,
-        )
-        .await
-        .unwrap();
+        let result = get_valid_beef_for_txid(&storage, TXID_C, TrustSelf::No, &known_txids, None)
+            .await
+            .unwrap();
 
         assert!(
             result.is_none(),

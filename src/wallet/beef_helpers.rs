@@ -175,9 +175,7 @@ pub fn get_known_txids(beef: &mut BeefParty, new_known_txids: Option<&[String]>)
             if beef.beef.find_txid(txid).is_none() {
                 beef.beef
                     .txs
-                    .push(bsv::transaction::beef_tx::BeefTx::from_txid(
-                        txid.clone(),
-                    ));
+                    .push(bsv::transaction::beef_tx::BeefTx::from_txid(txid.clone()));
             }
         }
     }

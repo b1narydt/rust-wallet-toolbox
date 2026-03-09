@@ -10,9 +10,7 @@ use std::sync::Arc;
 
 use bsv::primitives::private_key::PrivateKey;
 use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
-use bsv::wallet::interfaces::{
-    CreateActionArgs, CreateActionOutput, CreateActionResult,
-};
+use bsv::wallet::interfaces::{CreateActionArgs, CreateActionOutput, CreateActionResult};
 use bsv::wallet::types::{Counterparty, CounterpartyType, Protocol};
 
 use crate::error::{WalletError, WalletResult};
@@ -194,14 +192,17 @@ impl WalletBuilder {
     /// Returns a `SetupWallet` with all components accessible.
     pub async fn build(self) -> WalletResult<SetupWallet> {
         // Validate required fields
-        let chain = self.chain.ok_or_else(|| {
-            WalletError::MissingParameter("chain".to_string())
-        })?;
-        let root_key = self.root_key.ok_or_else(|| {
-            WalletError::MissingParameter("root_key".to_string())
-        })?;
+        let chain = self
+            .chain
+            .ok_or_else(|| WalletError::MissingParameter("chain".to_string()))?;
+        let root_key = self
+            .root_key
+            .ok_or_else(|| WalletError::MissingParameter("root_key".to_string()))?;
         let storage_kind = self.storage_config.ok_or_else(|| {
-            WalletError::MissingParameter("storage (call with_sqlite, with_sqlite_memory, with_mysql, or with_postgres)".to_string())
+            WalletError::MissingParameter(
+                "storage (call with_sqlite, with_sqlite_memory, with_mysql, or with_postgres)"
+                    .to_string(),
+            )
         })?;
 
         // Create key deriver
@@ -223,9 +224,11 @@ impl WalletBuilder {
                     };
                     #[cfg(feature = "sqlite")]
                     {
-                        let storage =
-                            crate::storage::sqlx_impl::SqliteStorage::new_sqlite(config, chain.clone())
-                                .await?;
+                        let storage = crate::storage::sqlx_impl::SqliteStorage::new_sqlite(
+                            config,
+                            chain.clone(),
+                        )
+                        .await?;
                         Arc::new(storage)
                     }
                     #[cfg(not(feature = "sqlite"))]
@@ -244,9 +247,11 @@ impl WalletBuilder {
                     };
                     #[cfg(feature = "mysql")]
                     {
-                        let storage =
-                            crate::storage::sqlx_impl::MysqlStorage::new_mysql(config, chain.clone())
-                                .await?;
+                        let storage = crate::storage::sqlx_impl::MysqlStorage::new_mysql(
+                            config,
+                            chain.clone(),
+                        )
+                        .await?;
                         Arc::new(storage)
                     }
                     #[cfg(not(feature = "mysql"))]
@@ -265,9 +270,11 @@ impl WalletBuilder {
                     };
                     #[cfg(feature = "postgres")]
                     {
-                        let storage =
-                            crate::storage::sqlx_impl::PgStorage::new_postgres(config, chain.clone())
-                                .await?;
+                        let storage = crate::storage::sqlx_impl::PgStorage::new_postgres(
+                            config,
+                            chain.clone(),
+                        )
+                        .await?;
                         Arc::new(storage)
                     }
                     #[cfg(not(feature = "postgres"))]
@@ -502,13 +509,13 @@ pub async fn create_p2pkh_outputs_action(
 /// Parse a protocol ID string in "security_level.protocol_name" format.
 fn parse_protocol(protocol_id: &str) -> WalletResult<Protocol> {
     if let Some((level_str, name)) = protocol_id.split_once('.') {
-        let security_level: u8 = level_str.parse().map_err(|_| {
-            WalletError::InvalidParameter {
+        let security_level: u8 = level_str
+            .parse()
+            .map_err(|_| WalletError::InvalidParameter {
                 parameter: "protocol_id".to_string(),
                 must_be: "in format 'security_level.protocol_name' (e.g., '2.3241645161d8')"
                     .to_string(),
-            }
-        })?;
+            })?;
         Ok(Protocol {
             security_level,
             protocol: name.to_string(),
@@ -534,12 +541,12 @@ fn parse_counterparty(counterparty: &str) -> WalletResult<Counterparty> {
             public_key: None,
         }),
         hex_str => {
-            let pk = bsv::primitives::public_key::PublicKey::from_string(hex_str).map_err(
-                |e| WalletError::InvalidParameter {
+            let pk = bsv::primitives::public_key::PublicKey::from_string(hex_str).map_err(|e| {
+                WalletError::InvalidParameter {
                     parameter: "counterparty".to_string(),
                     must_be: format!("'self', 'anyone', or a valid public key hex: {}", e),
-                },
-            )?;
+                }
+            })?;
             Ok(Counterparty {
                 counterparty_type: CounterpartyType::Other,
                 public_key: Some(pk),
@@ -673,8 +680,7 @@ mod tests {
     fn test_get_lock_p2pkh_produces_25_byte_script() {
         let priv_key = PrivateKey::from_hex("aa").unwrap();
         let key_deriver = CachedKeyDeriver::new(priv_key, None);
-        let script =
-            get_lock_p2pkh(&key_deriver, "2.3241645161d8", "test_key", "self").unwrap();
+        let script = get_lock_p2pkh(&key_deriver, "2.3241645161d8", "test_key", "self").unwrap();
         // P2PKH locking script is always 25 bytes
         assert_eq!(script.len(), 25);
     }

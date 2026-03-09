@@ -2,9 +2,7 @@
 
 use bsv_wallet_toolbox::error::WalletError;
 use bsv_wallet_toolbox::services::service_collection::ServiceCollection;
-use bsv_wallet_toolbox::services::types::{
-    ServiceCall, MAX_CALL_HISTORY, MAX_RESET_COUNTS,
-};
+use bsv_wallet_toolbox::services::types::{ServiceCall, MAX_CALL_HISTORY, MAX_RESET_COUNTS};
 use chrono::Utc;
 
 // ---------------------------------------------------------------------------

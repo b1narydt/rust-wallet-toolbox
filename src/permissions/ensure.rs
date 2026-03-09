@@ -114,9 +114,7 @@ async fn resolve_permission(
                     ))
                 }
                 Some(Err(e)) => {
-                    return Err(bsv::wallet::error::WalletError::NotImplemented(
-                        e.clone(),
-                    ))
+                    return Err(bsv::wallet::error::WalletError::NotImplemented(e.clone()))
                 }
                 None => {
                     return Err(bsv::wallet::error::WalletError::NotImplemented(
@@ -270,8 +268,11 @@ pub async fn ensure_protocol_permission(
 
     // Build cache key and filters
     let details = format!("{}:{}:{}", protocol, security_level, effective_counterparty);
-    let cache_key =
-        PermissionCache::build_cache_key(&PermissionType::ProtocolPermission, &normalized, &details);
+    let cache_key = PermissionCache::build_cache_key(
+        &PermissionType::ProtocolPermission,
+        &normalized,
+        &details,
+    );
 
     let filters = TokenLookupFilters {
         protocol: Some(protocol.to_string()),
@@ -296,7 +297,10 @@ pub async fn ensure_protocol_permission(
         cert_fields: None,
         verifier: None,
         amount: None,
-        description: Some(format!("Protocol permission for \"{}\" ({})", protocol, usage_type)),
+        description: Some(format!(
+            "Protocol permission for \"{}\" ({})",
+            protocol, usage_type
+        )),
         labels: None,
         is_new_user: false,
     };
@@ -375,7 +379,10 @@ pub async fn ensure_basket_access(
         cert_fields: None,
         verifier: None,
         amount: None,
-        description: Some(format!("Basket access for \"{}\" ({})", basket_name, usage_type)),
+        description: Some(format!(
+            "Basket access for \"{}\" ({})",
+            basket_name, usage_type
+        )),
         labels: None,
         is_new_user: false,
     };

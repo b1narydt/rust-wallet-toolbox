@@ -129,14 +129,14 @@ impl WalletMonitorTask for TaskNewHeader {
 
         match &old_header {
             None => {
-                log = format!("first header: {} {}", current_header.height, current_header.hash);
+                log = format!(
+                    "first header: {} {}",
+                    current_header.height, current_header.hash
+                );
                 self.header = Some(current_header.clone());
             }
             Some(old) if old.height > current_header.height => {
-                log = format!(
-                    "old header: {} vs {}",
-                    current_header.height, old.height
-                );
+                log = format!("old header: {} vs {}", current_header.height, old.height);
                 // Revert to old header with the higher height
                 is_new = false;
             }

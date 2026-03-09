@@ -186,7 +186,11 @@ impl WalletMonitorTask for TaskReorg {
                         block_hash: Some(new_header.hash.clone()),
                         ..Default::default()
                     };
-                    match self.storage.update_proven_tx(ptx.proven_tx_id, &update, None).await {
+                    match self
+                        .storage
+                        .update_proven_tx(ptx.proven_tx_id, &update, None)
+                        .await
+                    {
                         Ok(_) => {
                             log.push_str(&format!(
                                 "    updated proof for txid {} to height {}\n",

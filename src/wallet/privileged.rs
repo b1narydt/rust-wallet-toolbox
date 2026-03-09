@@ -87,51 +87,69 @@ impl PrivilegedKeyManager for NoOpPrivilegedKeyManager {
         &self,
         _args: GetPublicKeyArgs,
     ) -> Result<GetPublicKeyResult, WalletError> {
-        Err(WalletError::NotImplemented("NoOpPrivilegedKeyManager".into()))
+        Err(WalletError::NotImplemented(
+            "NoOpPrivilegedKeyManager".into(),
+        ))
     }
 
     async fn encrypt(&self, _args: EncryptArgs) -> Result<EncryptResult, WalletError> {
-        Err(WalletError::NotImplemented("NoOpPrivilegedKeyManager".into()))
+        Err(WalletError::NotImplemented(
+            "NoOpPrivilegedKeyManager".into(),
+        ))
     }
 
     async fn decrypt(&self, _args: DecryptArgs) -> Result<DecryptResult, WalletError> {
-        Err(WalletError::NotImplemented("NoOpPrivilegedKeyManager".into()))
+        Err(WalletError::NotImplemented(
+            "NoOpPrivilegedKeyManager".into(),
+        ))
     }
 
     async fn create_hmac(&self, _args: CreateHmacArgs) -> Result<CreateHmacResult, WalletError> {
-        Err(WalletError::NotImplemented("NoOpPrivilegedKeyManager".into()))
+        Err(WalletError::NotImplemented(
+            "NoOpPrivilegedKeyManager".into(),
+        ))
     }
 
     async fn verify_hmac(&self, _args: VerifyHmacArgs) -> Result<VerifyHmacResult, WalletError> {
-        Err(WalletError::NotImplemented("NoOpPrivilegedKeyManager".into()))
+        Err(WalletError::NotImplemented(
+            "NoOpPrivilegedKeyManager".into(),
+        ))
     }
 
     async fn create_signature(
         &self,
         _args: CreateSignatureArgs,
     ) -> Result<CreateSignatureResult, WalletError> {
-        Err(WalletError::NotImplemented("NoOpPrivilegedKeyManager".into()))
+        Err(WalletError::NotImplemented(
+            "NoOpPrivilegedKeyManager".into(),
+        ))
     }
 
     async fn verify_signature(
         &self,
         _args: VerifySignatureArgs,
     ) -> Result<VerifySignatureResult, WalletError> {
-        Err(WalletError::NotImplemented("NoOpPrivilegedKeyManager".into()))
+        Err(WalletError::NotImplemented(
+            "NoOpPrivilegedKeyManager".into(),
+        ))
     }
 
     async fn reveal_counterparty_key_linkage(
         &self,
         _args: RevealCounterpartyKeyLinkageArgs,
     ) -> Result<RevealCounterpartyKeyLinkageResult, WalletError> {
-        Err(WalletError::NotImplemented("NoOpPrivilegedKeyManager".into()))
+        Err(WalletError::NotImplemented(
+            "NoOpPrivilegedKeyManager".into(),
+        ))
     }
 
     async fn reveal_specific_key_linkage(
         &self,
         _args: RevealSpecificKeyLinkageArgs,
     ) -> Result<RevealSpecificKeyLinkageResult, WalletError> {
-        Err(WalletError::NotImplemented("NoOpPrivilegedKeyManager".into()))
+        Err(WalletError::NotImplemented(
+            "NoOpPrivilegedKeyManager".into(),
+        ))
     }
 
     async fn destroy_key(&self) -> Result<(), WalletError> {

@@ -14,10 +14,10 @@ pub mod tx_size;
 pub use offset_key::generate_key_offset;
 /// Generate a random key offset for commission outputs.
 pub use offset_key::offset_pub_key;
-/// BRC-29 script template for authenticated P2PKH payments.
-pub use script_template_brc29::ScriptTemplateBRC29;
 /// Returns the BRC-29 Protocol struct.
 pub use script_template_brc29::brc29_protocol;
+/// BRC-29 script template for authenticated P2PKH payments.
+pub use script_template_brc29::ScriptTemplateBRC29;
 /// BRC-29 protocol identifier tuple (security_level, name).
 pub use script_template_brc29::BRC29_PROTOCOL_ID;
 /// Estimated byte length of a BRC-29 unlock script.

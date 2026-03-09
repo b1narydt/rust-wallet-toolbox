@@ -62,10 +62,7 @@ pub fn xor_keys(key1: &[u8], key2: &[u8]) -> Vec<u8> {
         key1.len(),
         key2.len()
     );
-    key1.iter()
-        .zip(key2.iter())
-        .map(|(a, b)| a ^ b)
-        .collect()
+    key1.iter().zip(key2.iter()).map(|(a, b)| a ^ b).collect()
 }
 
 /// Derive the identity public key from root key bytes.
@@ -168,13 +165,12 @@ fn restore_v1(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), WalletError> {
     let snapshot_key_bytes = &data[1..1 + SNAPSHOT_KEY_SIZE];
     let encrypted_payload = &data[1 + SNAPSHOT_KEY_SIZE..];
 
-    let sym_key = SymmetricKey::from_bytes(snapshot_key_bytes).map_err(|e| {
-        WalletError::Internal(format!("Invalid snapshot key: {}", e))
-    })?;
+    let sym_key = SymmetricKey::from_bytes(snapshot_key_bytes)
+        .map_err(|e| WalletError::Internal(format!("Invalid snapshot key: {}", e)))?;
 
-    let decrypted = sym_key.decrypt(encrypted_payload).map_err(|e| {
-        WalletError::Internal(format!("Snapshot decryption failed: {}", e))
-    })?;
+    let decrypted = sym_key
+        .decrypt(encrypted_payload)
+        .map_err(|e| WalletError::Internal(format!("Snapshot decryption failed: {}", e)))?;
 
     if decrypted.len() < ROOT_KEY_SIZE {
         return Err(WalletError::Internal(format!(
@@ -204,16 +200,16 @@ fn restore_v2(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), WalletError> {
     }
 
     let snapshot_key_bytes = &data[1..1 + SNAPSHOT_KEY_SIZE];
-    let active_profile_id = data[1 + SNAPSHOT_KEY_SIZE..1 + SNAPSHOT_KEY_SIZE + PROFILE_ID_SIZE].to_vec();
+    let active_profile_id =
+        data[1 + SNAPSHOT_KEY_SIZE..1 + SNAPSHOT_KEY_SIZE + PROFILE_ID_SIZE].to_vec();
     let encrypted_payload = &data[1 + SNAPSHOT_KEY_SIZE + PROFILE_ID_SIZE..];
 
-    let sym_key = SymmetricKey::from_bytes(snapshot_key_bytes).map_err(|e| {
-        WalletError::Internal(format!("Invalid snapshot key: {}", e))
-    })?;
+    let sym_key = SymmetricKey::from_bytes(snapshot_key_bytes)
+        .map_err(|e| WalletError::Internal(format!("Invalid snapshot key: {}", e)))?;
 
-    let decrypted = sym_key.decrypt(encrypted_payload).map_err(|e| {
-        WalletError::Internal(format!("Snapshot decryption failed: {}", e))
-    })?;
+    let decrypted = sym_key
+        .decrypt(encrypted_payload)
+        .map_err(|e| WalletError::Internal(format!("Snapshot decryption failed: {}", e)))?;
 
     if decrypted.len() < ROOT_KEY_SIZE {
         return Err(WalletError::Internal(format!(
@@ -291,13 +287,12 @@ pub fn save_snapshot(
 
     // Generate a random snapshot key and encrypt the payload.
     let snapshot_key_bytes = random_bytes(SNAPSHOT_KEY_SIZE);
-    let sym_key = SymmetricKey::from_bytes(&snapshot_key_bytes).map_err(|e| {
-        WalletError::Internal(format!("Failed to create snapshot key: {}", e))
-    })?;
+    let sym_key = SymmetricKey::from_bytes(&snapshot_key_bytes)
+        .map_err(|e| WalletError::Internal(format!("Failed to create snapshot key: {}", e)))?;
 
-    let encrypted = sym_key.encrypt(&payload).map_err(|e| {
-        WalletError::Internal(format!("Snapshot encryption failed: {}", e))
-    })?;
+    let encrypted = sym_key
+        .encrypt(&payload)
+        .map_err(|e| WalletError::Internal(format!("Snapshot encryption failed: {}", e)))?;
 
     // Assemble: version(1) + snapshot_key(32) + profile_id(16) + encrypted_payload
     let mut result = Vec::with_capacity(1 + SNAPSHOT_KEY_SIZE + PROFILE_ID_SIZE + encrypted.len());
@@ -348,7 +343,10 @@ mod tests {
 
         // Different salt produces different output
         let result3 = derive_key_from_password(password, b"different-salt", 100);
-        assert_ne!(result, result3, "Different salt should produce different key");
+        assert_ne!(
+            result, result3,
+            "Different salt should produce different key"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -368,8 +366,7 @@ mod tests {
         assert_eq!(snapshot[0], SNAPSHOT_VERSION_2);
 
         let (restored_root, restored_profile) =
-            restore_root_key_from_snapshot_bytes(&snapshot)
-                .expect("restore should succeed");
+            restore_root_key_from_snapshot_bytes(&snapshot).expect("restore should succeed");
 
         assert_eq!(restored_root, root_key, "root key should round-trip");
         assert_eq!(restored_profile, profile_id, "profile ID should round-trip");
@@ -385,8 +382,7 @@ mod tests {
             .expect("save_snapshot should succeed");
 
         let (restored_root, restored_profile) =
-            restore_root_key_from_snapshot_bytes(&snapshot)
-                .expect("restore should succeed");
+            restore_root_key_from_snapshot_bytes(&snapshot).expect("restore should succeed");
 
         assert_eq!(restored_root, root_key);
         assert_eq!(restored_profile, profile_id);
@@ -402,8 +398,7 @@ mod tests {
             .expect("save_snapshot should succeed");
 
         let (restored_root, restored_profile) =
-            restore_root_key_from_snapshot_bytes(&snapshot)
-                .expect("restore should succeed");
+            restore_root_key_from_snapshot_bytes(&snapshot).expect("restore should succeed");
 
         assert_eq!(restored_root, root_key);
         assert_eq!(restored_profile, profile_id);
@@ -431,8 +426,7 @@ mod tests {
         snapshot.extend_from_slice(&encrypted);
 
         let (restored_root, restored_profile) =
-            restore_root_key_from_snapshot_bytes(&snapshot)
-                .expect("V2 parsing should succeed");
+            restore_root_key_from_snapshot_bytes(&snapshot).expect("V2 parsing should succeed");
 
         assert_eq!(restored_root, root_key);
         assert_eq!(restored_profile, profile_id);
@@ -458,8 +452,7 @@ mod tests {
         snapshot.extend_from_slice(&encrypted);
 
         let (restored_root, restored_profile) =
-            restore_root_key_from_snapshot_bytes(&snapshot)
-                .expect("V1 parsing should succeed");
+            restore_root_key_from_snapshot_bytes(&snapshot).expect("V1 parsing should succeed");
 
         assert_eq!(restored_root, root_key);
         // V1 returns zero profile ID
@@ -510,14 +503,20 @@ mod tests {
     fn test_save_snapshot_invalid_root_key_size() {
         let result = save_snapshot(&[0u8; 16], &[0u8; 16], &[]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Root key must be 32 bytes"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Root key must be 32 bytes"));
     }
 
     #[test]
     fn test_save_snapshot_invalid_profile_id_size() {
         let result = save_snapshot(&[0u8; 32], &[0u8; 8], &[]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Active profile ID must be 16 bytes"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Active profile ID must be 16 bytes"));
     }
 
     #[test]

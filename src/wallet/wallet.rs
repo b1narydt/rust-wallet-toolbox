@@ -10,25 +10,24 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use bsv::primitives::public_key::PublicKey;
+use bsv::services::overlay_tools::LookupResolver;
 use bsv::transaction::beef_party::BeefParty;
 use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 use bsv::wallet::error::WalletError as SdkWalletError;
-use bsv::services::overlay_tools::LookupResolver;
 use bsv::wallet::interfaces::{
     AbortActionArgs, AbortActionResult, AcquireCertificateArgs, AcquisitionProtocol,
     AuthenticatedResult, Certificate, CreateActionArgs, CreateActionOptions, CreateActionResult,
     CreateHmacArgs, CreateHmacResult, CreateSignatureArgs, CreateSignatureResult, DecryptArgs,
-    DecryptResult, DiscoverByAttributesArgs, DiscoverByIdentityKeyArgs,
-    DiscoverCertificatesResult, EncryptArgs, EncryptResult, GetHeaderArgs, GetHeaderResult,
-    GetHeightResult, GetNetworkResult, GetPublicKeyArgs, GetPublicKeyResult, GetVersionResult,
-    InternalizeActionArgs, InternalizeActionResult, ListActionsArgs, ListActionsResult,
-    ListCertificatesArgs, ListCertificatesResult, ListOutputsArgs, ListOutputsResult, Network,
-    ProveCertificateArgs, ProveCertificateResult, RelinquishCertificateArgs,
-    RelinquishCertificateResult, RelinquishOutputArgs, RelinquishOutputResult,
-    RevealCounterpartyKeyLinkageArgs, RevealCounterpartyKeyLinkageResult,
-    RevealSpecificKeyLinkageArgs, RevealSpecificKeyLinkageResult, SignActionArgs,
-    SignActionOptions, SignActionResult, TrustSelf, VerifyHmacArgs, VerifyHmacResult,
-    VerifySignatureArgs, VerifySignatureResult, WalletInterface,
+    DecryptResult, DiscoverByAttributesArgs, DiscoverByIdentityKeyArgs, DiscoverCertificatesResult,
+    EncryptArgs, EncryptResult, GetHeaderArgs, GetHeaderResult, GetHeightResult, GetNetworkResult,
+    GetPublicKeyArgs, GetPublicKeyResult, GetVersionResult, InternalizeActionArgs,
+    InternalizeActionResult, ListActionsArgs, ListActionsResult, ListCertificatesArgs,
+    ListCertificatesResult, ListOutputsArgs, ListOutputsResult, Network, ProveCertificateArgs,
+    ProveCertificateResult, RelinquishCertificateArgs, RelinquishCertificateResult,
+    RelinquishOutputArgs, RelinquishOutputResult, RevealCounterpartyKeyLinkageArgs,
+    RevealCounterpartyKeyLinkageResult, RevealSpecificKeyLinkageArgs,
+    RevealSpecificKeyLinkageResult, SignActionArgs, SignActionOptions, SignActionResult, TrustSelf,
+    VerifyHmacArgs, VerifyHmacResult, VerifySignatureArgs, VerifySignatureResult, WalletInterface,
 };
 use bsv::wallet::proto_wallet::ProtoWallet;
 
@@ -44,9 +43,9 @@ use crate::types::Chain;
 use crate::wallet::privileged::PrivilegedKeyManager;
 use crate::wallet::settings::WalletSettingsManager;
 use crate::wallet::types::{
-    AdminStatsResult, AuthId, KeyPair, PendingSignAction, StorageIdentity, UtxoInfo,
-    WalletArgs, WalletBalance, SPEC_OP_FAILED_ACTIONS, SPEC_OP_INVALID_CHANGE,
-    SPEC_OP_NO_SEND_ACTIONS, SPEC_OP_SET_WALLET_CHANGE_PARAMS, SPEC_OP_WALLET_BALANCE,
+    AdminStatsResult, AuthId, KeyPair, PendingSignAction, StorageIdentity, UtxoInfo, WalletArgs,
+    WalletBalance, SPEC_OP_FAILED_ACTIONS, SPEC_OP_INVALID_CHANGE, SPEC_OP_NO_SEND_ACTIONS,
+    SPEC_OP_SET_WALLET_CHANGE_PARAMS, SPEC_OP_WALLET_BALANCE,
 };
 use crate::wallet::validation::validate_originator;
 
@@ -282,11 +281,9 @@ impl Wallet {
     pub async fn destroy(&self) -> Result<(), WalletError> {
         StorageProvider::destroy(&self.storage).await?;
         if let Some(ref pkm) = self.privileged_key_manager {
-            pkm.destroy_key()
-                .await
-                .map_err(|e| {
-                    WalletError::Internal(format!("Failed to destroy privileged key: {}", e))
-                })?;
+            pkm.destroy_key().await.map_err(|e| {
+                WalletError::Internal(format!("Failed to destroy privileged key: {}", e))
+            })?;
         }
         Ok(())
     }
@@ -300,10 +297,7 @@ impl Wallet {
     /// Routes through the specOp WalletBalance basket to sum all spendable
     /// outputs. If `args` is provided with a non-specOp basket, the specOp
     /// constant is pushed to tags to combine basket filtering with balance.
-    pub async fn balance(
-        &self,
-        args: Option<ListOutputsArgs>,
-    ) -> Result<u64, WalletError> {
+    pub async fn balance(&self, args: Option<ListOutputsArgs>) -> Result<u64, WalletError> {
         let args = match args {
             Some(mut a) => {
                 if a.basket != SPEC_OP_WALLET_BALANCE {
@@ -393,10 +387,8 @@ impl Wallet {
         let derivation_prefix = random_base64(8);
         let derivation_suffix = random_base64(8);
 
-        let template = ScriptTemplateBRC29::new(
-            derivation_prefix.clone(),
-            derivation_suffix.clone(),
-        );
+        let template =
+            ScriptTemplateBRC29::new(derivation_prefix.clone(), derivation_suffix.clone());
 
         // Lock with sender's private key to receiver's public key
         let sender_priv = self.key_deriver.root_key().clone();
@@ -429,7 +421,9 @@ impl Wallet {
                     labels: vec!["sweep".to_string()],
                     options: Some(CreateActionOptions {
                         randomize_outputs: bsv::wallet::types::BooleanDefaultTrue(Some(false)),
-                        accept_delayed_broadcast: bsv::wallet::types::BooleanDefaultTrue(Some(false)),
+                        accept_delayed_broadcast: bsv::wallet::types::BooleanDefaultTrue(Some(
+                            false,
+                        )),
                         ..Default::default()
                     }),
                     reference: None,
@@ -617,12 +611,9 @@ fn random_base64(n: usize) -> String {
 
 fn to_sdk_error(e: WalletError) -> SdkWalletError {
     match e {
-        WalletError::InvalidParameter { parameter, must_be } => {
-            SdkWalletError::InvalidParameter(format!(
-                "The {} parameter must be {}",
-                parameter, must_be
-            ))
-        }
+        WalletError::InvalidParameter { parameter, must_be } => SdkWalletError::InvalidParameter(
+            format!("The {} parameter must be {}", parameter, must_be),
+        ),
         WalletError::NotImplemented(msg) => SdkWalletError::NotImplemented(msg),
         WalletError::InvalidOperation(msg) => SdkWalletError::Internal(msg),
         _ => SdkWalletError::Internal(e.to_string()),
@@ -788,7 +779,9 @@ impl WalletInterface for Wallet {
                 "No privileged key manager configured".to_string(),
             ));
         }
-        self.proto.reveal_counterparty_key_linkage(args, originator).await
+        self.proto
+            .reveal_counterparty_key_linkage(args, originator)
+            .await
     }
 
     async fn reveal_specific_key_linkage(
@@ -807,7 +800,9 @@ impl WalletInterface for Wallet {
                 "No privileged key manager configured".to_string(),
             ));
         }
-        self.proto.reveal_specific_key_linkage(args, originator).await
+        self.proto
+            .reveal_specific_key_linkage(args, originator)
+            .await
     }
 
     // -----------------------------------------------------------------------
@@ -1234,16 +1229,14 @@ impl WalletInterface for Wallet {
         let auth = self.auth_id();
 
         let result = match args.acquisition_protocol {
-            AcquisitionProtocol::Direct => {
-                crate::wallet::certificates::acquire_direct_certificate(
-                    &self.storage,
-                    self,
-                    &auth,
-                    &args,
-                )
-                .await
-                .map_err(to_sdk_error)?
-            }
+            AcquisitionProtocol::Direct => crate::wallet::certificates::acquire_direct_certificate(
+                &self.storage,
+                self,
+                &auth,
+                &args,
+            )
+            .await
+            .map_err(to_sdk_error)?,
             AcquisitionProtocol::Issuance => {
                 crate::wallet::certificates::acquire_issuance_certificate(
                     &self.storage,
@@ -1257,12 +1250,10 @@ impl WalletInterface for Wallet {
         };
 
         // Convert AcquireCertificateResult to SDK Certificate
-        let subject_pk = PublicKey::from_string(&result.subject).map_err(|e| {
-            SdkWalletError::Internal(format!("Invalid subject key: {}", e))
-        })?;
-        let certifier_pk = PublicKey::from_string(&result.certifier).map_err(|e| {
-            SdkWalletError::Internal(format!("Invalid certifier key: {}", e))
-        })?;
+        let subject_pk = PublicKey::from_string(&result.subject)
+            .map_err(|e| SdkWalletError::Internal(format!("Invalid subject key: {}", e)))?;
+        let certifier_pk = PublicKey::from_string(&result.certifier)
+            .map_err(|e| SdkWalletError::Internal(format!("Invalid certifier key: {}", e)))?;
 
         Ok(Certificate {
             cert_type: args.cert_type,
@@ -1299,9 +1290,10 @@ impl WalletInterface for Wallet {
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_discover_by_identity_key_args(&args)?;
 
-        let resolver = self.lookup_resolver.as_ref().ok_or_else(|| {
-            SdkWalletError::Internal("No lookup resolver configured".to_string())
-        })?;
+        let resolver = self
+            .lookup_resolver
+            .as_ref()
+            .ok_or_else(|| SdkWalletError::Internal("No lookup resolver configured".to_string()))?;
 
         crate::wallet::discovery::discover_by_identity_key(
             &self.settings_manager,
@@ -1321,9 +1313,10 @@ impl WalletInterface for Wallet {
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_discover_by_attributes_args(&args)?;
 
-        let resolver = self.lookup_resolver.as_ref().ok_or_else(|| {
-            SdkWalletError::Internal("No lookup resolver configured".to_string())
-        })?;
+        let resolver = self
+            .lookup_resolver
+            .as_ref()
+            .ok_or_else(|| SdkWalletError::Internal("No lookup resolver configured".to_string()))?;
 
         crate::wallet::discovery::discover_by_attributes(
             &self.settings_manager,

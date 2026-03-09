@@ -168,18 +168,16 @@ pub async fn lookup_ump_token(
                 e
             );
             match parse_length_prefixed_fields(&script_bytes) {
-                Some(fields) if fields.len() >= 11 => {
-                    match decode_ump_token_fields(&fields) {
-                        Ok(mut token) => {
-                            token.current_outpoint = Some(output.outpoint.clone());
-                            Ok(Some(token))
-                        }
-                        Err(e2) => {
-                            warn!("Length-prefixed decode also failed: {}", e2);
-                            Ok(None)
-                        }
+                Some(fields) if fields.len() >= 11 => match decode_ump_token_fields(&fields) {
+                    Ok(mut token) => {
+                        token.current_outpoint = Some(output.outpoint.clone());
+                        Ok(Some(token))
                     }
-                }
+                    Err(e2) => {
+                        warn!("Length-prefixed decode also failed: {}", e2);
+                        Ok(None)
+                    }
+                },
                 _ => {
                     warn!("UMP token script could not be parsed in any format");
                     Ok(None)
@@ -234,7 +232,10 @@ pub async fn create_ump_token(
     // but PushDrop::lock() requires a PrivateKey directly. We use a deterministic
     // key derived from the presentation hash so the token can be spent later.
     let signing_key = PrivateKey::from_random().map_err(|e| {
-        WalletError::Internal(format!("Failed to generate signing key for UMP token: {}", e))
+        WalletError::Internal(format!(
+            "Failed to generate signing key for UMP token: {}",
+            e
+        ))
     })?;
 
     let pushdrop = PushDrop::new(fields, signing_key);
@@ -390,10 +391,7 @@ mod tests {
         assert_eq!(fields.len(), 12);
         let decoded = decode_ump_token_fields(&fields).unwrap();
         assert_eq!(decoded.password_salt, token.password_salt);
-        assert_eq!(
-            decoded.profiles_encrypted,
-            Some(vec![45, 46, 47, 48])
-        );
+        assert_eq!(decoded.profiles_encrypted, Some(vec![45, 46, 47, 48]));
     }
 
     #[test]

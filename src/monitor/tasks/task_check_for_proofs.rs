@@ -104,8 +104,8 @@ impl WalletMonitorTask for TaskCheckForProofs {
         let check_now = self.check_now.load(Ordering::SeqCst);
 
         // Also run if periodic timer has elapsed
-        let timer_expired =
-            self.trigger_msecs > 0 && now_msecs_since_epoch > self.last_run_msecs + self.trigger_msecs;
+        let timer_expired = self.trigger_msecs > 0
+            && now_msecs_since_epoch > self.last_run_msecs + self.trigger_msecs;
 
         if check_now || timer_expired {
             self.last_run_msecs = now_msecs_since_epoch;

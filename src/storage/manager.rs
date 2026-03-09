@@ -10,10 +10,9 @@ use async_trait::async_trait;
 use tracing::{info, warn};
 
 use bsv::wallet::interfaces::{
-    AbortActionArgs, AbortActionResult, ListActionsArgs, ListActionsResult,
-    ListCertificatesArgs, ListCertificatesResult, ListOutputsArgs, ListOutputsResult,
-    RelinquishCertificateArgs, RelinquishCertificateResult, RelinquishOutputArgs,
-    RelinquishOutputResult,
+    AbortActionArgs, AbortActionResult, ListActionsArgs, ListActionsResult, ListCertificatesArgs,
+    ListCertificatesResult, ListOutputsArgs, ListOutputsResult, RelinquishCertificateArgs,
+    RelinquishCertificateResult, RelinquishOutputArgs, RelinquishOutputResult,
 };
 
 use crate::error::{WalletError, WalletResult};
@@ -146,7 +145,14 @@ impl WalletStorageManager {
             .find_user_by_identity_key(auth, None)
             .await?
             .ok_or_else(|| WalletError::Unauthorized("User not found".to_string()))?;
-        list_actions::list_actions_with_spec_ops(self.active.as_ref(), auth, user.user_id, args, None).await
+        list_actions::list_actions_with_spec_ops(
+            self.active.as_ref(),
+            auth,
+            user.user_id,
+            args,
+            None,
+        )
+        .await
     }
 
     /// List wallet outputs with basket/tag filtering, pagination, and specOp support.
@@ -349,10 +355,12 @@ impl WalletStorageManager {
                 must_be: "a valid outpoint string (txid.vout)".to_string(),
             });
         }
-        let vout: i32 = parts[0].parse().map_err(|_| WalletError::InvalidParameter {
-            parameter: "output".to_string(),
-            must_be: "a valid outpoint string with numeric vout".to_string(),
-        })?;
+        let vout: i32 = parts[0]
+            .parse()
+            .map_err(|_| WalletError::InvalidParameter {
+                parameter: "output".to_string(),
+                must_be: "a valid outpoint string with numeric vout".to_string(),
+            })?;
         let txid = parts[1].to_string();
 
         let output = verify_one(
@@ -502,52 +510,116 @@ macro_rules! write_with_backup {
 
 #[async_trait]
 impl StorageReader for WalletStorageManager {
-    async fn find_users(&self, args: &FindUsersArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<User>> {
+    async fn find_users(
+        &self,
+        args: &FindUsersArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<User>> {
         self.active.find_users(args, trx).await
     }
-    async fn find_certificates(&self, args: &FindCertificatesArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<Certificate>> {
+    async fn find_certificates(
+        &self,
+        args: &FindCertificatesArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<Certificate>> {
         self.active.find_certificates(args, trx).await
     }
-    async fn find_certificate_fields(&self, args: &FindCertificateFieldsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<CertificateField>> {
+    async fn find_certificate_fields(
+        &self,
+        args: &FindCertificateFieldsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<CertificateField>> {
         self.active.find_certificate_fields(args, trx).await
     }
-    async fn find_commissions(&self, args: &FindCommissionsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<Commission>> {
+    async fn find_commissions(
+        &self,
+        args: &FindCommissionsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<Commission>> {
         self.active.find_commissions(args, trx).await
     }
-    async fn find_monitor_events(&self, args: &FindMonitorEventsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<MonitorEvent>> {
+    async fn find_monitor_events(
+        &self,
+        args: &FindMonitorEventsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<MonitorEvent>> {
         self.active.find_monitor_events(args, trx).await
     }
-    async fn find_output_baskets(&self, args: &FindOutputBasketsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<OutputBasket>> {
+    async fn find_output_baskets(
+        &self,
+        args: &FindOutputBasketsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<OutputBasket>> {
         self.active.find_output_baskets(args, trx).await
     }
-    async fn find_output_tag_maps(&self, args: &FindOutputTagMapsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<OutputTagMap>> {
+    async fn find_output_tag_maps(
+        &self,
+        args: &FindOutputTagMapsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<OutputTagMap>> {
         self.active.find_output_tag_maps(args, trx).await
     }
-    async fn find_output_tags(&self, args: &FindOutputTagsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<OutputTag>> {
+    async fn find_output_tags(
+        &self,
+        args: &FindOutputTagsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<OutputTag>> {
         self.active.find_output_tags(args, trx).await
     }
-    async fn find_outputs(&self, args: &FindOutputsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<Output>> {
+    async fn find_outputs(
+        &self,
+        args: &FindOutputsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<Output>> {
         self.active.find_outputs(args, trx).await
     }
-    async fn find_proven_txs(&self, args: &FindProvenTxsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<ProvenTx>> {
+    async fn find_proven_txs(
+        &self,
+        args: &FindProvenTxsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<ProvenTx>> {
         self.active.find_proven_txs(args, trx).await
     }
-    async fn find_proven_tx_reqs(&self, args: &FindProvenTxReqsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<ProvenTxReq>> {
+    async fn find_proven_tx_reqs(
+        &self,
+        args: &FindProvenTxReqsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<ProvenTxReq>> {
         self.active.find_proven_tx_reqs(args, trx).await
     }
-    async fn find_settings(&self, args: &FindSettingsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<Settings>> {
+    async fn find_settings(
+        &self,
+        args: &FindSettingsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<Settings>> {
         self.active.find_settings(args, trx).await
     }
-    async fn find_sync_states(&self, args: &FindSyncStatesArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<SyncState>> {
+    async fn find_sync_states(
+        &self,
+        args: &FindSyncStatesArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<SyncState>> {
         self.active.find_sync_states(args, trx).await
     }
-    async fn find_transactions(&self, args: &FindTransactionsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<Transaction>> {
+    async fn find_transactions(
+        &self,
+        args: &FindTransactionsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<Transaction>> {
         self.active.find_transactions(args, trx).await
     }
-    async fn find_tx_label_maps(&self, args: &FindTxLabelMapsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<TxLabelMap>> {
+    async fn find_tx_label_maps(
+        &self,
+        args: &FindTxLabelMapsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<TxLabelMap>> {
         self.active.find_tx_label_maps(args, trx).await
     }
-    async fn find_tx_labels(&self, args: &FindTxLabelsArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<TxLabel>> {
+    async fn find_tx_labels(
+        &self,
+        args: &FindTxLabelsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<TxLabel>> {
         self.active.find_tx_labels(args, trx).await
     }
 
@@ -555,63 +627,139 @@ impl StorageReader for WalletStorageManager {
     async fn count_users(&self, args: &FindUsersArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
         self.active.count_users(args, trx).await
     }
-    async fn count_certificates(&self, args: &FindCertificatesArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_certificates(
+        &self,
+        args: &FindCertificatesArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_certificates(args, trx).await
     }
-    async fn count_certificate_fields(&self, args: &FindCertificateFieldsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_certificate_fields(
+        &self,
+        args: &FindCertificateFieldsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_certificate_fields(args, trx).await
     }
-    async fn count_commissions(&self, args: &FindCommissionsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_commissions(
+        &self,
+        args: &FindCommissionsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_commissions(args, trx).await
     }
-    async fn count_monitor_events(&self, args: &FindMonitorEventsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_monitor_events(
+        &self,
+        args: &FindMonitorEventsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_monitor_events(args, trx).await
     }
-    async fn count_output_baskets(&self, args: &FindOutputBasketsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_output_baskets(
+        &self,
+        args: &FindOutputBasketsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_output_baskets(args, trx).await
     }
-    async fn count_output_tag_maps(&self, args: &FindOutputTagMapsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_output_tag_maps(
+        &self,
+        args: &FindOutputTagMapsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_output_tag_maps(args, trx).await
     }
-    async fn count_output_tags(&self, args: &FindOutputTagsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_output_tags(
+        &self,
+        args: &FindOutputTagsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_output_tags(args, trx).await
     }
-    async fn count_outputs(&self, args: &FindOutputsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_outputs(
+        &self,
+        args: &FindOutputsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_outputs(args, trx).await
     }
-    async fn count_proven_txs(&self, args: &FindProvenTxsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_proven_txs(
+        &self,
+        args: &FindProvenTxsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_proven_txs(args, trx).await
     }
-    async fn count_proven_tx_reqs(&self, args: &FindProvenTxReqsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_proven_tx_reqs(
+        &self,
+        args: &FindProvenTxReqsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_proven_tx_reqs(args, trx).await
     }
-    async fn count_settings(&self, args: &FindSettingsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_settings(
+        &self,
+        args: &FindSettingsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_settings(args, trx).await
     }
-    async fn count_sync_states(&self, args: &FindSyncStatesArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_sync_states(
+        &self,
+        args: &FindSyncStatesArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_sync_states(args, trx).await
     }
-    async fn count_transactions(&self, args: &FindTransactionsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_transactions(
+        &self,
+        args: &FindTransactionsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_transactions(args, trx).await
     }
-    async fn count_tx_label_maps(&self, args: &FindTxLabelMapsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_tx_label_maps(
+        &self,
+        args: &FindTxLabelMapsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_tx_label_maps(args, trx).await
     }
-    async fn count_tx_labels(&self, args: &FindTxLabelsArgs, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn count_tx_labels(
+        &self,
+        args: &FindTxLabelsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         self.active.count_tx_labels(args, trx).await
     }
 
     // For-user methods
-    async fn get_proven_txs_for_user(&self, args: &FindForUserSincePagedArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<ProvenTx>> {
+    async fn get_proven_txs_for_user(
+        &self,
+        args: &FindForUserSincePagedArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<ProvenTx>> {
         self.active.get_proven_txs_for_user(args, trx).await
     }
-    async fn get_proven_tx_reqs_for_user(&self, args: &FindForUserSincePagedArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<ProvenTxReq>> {
+    async fn get_proven_tx_reqs_for_user(
+        &self,
+        args: &FindForUserSincePagedArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<ProvenTxReq>> {
         self.active.get_proven_tx_reqs_for_user(args, trx).await
     }
-    async fn get_tx_label_maps_for_user(&self, args: &FindForUserSincePagedArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<TxLabelMap>> {
+    async fn get_tx_label_maps_for_user(
+        &self,
+        args: &FindForUserSincePagedArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<TxLabelMap>> {
         self.active.get_tx_label_maps_for_user(args, trx).await
     }
-    async fn get_output_tag_maps_for_user(&self, args: &FindForUserSincePagedArgs, trx: Option<&TrxToken>) -> WalletResult<Vec<OutputTagMap>> {
+    async fn get_output_tag_maps_for_user(
+        &self,
+        args: &FindForUserSincePagedArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<OutputTagMap>> {
         self.active.get_output_tag_maps_for_user(args, trx).await
     }
 }
@@ -638,96 +786,240 @@ impl StorageReaderWriter for WalletStorageManager {
     async fn insert_user(&self, user: &User, trx: Option<&TrxToken>) -> WalletResult<i64> {
         write_with_backup!(self, insert_user, user, trx)
     }
-    async fn insert_certificate(&self, certificate: &Certificate, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn insert_certificate(
+        &self,
+        certificate: &Certificate,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, insert_certificate, certificate, trx)
     }
-    async fn insert_certificate_field(&self, field: &CertificateField, trx: Option<&TrxToken>) -> WalletResult<()> {
+    async fn insert_certificate_field(
+        &self,
+        field: &CertificateField,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<()> {
         write_with_backup!(self, insert_certificate_field, field, trx)
     }
-    async fn insert_commission(&self, commission: &Commission, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn insert_commission(
+        &self,
+        commission: &Commission,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, insert_commission, commission, trx)
     }
-    async fn insert_monitor_event(&self, event: &MonitorEvent, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn insert_monitor_event(
+        &self,
+        event: &MonitorEvent,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, insert_monitor_event, event, trx)
     }
-    async fn insert_output_basket(&self, basket: &OutputBasket, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn insert_output_basket(
+        &self,
+        basket: &OutputBasket,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, insert_output_basket, basket, trx)
     }
-    async fn insert_output_tag(&self, tag: &OutputTag, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn insert_output_tag(
+        &self,
+        tag: &OutputTag,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, insert_output_tag, tag, trx)
     }
-    async fn insert_output_tag_map(&self, tag_map: &OutputTagMap, trx: Option<&TrxToken>) -> WalletResult<()> {
+    async fn insert_output_tag_map(
+        &self,
+        tag_map: &OutputTagMap,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<()> {
         write_with_backup!(self, insert_output_tag_map, tag_map, trx)
     }
     async fn insert_output(&self, output: &Output, trx: Option<&TrxToken>) -> WalletResult<i64> {
         write_with_backup!(self, insert_output, output, trx)
     }
-    async fn insert_proven_tx(&self, proven_tx: &ProvenTx, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn insert_proven_tx(
+        &self,
+        proven_tx: &ProvenTx,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, insert_proven_tx, proven_tx, trx)
     }
-    async fn insert_proven_tx_req(&self, proven_tx_req: &ProvenTxReq, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn insert_proven_tx_req(
+        &self,
+        proven_tx_req: &ProvenTxReq,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, insert_proven_tx_req, proven_tx_req, trx)
     }
-    async fn insert_transaction(&self, transaction: &Transaction, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn insert_transaction(
+        &self,
+        transaction: &Transaction,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, insert_transaction, transaction, trx)
     }
     async fn insert_tx_label(&self, label: &TxLabel, trx: Option<&TrxToken>) -> WalletResult<i64> {
         write_with_backup!(self, insert_tx_label, label, trx)
     }
-    async fn insert_tx_label_map(&self, label_map: &TxLabelMap, trx: Option<&TrxToken>) -> WalletResult<()> {
+    async fn insert_tx_label_map(
+        &self,
+        label_map: &TxLabelMap,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<()> {
         write_with_backup!(self, insert_tx_label_map, label_map, trx)
     }
-    async fn insert_sync_state(&self, sync_state: &SyncState, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn insert_sync_state(
+        &self,
+        sync_state: &SyncState,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, insert_sync_state, sync_state, trx)
     }
 
     // Update methods -- write to active, propagate to backup
-    async fn update_user(&self, id: i64, update: &UserPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_user(
+        &self,
+        id: i64,
+        update: &UserPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_user, id, update, trx)
     }
-    async fn update_certificate(&self, id: i64, update: &CertificatePartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_certificate(
+        &self,
+        id: i64,
+        update: &CertificatePartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_certificate, id, update, trx)
     }
-    async fn update_certificate_field(&self, certificate_id: i64, field_name: &str, update: &CertificateFieldPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
-        write_with_backup!(self, update_certificate_field, certificate_id, field_name, update, trx)
+    async fn update_certificate_field(
+        &self,
+        certificate_id: i64,
+        field_name: &str,
+        update: &CertificateFieldPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
+        write_with_backup!(
+            self,
+            update_certificate_field,
+            certificate_id,
+            field_name,
+            update,
+            trx
+        )
     }
-    async fn update_commission(&self, id: i64, update: &CommissionPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_commission(
+        &self,
+        id: i64,
+        update: &CommissionPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_commission, id, update, trx)
     }
-    async fn update_monitor_event(&self, id: i64, update: &MonitorEventPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_monitor_event(
+        &self,
+        id: i64,
+        update: &MonitorEventPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_monitor_event, id, update, trx)
     }
-    async fn update_output_basket(&self, id: i64, update: &OutputBasketPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_output_basket(
+        &self,
+        id: i64,
+        update: &OutputBasketPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_output_basket, id, update, trx)
     }
-    async fn update_output_tag(&self, id: i64, update: &OutputTagPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_output_tag(
+        &self,
+        id: i64,
+        update: &OutputTagPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_output_tag, id, update, trx)
     }
-    async fn update_output_tag_map(&self, output_id: i64, tag_id: i64, update: &OutputTagMapPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_output_tag_map(
+        &self,
+        output_id: i64,
+        tag_id: i64,
+        update: &OutputTagMapPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_output_tag_map, output_id, tag_id, update, trx)
     }
-    async fn update_output(&self, id: i64, update: &OutputPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_output(
+        &self,
+        id: i64,
+        update: &OutputPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_output, id, update, trx)
     }
-    async fn update_proven_tx(&self, id: i64, update: &ProvenTxPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_proven_tx(
+        &self,
+        id: i64,
+        update: &ProvenTxPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_proven_tx, id, update, trx)
     }
-    async fn update_proven_tx_req(&self, id: i64, update: &ProvenTxReqPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_proven_tx_req(
+        &self,
+        id: i64,
+        update: &ProvenTxReqPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_proven_tx_req, id, update, trx)
     }
-    async fn update_settings(&self, update: &SettingsPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_settings(
+        &self,
+        update: &SettingsPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_settings, update, trx)
     }
-    async fn update_transaction(&self, id: i64, update: &TransactionPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_transaction(
+        &self,
+        id: i64,
+        update: &TransactionPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_transaction, id, update, trx)
     }
-    async fn update_tx_label(&self, id: i64, update: &TxLabelPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_tx_label(
+        &self,
+        id: i64,
+        update: &TxLabelPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_tx_label, id, update, trx)
     }
-    async fn update_tx_label_map(&self, transaction_id: i64, tx_label_id: i64, update: &TxLabelMapPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
-        write_with_backup!(self, update_tx_label_map, transaction_id, tx_label_id, update, trx)
+    async fn update_tx_label_map(
+        &self,
+        transaction_id: i64,
+        tx_label_id: i64,
+        update: &TxLabelMapPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
+        write_with_backup!(
+            self,
+            update_tx_label_map,
+            transaction_id,
+            tx_label_id,
+            update,
+            trx
+        )
     }
-    async fn update_sync_state(&self, id: i64, update: &SyncStatePartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+    async fn update_sync_state(
+        &self,
+        id: i64,
+        update: &SyncStatePartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
         write_with_backup!(self, update_sync_state, id, update, trx)
     }
 
@@ -738,7 +1030,9 @@ impl StorageReaderWriter for WalletStorageManager {
         new_status: crate::status::TransactionStatus,
         trx: Option<&TrxToken>,
     ) -> WalletResult<()> {
-        self.active.update_transaction_status(txid, new_status, trx).await
+        self.active
+            .update_transaction_status(txid, new_status, trx)
+            .await
     }
 
     async fn update_transactions_status(
@@ -747,7 +1041,9 @@ impl StorageReaderWriter for WalletStorageManager {
         new_status: crate::status::TransactionStatus,
         trx: Option<&TrxToken>,
     ) -> WalletResult<()> {
-        self.active.update_transactions_status(txids, new_status, trx).await
+        self.active
+            .update_transactions_status(txids, new_status, trx)
+            .await
     }
 
     async fn update_proven_tx_req_with_new_proven_tx(
@@ -756,7 +1052,9 @@ impl StorageReaderWriter for WalletStorageManager {
         proven_tx: &crate::tables::ProvenTx,
         trx: Option<&TrxToken>,
     ) -> WalletResult<i64> {
-        self.active.update_proven_tx_req_with_new_proven_tx(req_id, proven_tx, trx).await
+        self.active
+            .update_proven_tx_req_with_new_proven_tx(req_id, proven_tx, trx)
+            .await
     }
 
     async fn review_status(

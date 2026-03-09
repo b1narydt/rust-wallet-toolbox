@@ -140,12 +140,10 @@ pub async fn discover_by_attributes(
     // Normalize attributes for stable cache key (sorted keys)
     let mut sorted_attrs: Vec<(&String, &String)> = args.attributes.iter().collect();
     sorted_attrs.sort_by_key(|(k, _)| k.as_str());
-    let attributes_key: serde_json::Value = serde_json::json!(
-        sorted_attrs
-            .iter()
-            .map(|(k, v)| ((*k).clone(), (*v).clone()))
-            .collect::<HashMap<String, String>>()
-    );
+    let attributes_key: serde_json::Value = serde_json::json!(sorted_attrs
+        .iter()
+        .map(|(k, v)| ((*k).clone(), (*v).clone()))
+        .collect::<HashMap<String, String>>());
 
     // Build cache key
     let cache_key = serde_json::json!({
@@ -204,9 +202,10 @@ async fn query_overlay(
         query,
     };
 
-    let answer = resolver.query(&question, None).await.map_err(|e| {
-        WalletError::Internal(format!("Overlay lookup failed: {}", e))
-    })?;
+    let answer = resolver
+        .query(&question, None)
+        .await
+        .map_err(|e| WalletError::Internal(format!("Overlay lookup failed: {}", e)))?;
 
     parse_results(answer).await
 }
@@ -224,17 +223,15 @@ async fn query_overlay(
 /// Errors on individual outputs are silently skipped (matching TS behavior).
 ///
 /// Ported from identityUtils.ts parseResults.
-async fn parse_results(
-    answer: LookupAnswer,
-) -> Result<Vec<VerifiableCertificate>, WalletError> {
+async fn parse_results(answer: LookupAnswer) -> Result<Vec<VerifiableCertificate>, WalletError> {
     let outputs = match answer {
         LookupAnswer::OutputList { outputs } => outputs,
         _ => return Ok(vec![]),
     };
 
     // Create an "anyone" ProtoWallet for decryption (matches TS: new ProtoWallet('anyone'))
-    let anyone_key = bsv::primitives::private_key::PrivateKey::from_hex("01")
-        .unwrap_or_else(|_| {
+    let anyone_key =
+        bsv::primitives::private_key::PrivateKey::from_hex("01").unwrap_or_else(|_| {
             // Fallback: use a deterministic key
             bsv::primitives::private_key::PrivateKey::from_hex(
                 "0000000000000000000000000000000000000000000000000000000000000001",
@@ -261,9 +258,8 @@ async fn parse_single_output(
     anyone_wallet: &ProtoWallet,
 ) -> Result<VerifiableCertificate, WalletError> {
     // Parse BEEF and extract the target transaction using SDK 0.1.6 into_transaction
-    let beef = Beef::from_binary(&mut std::io::Cursor::new(&output.beef)).map_err(|e| {
-        WalletError::Internal(format!("Failed to parse BEEF: {}", e))
-    })?;
+    let beef = Beef::from_binary(&mut std::io::Cursor::new(&output.beef))
+        .map_err(|e| WalletError::Internal(format!("Failed to parse BEEF: {}", e)))?;
 
     let tx = beef.into_transaction().map_err(|e| {
         WalletError::Internal(format!("Failed to get transaction from BEEF: {}", e))
@@ -274,10 +270,7 @@ async fn parse_single_output(
         .outputs
         .get(output.output_index as usize)
         .ok_or_else(|| {
-            WalletError::Internal(format!(
-                "Output index {} out of range",
-                output.output_index
-            ))
+            WalletError::Internal(format!("Output index {} out of range", output.output_index))
         })?;
 
     // Decode PushDrop fields from the locking script using SDK 0.1.6 PushDrop::decode
@@ -292,13 +285,11 @@ async fn parse_single_output(
     }
 
     // Parse JSON certificate from the first field
-    let cert_json = String::from_utf8(fields[0].clone()).map_err(|e| {
-        WalletError::Internal(format!("Invalid UTF-8 in certificate field: {}", e))
-    })?;
+    let cert_json = String::from_utf8(fields[0].clone())
+        .map_err(|e| WalletError::Internal(format!("Invalid UTF-8 in certificate field: {}", e)))?;
 
-    let cert_data: serde_json::Value = serde_json::from_str(&cert_json).map_err(|e| {
-        WalletError::Internal(format!("Invalid JSON in certificate: {}", e))
-    })?;
+    let cert_data: serde_json::Value = serde_json::from_str(&cert_json)
+        .map_err(|e| WalletError::Internal(format!("Invalid JSON in certificate: {}", e)))?;
 
     // Build the SDK Certificate from parsed JSON
     let cert_type_str = cert_data
@@ -337,12 +328,10 @@ async fn parse_single_output(
     let cert_type_bytes = base64_decode_to_32(cert_type_str);
     let serial_bytes = base64_decode_to_32(serial_str);
 
-    let subject = PublicKey::from_string(subject_str).map_err(|e| {
-        WalletError::Internal(format!("Invalid subject key: {}", e))
-    })?;
-    let certifier = PublicKey::from_string(certifier_str).map_err(|e| {
-        WalletError::Internal(format!("Invalid certifier key: {}", e))
-    })?;
+    let subject = PublicKey::from_string(subject_str)
+        .map_err(|e| WalletError::Internal(format!("Invalid subject key: {}", e)))?;
+    let certifier = PublicKey::from_string(certifier_str)
+        .map_err(|e| WalletError::Internal(format!("Invalid certifier key: {}", e)))?;
 
     let sdk_cert = SdkCertificate {
         cert_type: bsv::wallet::interfaces::CertificateType(cert_type_bytes),
@@ -361,18 +350,13 @@ async fn parse_single_output(
     let decrypted = verifiable
         .decrypt_fields(anyone_wallet)
         .await
-        .map_err(|e| {
-            WalletError::Internal(format!("Field decryption failed: {}", e))
-        })?;
+        .map_err(|e| WalletError::Internal(format!("Field decryption failed: {}", e)))?;
     verifiable.decrypted_fields = Some(decrypted);
 
     // Verify the certificate signature
-    let sig_valid =
-        AuthCertificate::verify(&verifiable.certificate, anyone_wallet)
-            .await
-            .map_err(|e| {
-                WalletError::Internal(format!("Certificate verification failed: {}", e))
-            })?;
+    let sig_valid = AuthCertificate::verify(&verifiable.certificate, anyone_wallet)
+        .await
+        .map_err(|e| WalletError::Internal(format!("Certificate verification failed: {}", e)))?;
 
     if !sig_valid {
         return Err(WalletError::Internal(
@@ -434,10 +418,7 @@ fn transform_verifiable_certificates_with_trust(
             certificate: cert.certificate.clone(),
             certifier_info: certifier_info.clone(),
             publicly_revealed_keyring: cert.keyring.clone(),
-            decrypted_fields: cert
-                .decrypted_fields
-                .clone()
-                .unwrap_or_default(),
+            decrypted_fields: cert.decrypted_fields.clone().unwrap_or_default(),
         };
 
         let group = identity_groups
@@ -510,10 +491,7 @@ fn sorted_certifier_keys(trust_settings: &TrustSettings) -> Vec<String> {
 }
 
 /// Get a cached query result if fresh.
-async fn get_cached_query(
-    cache: &OverlayCache,
-    key: &str,
-) -> Option<Vec<VerifiableCertificate>> {
+async fn get_cached_query(cache: &OverlayCache, key: &str) -> Option<Vec<VerifiableCertificate>> {
     let qc = cache.query_cache.lock().await;
     if let Some(entry) = qc.get(key) {
         if entry.expires_at > Instant::now() {
@@ -524,11 +502,7 @@ async fn get_cached_query(
 }
 
 /// Store a query result in the cache.
-async fn set_cached_query(
-    cache: &OverlayCache,
-    key: &str,
-    value: Vec<VerifiableCertificate>,
-) {
+async fn set_cached_query(cache: &OverlayCache, key: &str, value: Vec<VerifiableCertificate>) {
     let mut qc = cache.query_cache.lock().await;
     qc.insert(
         key.to_string(),

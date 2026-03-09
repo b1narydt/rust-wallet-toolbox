@@ -8,7 +8,6 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use crate::error::WalletError;
 use crate::monitor::helpers::now_msecs;
 use crate::monitor::task_trait::WalletMonitorTask;
@@ -19,6 +18,7 @@ use crate::storage::find_args::{FindProvenTxReqsArgs, Paged, ProvenTxReqPartial}
 use crate::storage::manager::WalletStorageManager;
 use crate::storage::traits::reader::StorageReader;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
+use async_trait::async_trait;
 
 /// Task that retries previously failed transactions.
 ///
@@ -36,10 +36,7 @@ pub struct TaskUnFail {
 
 impl TaskUnFail {
     /// Create a new unfail task.
-    pub fn new(
-        storage: WalletStorageManager,
-        services: Arc<dyn WalletServices>,
-    ) -> Self {
+    pub fn new(storage: WalletStorageManager, services: Arc<dyn WalletServices>) -> Self {
         Self {
             storage,
             services,
@@ -88,10 +85,7 @@ impl TaskUnFail {
                 // Parse notify JSON to get transactionIds
                 if let Ok(notify) = serde_json::from_str::<serde_json::Value>(&req.notify) {
                     if let Some(tx_ids) = notify.get("transactionIds").and_then(|v| v.as_array()) {
-                        let ids: Vec<i64> = tx_ids
-                            .iter()
-                            .filter_map(|v| v.as_i64())
-                            .collect();
+                        let ids: Vec<i64> = tx_ids.iter().filter_map(|v| v.as_i64()).collect();
                         if !ids.is_empty() {
                             let inner_pad = " ".repeat(indent + 2);
                             for id in &ids {
@@ -100,7 +94,9 @@ impl TaskUnFail {
                                     .update_transaction(
                                         *id,
                                         &crate::storage::find_args::TransactionPartial {
-                                            status: Some(crate::status::TransactionStatus::Unproven),
+                                            status: Some(
+                                                crate::status::TransactionStatus::Unproven,
+                                            ),
                                             ..Default::default()
                                         },
                                         None,
@@ -140,8 +136,7 @@ impl WalletMonitorTask for TaskUnFail {
 
     fn trigger(&mut self, now_msecs: u64) -> bool {
         self.check_now
-            || (self.trigger_msecs > 0
-                && now_msecs > self.last_run_msecs + self.trigger_msecs)
+            || (self.trigger_msecs > 0 && now_msecs > self.last_run_msecs + self.trigger_msecs)
     }
 
     async fn run_task(&mut self) -> Result<String, WalletError> {

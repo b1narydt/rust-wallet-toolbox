@@ -73,7 +73,9 @@ mod sqlite_impl {
             let created = user.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = user.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             exec_insert!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 &user.identity_key,
@@ -92,7 +94,9 @@ mod sqlite_impl {
             let created = cert.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = cert.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             exec_insert!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 cert.user_id,
@@ -117,7 +121,9 @@ mod sqlite_impl {
             let created = field.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = field.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             exec_insert_no_id!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 field.user_id,
@@ -135,10 +141,18 @@ mod sqlite_impl {
         ) -> WalletResult<i64> {
             let sql = "INSERT INTO commissions (created_at, updated_at, userId, transactionId, \
                        satoshis, keyOffset, isRedeemed, lockingScript) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-            let created = commission.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = commission.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let created = commission
+                .created_at
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string();
+            let updated = commission
+                .updated_at
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string();
             exec_insert!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 commission.user_id,
@@ -160,7 +174,9 @@ mod sqlite_impl {
             let created = event.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = event.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             exec_insert!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 &event.event,
@@ -179,7 +195,9 @@ mod sqlite_impl {
             let created = basket.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = basket.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             exec_insert!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 basket.user_id,
@@ -200,7 +218,9 @@ mod sqlite_impl {
             let created = tag.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = tag.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             exec_insert!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 tag.user_id,
@@ -214,12 +234,15 @@ mod sqlite_impl {
             tag_map: &OutputTagMap,
             trx: Option<&TrxToken>,
         ) -> WalletResult<()> {
-            let sql = "INSERT INTO output_tags_map (created_at, updated_at, outputTagId, outputId, \
+            let sql =
+                "INSERT INTO output_tags_map (created_at, updated_at, outputTagId, outputId, \
                        isDeleted) VALUES (?, ?, ?, ?, ?)";
             let created = tag_map.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = tag_map.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             exec_insert_no_id!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 tag_map.output_tag_id,
@@ -243,7 +266,9 @@ mod sqlite_impl {
             let updated = output.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let provided_by_str = output.provided_by.to_string();
             exec_insert!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 output.user_id,
@@ -282,7 +307,9 @@ mod sqlite_impl {
             let created = ptx.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = ptx.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             exec_insert!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 &ptx.txid,
@@ -307,7 +334,9 @@ mod sqlite_impl {
             let updated = req.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let status_str = req.status.to_string();
             exec_insert!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 req.proven_tx_id,
@@ -331,11 +360,19 @@ mod sqlite_impl {
             let sql = "INSERT INTO transactions (created_at, updated_at, userId, provenTxId, \
                        status, reference, isOutgoing, satoshis, description, version, lockTime, \
                        txid, inputBEEF, rawTx) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-            let created = transaction.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = transaction.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let created = transaction
+                .created_at
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string();
+            let updated = transaction
+                .updated_at
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string();
             let status_str = transaction.status.to_string();
             exec_insert!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 transaction.user_id,
@@ -363,7 +400,9 @@ mod sqlite_impl {
             let created = label.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = label.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             exec_insert!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 label.user_id,
@@ -382,7 +421,9 @@ mod sqlite_impl {
             let created = label_map.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = label_map.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             exec_insert_no_id!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 label_map.tx_label_id,
@@ -405,7 +446,9 @@ mod sqlite_impl {
             let status_str = ss.status.to_string();
             let when_str = ss.when.map(|w| w.format("%Y-%m-%d %H:%M:%S").to_string());
             exec_insert!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 ss.user_id,
@@ -433,7 +476,9 @@ mod sqlite_impl {
             let updated = settings.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let chain_str = settings.chain.to_string();
             exec_insert_no_id!(
-                self, sql, trx,
+                self,
+                sql,
+                trx,
                 created,
                 updated,
                 &settings.storage_identity_key,
@@ -507,122 +552,382 @@ mod mysql_insert_impl {
     }
 
     impl StorageSqlx<MySql> {
-        pub(crate) async fn insert_user_impl(&self, user: &User, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_user_impl(
+            &self,
+            user: &User,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO users (created_at, updated_at, identityKey, activeStorage) VALUES (?, ?, ?, ?)";
             let created = user.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = user.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_mysql!(self, sql, trx, created, updated, &user.identity_key, &user.active_storage)
+            exec_insert_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                &user.identity_key,
+                &user.active_storage
+            )
         }
 
-        pub(crate) async fn insert_certificate_impl(&self, cert: &Certificate, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_certificate_impl(
+            &self,
+            cert: &Certificate,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO certificates (created_at, updated_at, userId, type, serialNumber, certifier, subject, verifier, revocationOutpoint, signature, isDeleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             let created = cert.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = cert.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_mysql!(self, sql, trx, created, updated, cert.user_id, &cert.cert_type, &cert.serial_number, &cert.certifier, &cert.subject, &cert.verifier, &cert.revocation_outpoint, &cert.signature, cert.is_deleted)
+            exec_insert_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                cert.user_id,
+                &cert.cert_type,
+                &cert.serial_number,
+                &cert.certifier,
+                &cert.subject,
+                &cert.verifier,
+                &cert.revocation_outpoint,
+                &cert.signature,
+                cert.is_deleted
+            )
         }
 
-        pub(crate) async fn insert_certificate_field_impl(&self, field: &CertificateField, trx: Option<&TrxToken>) -> WalletResult<()> {
+        pub(crate) async fn insert_certificate_field_impl(
+            &self,
+            field: &CertificateField,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<()> {
             let sql = "INSERT INTO certificate_fields (created_at, updated_at, userId, certificateId, fieldName, fieldValue, masterKey) VALUES (?, ?, ?, ?, ?, ?, ?)";
             let created = field.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = field.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_no_id_mysql!(self, sql, trx, created, updated, field.user_id, field.certificate_id, &field.field_name, &field.field_value, &field.master_key)
+            exec_insert_no_id_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                field.user_id,
+                field.certificate_id,
+                &field.field_name,
+                &field.field_value,
+                &field.master_key
+            )
         }
 
-        pub(crate) async fn insert_commission_impl(&self, c: &Commission, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_commission_impl(
+            &self,
+            c: &Commission,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO commissions (created_at, updated_at, userId, transactionId, satoshis, keyOffset, isRedeemed, lockingScript) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
             let created = c.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = c.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_mysql!(self, sql, trx, created, updated, c.user_id, c.transaction_id, c.satoshis, &c.key_offset, c.is_redeemed, &c.locking_script)
+            exec_insert_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                c.user_id,
+                c.transaction_id,
+                c.satoshis,
+                &c.key_offset,
+                c.is_redeemed,
+                &c.locking_script
+            )
         }
 
-        pub(crate) async fn insert_monitor_event_impl(&self, e: &MonitorEvent, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_monitor_event_impl(
+            &self,
+            e: &MonitorEvent,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO monitor_events (created_at, updated_at, event, details) VALUES (?, ?, ?, ?)";
             let created = e.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = e.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             exec_insert_mysql!(self, sql, trx, created, updated, &e.event, &e.details)
         }
 
-        pub(crate) async fn insert_output_basket_impl(&self, b: &OutputBasket, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_output_basket_impl(
+            &self,
+            b: &OutputBasket,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO output_baskets (created_at, updated_at, userId, name, numberOfDesiredUTXOs, minimumDesiredUTXOValue, isDeleted) VALUES (?, ?, ?, ?, ?, ?, ?)";
             let created = b.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = b.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_mysql!(self, sql, trx, created, updated, b.user_id, &b.name, b.number_of_desired_utxos, b.minimum_desired_utxo_value, b.is_deleted)
+            exec_insert_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                b.user_id,
+                &b.name,
+                b.number_of_desired_utxos,
+                b.minimum_desired_utxo_value,
+                b.is_deleted
+            )
         }
 
-        pub(crate) async fn insert_output_tag_impl(&self, t: &OutputTag, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_output_tag_impl(
+            &self,
+            t: &OutputTag,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO output_tags (created_at, updated_at, userId, tag, isDeleted) VALUES (?, ?, ?, ?, ?)";
             let created = t.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = t.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_mysql!(self, sql, trx, created, updated, t.user_id, &t.tag, t.is_deleted)
+            exec_insert_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                t.user_id,
+                &t.tag,
+                t.is_deleted
+            )
         }
 
-        pub(crate) async fn insert_output_tag_map_impl(&self, m: &OutputTagMap, trx: Option<&TrxToken>) -> WalletResult<()> {
+        pub(crate) async fn insert_output_tag_map_impl(
+            &self,
+            m: &OutputTagMap,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<()> {
             let sql = "INSERT INTO output_tags_map (created_at, updated_at, outputTagId, outputId, isDeleted) VALUES (?, ?, ?, ?, ?)";
             let created = m.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = m.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_no_id_mysql!(self, sql, trx, created, updated, m.output_tag_id, m.output_id, m.is_deleted)
+            exec_insert_no_id_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                m.output_tag_id,
+                m.output_id,
+                m.is_deleted
+            )
         }
 
-        pub(crate) async fn insert_output_impl(&self, o: &Output, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_output_impl(
+            &self,
+            o: &Output,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO outputs (created_at, updated_at, userId, transactionId, basketId, spendable, change, vout, satoshis, providedBy, purpose, type, outputDescription, txid, senderIdentityKey, derivationPrefix, derivationSuffix, customInstructions, spentBy, sequenceNumber, spendingDescription, scriptLength, scriptOffset, lockingScript) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             let created = o.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = o.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let provided_by_str = o.provided_by.to_string();
-            exec_insert_mysql!(self, sql, trx, created, updated, o.user_id, o.transaction_id, o.basket_id, o.spendable, o.change, o.vout, o.satoshis, &provided_by_str, &o.purpose, &o.output_type, &o.output_description, &o.txid, &o.sender_identity_key, &o.derivation_prefix, &o.derivation_suffix, &o.custom_instructions, o.spent_by, o.sequence_number, &o.spending_description, o.script_length, o.script_offset, &o.locking_script)
+            exec_insert_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                o.user_id,
+                o.transaction_id,
+                o.basket_id,
+                o.spendable,
+                o.change,
+                o.vout,
+                o.satoshis,
+                &provided_by_str,
+                &o.purpose,
+                &o.output_type,
+                &o.output_description,
+                &o.txid,
+                &o.sender_identity_key,
+                &o.derivation_prefix,
+                &o.derivation_suffix,
+                &o.custom_instructions,
+                o.spent_by,
+                o.sequence_number,
+                &o.spending_description,
+                o.script_length,
+                o.script_offset,
+                &o.locking_script
+            )
         }
 
-        pub(crate) async fn insert_proven_tx_impl(&self, p: &ProvenTx, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_proven_tx_impl(
+            &self,
+            p: &ProvenTx,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO proven_txs (created_at, updated_at, txid, height, `index`, merklePath, rawTx, blockHash, merkleRoot) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
             let created = p.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = p.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_mysql!(self, sql, trx, created, updated, &p.txid, p.height, p.index, &p.merkle_path, &p.raw_tx, &p.block_hash, &p.merkle_root)
+            exec_insert_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                &p.txid,
+                p.height,
+                p.index,
+                &p.merkle_path,
+                &p.raw_tx,
+                &p.block_hash,
+                &p.merkle_root
+            )
         }
 
-        pub(crate) async fn insert_proven_tx_req_impl(&self, r: &ProvenTxReq, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_proven_tx_req_impl(
+            &self,
+            r: &ProvenTxReq,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO proven_tx_reqs (created_at, updated_at, provenTxId, status, attempts, notified, txid, batch, history, notify, rawTx, inputBEEF) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             let created = r.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = r.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let status_str = r.status.to_string();
-            exec_insert_mysql!(self, sql, trx, created, updated, r.proven_tx_id, &status_str, r.attempts, r.notified, &r.txid, &r.batch, &r.history, &r.notify, &r.raw_tx, &r.input_beef)
+            exec_insert_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                r.proven_tx_id,
+                &status_str,
+                r.attempts,
+                r.notified,
+                &r.txid,
+                &r.batch,
+                &r.history,
+                &r.notify,
+                &r.raw_tx,
+                &r.input_beef
+            )
         }
 
-        pub(crate) async fn insert_transaction_impl(&self, t: &crate::tables::Transaction, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_transaction_impl(
+            &self,
+            t: &crate::tables::Transaction,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO transactions (created_at, updated_at, userId, provenTxId, status, reference, isOutgoing, satoshis, description, version, lockTime, txid, inputBEEF, rawTx) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             let created = t.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = t.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let status_str = t.status.to_string();
-            exec_insert_mysql!(self, sql, trx, created, updated, t.user_id, t.proven_tx_id, &status_str, &t.reference, t.is_outgoing, t.satoshis, &t.description, t.version, t.lock_time, &t.txid, &t.input_beef, &t.raw_tx)
+            exec_insert_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                t.user_id,
+                t.proven_tx_id,
+                &status_str,
+                &t.reference,
+                t.is_outgoing,
+                t.satoshis,
+                &t.description,
+                t.version,
+                t.lock_time,
+                &t.txid,
+                &t.input_beef,
+                &t.raw_tx
+            )
         }
 
-        pub(crate) async fn insert_tx_label_impl(&self, l: &TxLabel, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_tx_label_impl(
+            &self,
+            l: &TxLabel,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO tx_labels (created_at, updated_at, userId, label, isDeleted) VALUES (?, ?, ?, ?, ?)";
             let created = l.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = l.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_mysql!(self, sql, trx, created, updated, l.user_id, &l.label, l.is_deleted)
+            exec_insert_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                l.user_id,
+                &l.label,
+                l.is_deleted
+            )
         }
 
-        pub(crate) async fn insert_tx_label_map_impl(&self, m: &TxLabelMap, trx: Option<&TrxToken>) -> WalletResult<()> {
+        pub(crate) async fn insert_tx_label_map_impl(
+            &self,
+            m: &TxLabelMap,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<()> {
             let sql = "INSERT INTO tx_labels_map (created_at, updated_at, txLabelId, transactionId, isDeleted) VALUES (?, ?, ?, ?, ?)";
             let created = m.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = m.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_no_id_mysql!(self, sql, trx, created, updated, m.tx_label_id, m.transaction_id, m.is_deleted)
+            exec_insert_no_id_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                m.tx_label_id,
+                m.transaction_id,
+                m.is_deleted
+            )
         }
 
-        pub(crate) async fn insert_sync_state_impl(&self, ss: &SyncState, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_sync_state_impl(
+            &self,
+            ss: &SyncState,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO sync_states (created_at, updated_at, userId, storageIdentityKey, storageName, status, init, refNum, syncMap, `when`, satoshis, errorLocal, errorOther) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             let created = ss.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = ss.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let status_str = ss.status.to_string();
             let when_str = ss.when.map(|w| w.format("%Y-%m-%d %H:%M:%S").to_string());
-            exec_insert_mysql!(self, sql, trx, created, updated, ss.user_id, &ss.storage_identity_key, &ss.storage_name, &status_str, ss.init, &ss.ref_num, &ss.sync_map, &when_str, ss.satoshis, &ss.error_local, &ss.error_other)
+            exec_insert_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                ss.user_id,
+                &ss.storage_identity_key,
+                &ss.storage_name,
+                &status_str,
+                ss.init,
+                &ss.ref_num,
+                &ss.sync_map,
+                &when_str,
+                ss.satoshis,
+                &ss.error_local,
+                &ss.error_other
+            )
         }
 
-        pub(crate) async fn insert_settings_impl(&self, s: &Settings, trx: Option<&TrxToken>) -> WalletResult<()> {
+        pub(crate) async fn insert_settings_impl(
+            &self,
+            s: &Settings,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<()> {
             let sql = "INSERT INTO settings (created_at, updated_at, storageIdentityKey, storageName, chain, dbtype, maxOutputScript) VALUES (?, ?, ?, ?, ?, ?, ?)";
             let created = s.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = s.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let chain_str = s.chain.to_string();
-            exec_insert_no_id_mysql!(self, sql, trx, created, updated, &s.storage_identity_key, &s.storage_name, &chain_str, &s.dbtype, s.max_output_script)
+            exec_insert_no_id_mysql!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                &s.storage_identity_key,
+                &s.storage_name,
+                &chain_str,
+                &s.dbtype,
+                s.max_output_script
+            )
         }
     }
 }
@@ -691,122 +996,382 @@ mod postgres_insert_impl {
     }
 
     impl StorageSqlx<Postgres> {
-        pub(crate) async fn insert_user_impl(&self, user: &User, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_user_impl(
+            &self,
+            user: &User,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO users (created_at, updated_at, identityKey, activeStorage) VALUES ($1, $2, $3, $4) RETURNING userId";
             let created = user.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = user.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_pg!(self, sql, trx, created, updated, &user.identity_key, &user.active_storage)
+            exec_insert_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                &user.identity_key,
+                &user.active_storage
+            )
         }
 
-        pub(crate) async fn insert_certificate_impl(&self, cert: &Certificate, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_certificate_impl(
+            &self,
+            cert: &Certificate,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO certificates (created_at, updated_at, userId, type, serialNumber, certifier, subject, verifier, revocationOutpoint, signature, isDeleted) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING certificateId";
             let created = cert.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = cert.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_pg!(self, sql, trx, created, updated, cert.user_id, &cert.cert_type, &cert.serial_number, &cert.certifier, &cert.subject, &cert.verifier, &cert.revocation_outpoint, &cert.signature, cert.is_deleted)
+            exec_insert_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                cert.user_id,
+                &cert.cert_type,
+                &cert.serial_number,
+                &cert.certifier,
+                &cert.subject,
+                &cert.verifier,
+                &cert.revocation_outpoint,
+                &cert.signature,
+                cert.is_deleted
+            )
         }
 
-        pub(crate) async fn insert_certificate_field_impl(&self, field: &CertificateField, trx: Option<&TrxToken>) -> WalletResult<()> {
+        pub(crate) async fn insert_certificate_field_impl(
+            &self,
+            field: &CertificateField,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<()> {
             let sql = "INSERT INTO certificate_fields (created_at, updated_at, userId, certificateId, fieldName, fieldValue, masterKey) VALUES ($1, $2, $3, $4, $5, $6, $7)";
             let created = field.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = field.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_no_id_pg!(self, sql, trx, created, updated, field.user_id, field.certificate_id, &field.field_name, &field.field_value, &field.master_key)
+            exec_insert_no_id_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                field.user_id,
+                field.certificate_id,
+                &field.field_name,
+                &field.field_value,
+                &field.master_key
+            )
         }
 
-        pub(crate) async fn insert_commission_impl(&self, c: &Commission, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_commission_impl(
+            &self,
+            c: &Commission,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO commissions (created_at, updated_at, userId, transactionId, satoshis, keyOffset, isRedeemed, lockingScript) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING commissionId";
             let created = c.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = c.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_pg!(self, sql, trx, created, updated, c.user_id, c.transaction_id, c.satoshis, &c.key_offset, c.is_redeemed, &c.locking_script)
+            exec_insert_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                c.user_id,
+                c.transaction_id,
+                c.satoshis,
+                &c.key_offset,
+                c.is_redeemed,
+                &c.locking_script
+            )
         }
 
-        pub(crate) async fn insert_monitor_event_impl(&self, e: &MonitorEvent, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_monitor_event_impl(
+            &self,
+            e: &MonitorEvent,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO monitor_events (created_at, updated_at, event, details) VALUES ($1, $2, $3, $4) RETURNING id";
             let created = e.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = e.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             exec_insert_pg!(self, sql, trx, created, updated, &e.event, &e.details)
         }
 
-        pub(crate) async fn insert_output_basket_impl(&self, b: &OutputBasket, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_output_basket_impl(
+            &self,
+            b: &OutputBasket,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO output_baskets (created_at, updated_at, userId, name, numberOfDesiredUTXOs, minimumDesiredUTXOValue, isDeleted) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING basketId";
             let created = b.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = b.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_pg!(self, sql, trx, created, updated, b.user_id, &b.name, b.number_of_desired_utxos, b.minimum_desired_utxo_value, b.is_deleted)
+            exec_insert_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                b.user_id,
+                &b.name,
+                b.number_of_desired_utxos,
+                b.minimum_desired_utxo_value,
+                b.is_deleted
+            )
         }
 
-        pub(crate) async fn insert_output_tag_impl(&self, t: &OutputTag, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_output_tag_impl(
+            &self,
+            t: &OutputTag,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO output_tags (created_at, updated_at, userId, tag, isDeleted) VALUES ($1, $2, $3, $4, $5) RETURNING outputTagId";
             let created = t.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = t.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_pg!(self, sql, trx, created, updated, t.user_id, &t.tag, t.is_deleted)
+            exec_insert_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                t.user_id,
+                &t.tag,
+                t.is_deleted
+            )
         }
 
-        pub(crate) async fn insert_output_tag_map_impl(&self, m: &OutputTagMap, trx: Option<&TrxToken>) -> WalletResult<()> {
+        pub(crate) async fn insert_output_tag_map_impl(
+            &self,
+            m: &OutputTagMap,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<()> {
             let sql = "INSERT INTO output_tags_map (created_at, updated_at, outputTagId, outputId, isDeleted) VALUES ($1, $2, $3, $4, $5)";
             let created = m.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = m.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_no_id_pg!(self, sql, trx, created, updated, m.output_tag_id, m.output_id, m.is_deleted)
+            exec_insert_no_id_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                m.output_tag_id,
+                m.output_id,
+                m.is_deleted
+            )
         }
 
-        pub(crate) async fn insert_output_impl(&self, o: &Output, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_output_impl(
+            &self,
+            o: &Output,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO outputs (created_at, updated_at, userId, transactionId, basketId, spendable, change, vout, satoshis, providedBy, purpose, type, outputDescription, txid, senderIdentityKey, derivationPrefix, derivationSuffix, customInstructions, spentBy, sequenceNumber, spendingDescription, scriptLength, scriptOffset, lockingScript) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) RETURNING outputId";
             let created = o.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = o.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let provided_by_str = o.provided_by.to_string();
-            exec_insert_pg!(self, sql, trx, created, updated, o.user_id, o.transaction_id, o.basket_id, o.spendable, o.change, o.vout, o.satoshis, &provided_by_str, &o.purpose, &o.output_type, &o.output_description, &o.txid, &o.sender_identity_key, &o.derivation_prefix, &o.derivation_suffix, &o.custom_instructions, o.spent_by, o.sequence_number, &o.spending_description, o.script_length, o.script_offset, &o.locking_script)
+            exec_insert_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                o.user_id,
+                o.transaction_id,
+                o.basket_id,
+                o.spendable,
+                o.change,
+                o.vout,
+                o.satoshis,
+                &provided_by_str,
+                &o.purpose,
+                &o.output_type,
+                &o.output_description,
+                &o.txid,
+                &o.sender_identity_key,
+                &o.derivation_prefix,
+                &o.derivation_suffix,
+                &o.custom_instructions,
+                o.spent_by,
+                o.sequence_number,
+                &o.spending_description,
+                o.script_length,
+                o.script_offset,
+                &o.locking_script
+            )
         }
 
-        pub(crate) async fn insert_proven_tx_impl(&self, p: &ProvenTx, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_proven_tx_impl(
+            &self,
+            p: &ProvenTx,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO proven_txs (created_at, updated_at, txid, height, \"index\", merklePath, rawTx, blockHash, merkleRoot) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING provenTxId";
             let created = p.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = p.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_pg!(self, sql, trx, created, updated, &p.txid, p.height, p.index, &p.merkle_path, &p.raw_tx, &p.block_hash, &p.merkle_root)
+            exec_insert_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                &p.txid,
+                p.height,
+                p.index,
+                &p.merkle_path,
+                &p.raw_tx,
+                &p.block_hash,
+                &p.merkle_root
+            )
         }
 
-        pub(crate) async fn insert_proven_tx_req_impl(&self, r: &ProvenTxReq, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_proven_tx_req_impl(
+            &self,
+            r: &ProvenTxReq,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO proven_tx_reqs (created_at, updated_at, provenTxId, status, attempts, notified, txid, batch, history, notify, rawTx, inputBEEF) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING provenTxReqId";
             let created = r.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = r.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let status_str = r.status.to_string();
-            exec_insert_pg!(self, sql, trx, created, updated, r.proven_tx_id, &status_str, r.attempts, r.notified, &r.txid, &r.batch, &r.history, &r.notify, &r.raw_tx, &r.input_beef)
+            exec_insert_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                r.proven_tx_id,
+                &status_str,
+                r.attempts,
+                r.notified,
+                &r.txid,
+                &r.batch,
+                &r.history,
+                &r.notify,
+                &r.raw_tx,
+                &r.input_beef
+            )
         }
 
-        pub(crate) async fn insert_transaction_impl(&self, t: &crate::tables::Transaction, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_transaction_impl(
+            &self,
+            t: &crate::tables::Transaction,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO transactions (created_at, updated_at, userId, provenTxId, status, reference, isOutgoing, satoshis, description, version, lockTime, txid, inputBEEF, rawTx) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING transactionId";
             let created = t.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = t.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let status_str = t.status.to_string();
-            exec_insert_pg!(self, sql, trx, created, updated, t.user_id, t.proven_tx_id, &status_str, &t.reference, t.is_outgoing, t.satoshis, &t.description, t.version, t.lock_time, &t.txid, &t.input_beef, &t.raw_tx)
+            exec_insert_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                t.user_id,
+                t.proven_tx_id,
+                &status_str,
+                &t.reference,
+                t.is_outgoing,
+                t.satoshis,
+                &t.description,
+                t.version,
+                t.lock_time,
+                &t.txid,
+                &t.input_beef,
+                &t.raw_tx
+            )
         }
 
-        pub(crate) async fn insert_tx_label_impl(&self, l: &TxLabel, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_tx_label_impl(
+            &self,
+            l: &TxLabel,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO tx_labels (created_at, updated_at, userId, label, isDeleted) VALUES ($1, $2, $3, $4, $5) RETURNING txLabelId";
             let created = l.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = l.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_pg!(self, sql, trx, created, updated, l.user_id, &l.label, l.is_deleted)
+            exec_insert_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                l.user_id,
+                &l.label,
+                l.is_deleted
+            )
         }
 
-        pub(crate) async fn insert_tx_label_map_impl(&self, m: &TxLabelMap, trx: Option<&TrxToken>) -> WalletResult<()> {
+        pub(crate) async fn insert_tx_label_map_impl(
+            &self,
+            m: &TxLabelMap,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<()> {
             let sql = "INSERT INTO tx_labels_map (created_at, updated_at, txLabelId, transactionId, isDeleted) VALUES ($1, $2, $3, $4, $5)";
             let created = m.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = m.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_no_id_pg!(self, sql, trx, created, updated, m.tx_label_id, m.transaction_id, m.is_deleted)
+            exec_insert_no_id_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                m.tx_label_id,
+                m.transaction_id,
+                m.is_deleted
+            )
         }
 
-        pub(crate) async fn insert_sync_state_impl(&self, ss: &SyncState, trx: Option<&TrxToken>) -> WalletResult<i64> {
+        pub(crate) async fn insert_sync_state_impl(
+            &self,
+            ss: &SyncState,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
             let sql = "INSERT INTO sync_states (created_at, updated_at, userId, storageIdentityKey, storageName, status, init, refNum, syncMap, \"when\", satoshis, errorLocal, errorOther) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING syncStateId";
             let created = ss.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = ss.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let status_str = ss.status.to_string();
             let when_str = ss.when.map(|w| w.format("%Y-%m-%d %H:%M:%S").to_string());
-            exec_insert_pg!(self, sql, trx, created, updated, ss.user_id, &ss.storage_identity_key, &ss.storage_name, &status_str, ss.init, &ss.ref_num, &ss.sync_map, &when_str, ss.satoshis, &ss.error_local, &ss.error_other)
+            exec_insert_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                ss.user_id,
+                &ss.storage_identity_key,
+                &ss.storage_name,
+                &status_str,
+                ss.init,
+                &ss.ref_num,
+                &ss.sync_map,
+                &when_str,
+                ss.satoshis,
+                &ss.error_local,
+                &ss.error_other
+            )
         }
 
-        pub(crate) async fn insert_settings_impl(&self, s: &Settings, trx: Option<&TrxToken>) -> WalletResult<()> {
+        pub(crate) async fn insert_settings_impl(
+            &self,
+            s: &Settings,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<()> {
             let sql = "INSERT INTO settings (created_at, updated_at, storageIdentityKey, storageName, chain, dbtype, maxOutputScript) VALUES ($1, $2, $3, $4, $5, $6, $7)";
             let created = s.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = s.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let chain_str = s.chain.to_string();
-            exec_insert_no_id_pg!(self, sql, trx, created, updated, &s.storage_identity_key, &s.storage_name, &chain_str, &s.dbtype, s.max_output_script)
+            exec_insert_no_id_pg!(
+                self,
+                sql,
+                trx,
+                created,
+                updated,
+                &s.storage_identity_key,
+                &s.storage_name,
+                &chain_str,
+                &s.dbtype,
+                s.max_output_script
+            )
         }
     }
 }

@@ -130,10 +130,7 @@ impl WalletMonitorTask for TaskFailAbandoned {
                     }
                 } else {
                     // Transaction has no txid -- fail by transaction_id reference
-                    log.push_str(&format!(
-                        "skipped tx id={} (no txid)\n",
-                        tx.transaction_id
-                    ));
+                    log.push_str(&format!("skipped tx id={} (no txid)\n", tx.transaction_id));
                 }
             }
 
@@ -169,8 +166,7 @@ mod tests {
     #[test]
     fn test_abandoned_cutoff_calculation() {
         let now = chrono::Utc::now().naive_utc();
-        let five_min_ago =
-            now - chrono::Duration::milliseconds(ONE_MINUTE as i64 * 5);
+        let five_min_ago = now - chrono::Duration::milliseconds(ONE_MINUTE as i64 * 5);
         assert!(five_min_ago < now);
     }
 }

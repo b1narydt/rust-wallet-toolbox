@@ -23,7 +23,10 @@ async fn test_full_wallet_lifecycle() {
 
     // 4. Verify balance after seeding
     let balance = wallet.balance(None).await.unwrap();
-    assert_eq!(balance, 5000, "Balance should be 5000 after seeding 5 x 1000");
+    assert_eq!(
+        balance, 5000,
+        "Balance should be 5000 after seeding 5 x 1000"
+    );
 
     // 5. Verify balance_and_utxos
     let wb = wallet.balance_and_utxos(None).await.unwrap();

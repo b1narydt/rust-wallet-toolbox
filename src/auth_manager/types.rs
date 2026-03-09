@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::wallet::privileged::PrivilegedKeyManager;
 use crate::wab_client::types::LinkedMethod;
+use crate::wallet::privileged::PrivilegedKeyManager;
 use crate::WalletError;
 use bsv::wallet::interfaces::WalletInterface;
 
@@ -69,9 +69,8 @@ pub type WalletBuilderFn = Box<
             Arc<dyn PrivilegedKeyManager>,
         ) -> Pin<
             Box<
-                dyn Future<
-                        Output = Result<Arc<dyn WalletInterface + Send + Sync>, WalletError>,
-                    > + Send,
+                dyn Future<Output = Result<Arc<dyn WalletInterface + Send + Sync>, WalletError>>
+                    + Send,
             >,
         > + Send
         + Sync,
@@ -113,8 +112,7 @@ mod tests {
         };
 
         let json = serde_json::to_vec(&snapshot).expect("serialize StateSnapshot");
-        let back: StateSnapshot =
-            serde_json::from_slice(&json).expect("deserialize StateSnapshot");
+        let back: StateSnapshot = serde_json::from_slice(&json).expect("deserialize StateSnapshot");
 
         assert_eq!(back.auth_state, AuthState::Authenticated);
         assert_eq!(back.presentation_key.as_deref(), Some("abcd1234"));

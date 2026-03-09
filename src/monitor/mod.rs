@@ -236,11 +236,7 @@ impl Monitor {
                     break;
                 }
                 if let Err(e) = task.async_setup().await {
-                    let details = format!(
-                        "monitor task {} asyncSetup error: {}",
-                        task.name(),
-                        e
-                    );
+                    let details = format!("monitor task {} asyncSetup error: {}", task.name(), e);
                     warn!("{}", details);
                     let _ = log_event(&storage, "error0", &details).await;
                 }
@@ -262,10 +258,7 @@ impl Monitor {
                             }
                         }
                         Err(_) => {
-                            let details = format!(
-                                "monitor task {} trigger panicked",
-                                task.name()
-                            );
+                            let details = format!("monitor task {} trigger panicked", task.name());
                             error!("{}", details);
                             let _ = log_event(&storage, "error0", &details).await;
                         }
@@ -286,11 +279,8 @@ impl Monitor {
                             }
                         }
                         Err(e) => {
-                            let details = format!(
-                                "monitor task {} runTask error: {}",
-                                task.name(),
-                                e
-                            );
+                            let details =
+                                format!("monitor task {} runTask error: {}", task.name(), e);
                             error!("{}", details);
                             let _ = log_event(&storage, "error1", &details).await;
                         }
@@ -329,11 +319,7 @@ impl Monitor {
         if self.run_async_setup {
             for task in self.tasks.iter_mut() {
                 if let Err(e) = task.async_setup().await {
-                    let details = format!(
-                        "monitor task {} asyncSetup error: {}",
-                        task.name(),
-                        e
-                    );
+                    let details = format!("monitor task {} asyncSetup error: {}", task.name(), e);
                     warn!("{}", details);
                     let _ = log_event(&self.storage, "error0", &details).await;
                 }
@@ -362,11 +348,7 @@ impl Monitor {
                     }
                 }
                 Err(e) => {
-                    let details = format!(
-                        "monitor task {} runTask error: {}",
-                        task.name(),
-                        e
-                    );
+                    let details = format!("monitor task {} runTask error: {}", task.name(), e);
                     error!("{}", details);
                     let _ = log_event(&self.storage, "error1", &details).await;
                 }
@@ -634,15 +616,15 @@ impl MonitorBuilder {
     /// Validates that required fields (chain, storage, services) are set.
     /// Constructs tasks based on the selected preset.
     pub fn build(mut self) -> WalletResult<Monitor> {
-        let chain = self.chain.ok_or_else(|| WalletError::MissingParameter(
-            "chain".to_string(),
-        ))?;
-        let storage = self.storage.ok_or_else(|| WalletError::MissingParameter(
-            "storage".to_string(),
-        ))?;
-        let services = self.services.ok_or_else(|| WalletError::MissingParameter(
-            "services".to_string(),
-        ))?;
+        let chain = self
+            .chain
+            .ok_or_else(|| WalletError::MissingParameter("chain".to_string()))?;
+        let storage = self
+            .storage
+            .ok_or_else(|| WalletError::MissingParameter("storage".to_string()))?;
+        let services = self
+            .services
+            .ok_or_else(|| WalletError::MissingParameter("services".to_string()))?;
 
         self.options.chain = chain.clone();
 
@@ -672,29 +654,23 @@ impl MonitorBuilder {
 
         if self.default_tasks || self.multi_user_tasks {
             // -- Plan 03 tasks --
-            tasks.push(Box::new(
-                tasks::task_clock::TaskClock::new(),
-            ));
+            tasks.push(Box::new(tasks::task_clock::TaskClock::new()));
             tasks.push(Box::new(
                 tasks::task_monitor_call_history::TaskMonitorCallHistory::new(services.clone()),
             ));
 
             // -- Plan 02 tasks --
-            tasks.push(Box::new(
-                tasks::task_new_header::TaskNewHeader::new(
-                    make_storage(&storage),
-                    services.clone(),
-                    check_now.clone(),
-                ),
-            ));
-            tasks.push(Box::new(
-                tasks::task_send_waiting::TaskSendWaiting::new(
-                    make_storage(&storage),
-                    services.clone(),
-                    chain.clone(),
-                    self.options.on_tx_broadcasted.clone(),
-                ),
-            ));
+            tasks.push(Box::new(tasks::task_new_header::TaskNewHeader::new(
+                make_storage(&storage),
+                services.clone(),
+                check_now.clone(),
+            )));
+            tasks.push(Box::new(tasks::task_send_waiting::TaskSendWaiting::new(
+                make_storage(&storage),
+                services.clone(),
+                chain.clone(),
+                self.options.on_tx_broadcasted.clone(),
+            )));
             tasks.push(Box::new(
                 tasks::task_check_for_proofs::TaskCheckForProofs::new(
                     make_storage(&storage),
@@ -705,61 +681,47 @@ impl MonitorBuilder {
                     self.options.on_tx_proven.clone(),
                 ),
             ));
-            tasks.push(Box::new(
-                tasks::task_check_no_sends::TaskCheckNoSends::new(
-                    make_storage(&storage),
-                    services.clone(),
-                    chain.clone(),
-                    unproven_limit,
-                ),
-            ));
+            tasks.push(Box::new(tasks::task_check_no_sends::TaskCheckNoSends::new(
+                make_storage(&storage),
+                services.clone(),
+                chain.clone(),
+                unproven_limit,
+            )));
             tasks.push(Box::new(
                 tasks::task_fail_abandoned::TaskFailAbandoned::new(
                     make_storage(&storage),
                     self.options.abandoned_msecs,
                 ),
             ));
-            tasks.push(Box::new(
-                tasks::task_unfail::TaskUnFail::new(
-                    make_storage(&storage),
-                    services.clone(),
-                ),
-            ));
-            tasks.push(Box::new(
-                tasks::task_review_status::TaskReviewStatus::new(
-                    make_storage(&storage),
-                ),
-            ));
-            tasks.push(Box::new(
-                tasks::task_reorg::TaskReorg::new(
-                    make_storage(&storage),
-                    services.clone(),
-                    deactivated_headers.clone(),
-                ),
-            ));
+            tasks.push(Box::new(tasks::task_unfail::TaskUnFail::new(
+                make_storage(&storage),
+                services.clone(),
+            )));
+            tasks.push(Box::new(tasks::task_review_status::TaskReviewStatus::new(
+                make_storage(&storage),
+            )));
+            tasks.push(Box::new(tasks::task_reorg::TaskReorg::new(
+                make_storage(&storage),
+                services.clone(),
+                deactivated_headers.clone(),
+            )));
 
             // Default tasks preset includes ARC SSE and SyncWhenIdle
             if self.default_tasks {
-                tasks.push(Box::new(
-                    tasks::task_arc_sse::TaskArcSse::new(
-                        make_storage(&storage),
-                        services.clone(),
-                        self.options.callback_token.clone(),
-                        self.options.on_tx_status_changed.clone(),
-                    ),
-                ));
-                tasks.push(Box::new(
-                    tasks::task_sync_when_idle::TaskSyncWhenIdle::new(),
-                ));
+                tasks.push(Box::new(tasks::task_arc_sse::TaskArcSse::new(
+                    make_storage(&storage),
+                    services.clone(),
+                    self.options.callback_token.clone(),
+                    self.options.on_tx_status_changed.clone(),
+                )));
+                tasks.push(Box::new(tasks::task_sync_when_idle::TaskSyncWhenIdle::new()));
             }
 
             // TaskPurge: present in presets with long interval (TS comments it out in default)
-            tasks.push(Box::new(
-                tasks::task_purge::TaskPurge::new(
-                    make_storage(&storage),
-                    default_purge_params(),
-                ),
-            ));
+            tasks.push(Box::new(tasks::task_purge::TaskPurge::new(
+                make_storage(&storage),
+                default_purge_params(),
+            )));
         }
 
         // Remove tasks by name
@@ -804,22 +766,41 @@ mod tests {
 
     #[async_trait::async_trait]
     impl WalletServices for MockServices {
-        fn chain(&self) -> Chain { self.chain.clone() }
-        async fn get_chain_tracker(&self) -> WalletResult<Box<dyn bsv::transaction::chain_tracker::ChainTracker>> {
+        fn chain(&self) -> Chain {
+            self.chain.clone()
+        }
+        async fn get_chain_tracker(
+            &self,
+        ) -> WalletResult<Box<dyn bsv::transaction::chain_tracker::ChainTracker>> {
             Err(WalletError::NotImplemented("mock".into()))
         }
-        async fn get_merkle_path(&self, _txid: &str, _use_next: bool) -> crate::services::types::GetMerklePathResult {
+        async fn get_merkle_path(
+            &self,
+            _txid: &str,
+            _use_next: bool,
+        ) -> crate::services::types::GetMerklePathResult {
             crate::services::types::GetMerklePathResult::default()
         }
-        async fn get_raw_tx(&self, _txid: &str, _use_next: bool) -> crate::services::types::GetRawTxResult {
+        async fn get_raw_tx(
+            &self,
+            _txid: &str,
+            _use_next: bool,
+        ) -> crate::services::types::GetRawTxResult {
             crate::services::types::GetRawTxResult::default()
         }
-        async fn post_beef(&self, _beef: &[u8], _txids: &[String]) -> Vec<crate::services::types::PostBeefResult> {
+        async fn post_beef(
+            &self,
+            _beef: &[u8],
+            _txids: &[String],
+        ) -> Vec<crate::services::types::PostBeefResult> {
             vec![]
         }
         async fn get_utxo_status(
-            &self, _output: &str, _output_format: Option<crate::services::types::GetUtxoStatusOutputFormat>,
-            _outpoint: Option<&str>, _use_next: bool,
+            &self,
+            _output: &str,
+            _output_format: Option<crate::services::types::GetUtxoStatusOutputFormat>,
+            _outpoint: Option<&str>,
+            _use_next: bool,
         ) -> crate::services::types::GetUtxoStatusResult {
             crate::services::types::GetUtxoStatusResult {
                 name: "mock".to_string(),
@@ -829,7 +810,11 @@ mod tests {
                 details: vec![],
             }
         }
-        async fn get_status_for_txids(&self, _txids: &[String], _use_next: bool) -> crate::services::types::GetStatusForTxidsResult {
+        async fn get_status_for_txids(
+            &self,
+            _txids: &[String],
+            _use_next: bool,
+        ) -> crate::services::types::GetStatusForTxidsResult {
             crate::services::types::GetStatusForTxidsResult {
                 name: "mock".to_string(),
                 status: "error".to_string(),
@@ -837,7 +822,11 @@ mod tests {
                 results: vec![],
             }
         }
-        async fn get_script_hash_history(&self, _hash: &str, _use_next: bool) -> crate::services::types::GetScriptHashHistoryResult {
+        async fn get_script_hash_history(
+            &self,
+            _hash: &str,
+            _use_next: bool,
+        ) -> crate::services::types::GetScriptHashHistoryResult {
             crate::services::types::GetScriptHashHistoryResult {
                 name: "mock".to_string(),
                 status: "error".to_string(),
@@ -851,23 +840,53 @@ mod tests {
         async fn get_header_for_height(&self, _height: u32) -> WalletResult<Vec<u8>> {
             Err(WalletError::NotImplemented("mock".into()))
         }
-        async fn get_height(&self) -> WalletResult<u32> { Ok(800000) }
-        async fn n_lock_time_is_final(&self, _input: crate::services::types::NLockTimeInput) -> WalletResult<bool> { Ok(true) }
-        async fn get_bsv_exchange_rate(&self) -> WalletResult<crate::services::types::BsvExchangeRate> {
+        async fn get_height(&self) -> WalletResult<u32> {
+            Ok(800000)
+        }
+        async fn n_lock_time_is_final(
+            &self,
+            _input: crate::services::types::NLockTimeInput,
+        ) -> WalletResult<bool> {
+            Ok(true)
+        }
+        async fn get_bsv_exchange_rate(
+            &self,
+        ) -> WalletResult<crate::services::types::BsvExchangeRate> {
             Err(WalletError::NotImplemented("mock".into()))
         }
-        async fn get_fiat_exchange_rate(&self, _currency: &str, _base: Option<&str>) -> WalletResult<f64> { Ok(1.0) }
-        async fn get_fiat_exchange_rates(&self, _target: &[String]) -> WalletResult<crate::services::types::FiatExchangeRates> {
+        async fn get_fiat_exchange_rate(
+            &self,
+            _currency: &str,
+            _base: Option<&str>,
+        ) -> WalletResult<f64> {
+            Ok(1.0)
+        }
+        async fn get_fiat_exchange_rates(
+            &self,
+            _target: &[String],
+        ) -> WalletResult<crate::services::types::FiatExchangeRates> {
             Err(WalletError::NotImplemented("mock".into()))
         }
-        fn get_services_call_history(&self, _reset: bool) -> crate::services::types::ServicesCallHistory {
+        fn get_services_call_history(
+            &self,
+            _reset: bool,
+        ) -> crate::services::types::ServicesCallHistory {
             crate::services::types::ServicesCallHistory { services: vec![] }
         }
         async fn get_beef_for_txid(&self, _txid: &str) -> WalletResult<bsv::transaction::Beef> {
             Err(WalletError::NotImplemented("mock".into()))
         }
-        fn hash_output_script(&self, _script: &[u8]) -> String { String::new() }
-        async fn is_utxo(&self, _locking_script: &[u8], _txid: &str, _vout: u32) -> WalletResult<bool> { Ok(false) }
+        fn hash_output_script(&self, _script: &[u8]) -> String {
+            String::new()
+        }
+        async fn is_utxo(
+            &self,
+            _locking_script: &[u8],
+            _txid: &str,
+            _vout: u32,
+        ) -> WalletResult<bool> {
+            Ok(false)
+        }
     }
 
     // We cannot easily construct a real WalletStorageManager in unit tests
@@ -888,9 +907,7 @@ mod tests {
         }
 
         // Missing storage (chain set but no storage)
-        let result = MonitorBuilder::new()
-            .chain(Chain::Test)
-            .build();
+        let result = MonitorBuilder::new().chain(Chain::Test).build();
         assert!(result.is_err());
         match result {
             Err(e) => assert!(

@@ -3,10 +3,10 @@
 //! A development-only auth method that generates OTP codes and logs them to
 //! the server console. Used for testing without Twilio or Persona dependencies.
 
-use async_trait::async_trait;
+use super::{post_auth_request, AuthMethodInteractor};
 use crate::error::WalletError;
 use crate::wab_client::types::{CompleteAuthResponse, StartAuthResponse};
-use super::{AuthMethodInteractor, post_auth_request};
+use async_trait::async_trait;
 
 /// Development console auth method interactor.
 ///
@@ -26,7 +26,14 @@ impl AuthMethodInteractor for DevConsoleInteractor {
         presentation_key: &str,
         payload: serde_json::Value,
     ) -> Result<StartAuthResponse, WalletError> {
-        post_auth_request(server_url, "/auth/start", self.method_type(), presentation_key, &payload).await
+        post_auth_request(
+            server_url,
+            "/auth/start",
+            self.method_type(),
+            presentation_key,
+            &payload,
+        )
+        .await
     }
 
     async fn complete_auth(
@@ -35,6 +42,13 @@ impl AuthMethodInteractor for DevConsoleInteractor {
         presentation_key: &str,
         payload: serde_json::Value,
     ) -> Result<CompleteAuthResponse, WalletError> {
-        post_auth_request(server_url, "/auth/complete", self.method_type(), presentation_key, &payload).await
+        post_auth_request(
+            server_url,
+            "/auth/complete",
+            self.method_type(),
+            presentation_key,
+            &payload,
+        )
+        .await
     }
 }

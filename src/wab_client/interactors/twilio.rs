@@ -3,10 +3,10 @@
 //! Client-side class that calls the WAB server for Twilio-based phone verification.
 //! The server sends an SMS code to the user's phone using Twilio Verify.
 
-use async_trait::async_trait;
+use super::{post_auth_request, AuthMethodInteractor};
 use crate::error::WalletError;
 use crate::wab_client::types::{CompleteAuthResponse, StartAuthResponse};
-use super::{AuthMethodInteractor, post_auth_request};
+use async_trait::async_trait;
 
 /// Twilio phone verification auth method interactor.
 ///
@@ -25,7 +25,14 @@ impl AuthMethodInteractor for TwilioPhoneInteractor {
         presentation_key: &str,
         payload: serde_json::Value,
     ) -> Result<StartAuthResponse, WalletError> {
-        post_auth_request(server_url, "/auth/start", self.method_type(), presentation_key, &payload).await
+        post_auth_request(
+            server_url,
+            "/auth/start",
+            self.method_type(),
+            presentation_key,
+            &payload,
+        )
+        .await
     }
 
     async fn complete_auth(
@@ -34,6 +41,13 @@ impl AuthMethodInteractor for TwilioPhoneInteractor {
         presentation_key: &str,
         payload: serde_json::Value,
     ) -> Result<CompleteAuthResponse, WalletError> {
-        post_auth_request(server_url, "/auth/complete", self.method_type(), presentation_key, &payload).await
+        post_auth_request(
+            server_url,
+            "/auth/complete",
+            self.method_type(),
+            presentation_key,
+            &payload,
+        )
+        .await
     }
 }

@@ -11,8 +11,8 @@ use bsv::wallet::interfaces::{
 use crate::error::WalletResult;
 use crate::status::TransactionStatus;
 use crate::storage::find_args::{
-    FindOutputsArgs, FindTransactionsArgs, FindTxLabelMapsArgs, FindTxLabelsArgs,
-    OutputPartial, Paged, TransactionPartial, TxLabelMapPartial, TxLabelPartial,
+    FindOutputsArgs, FindTransactionsArgs, FindTxLabelMapsArgs, FindTxLabelsArgs, OutputPartial,
+    Paged, TransactionPartial, TxLabelMapPartial, TxLabelPartial,
 };
 use crate::storage::traits::reader::StorageReader;
 use crate::storage::TrxToken;
@@ -36,9 +36,7 @@ pub enum ListActionsSpecOp {
 ///
 /// Returns (specOp, effective_labels). If no specOp is detected,
 /// `specOp` is `None` and labels are returned unchanged.
-pub fn resolve_list_actions_spec_op(
-    labels: &[String],
-) -> (Option<ListActionsSpecOp>, Vec<String>) {
+pub fn resolve_list_actions_spec_op(labels: &[String]) -> (Option<ListActionsSpecOp>, Vec<String>) {
     for label in labels {
         if label == SPEC_OP_NO_SEND_ACTIONS {
             let filtered: Vec<String> = labels
@@ -156,12 +154,8 @@ pub async fn list_actions_with_spec_ops(
 
     if let Some(op) = spec_op {
         return match op {
-            ListActionsSpecOp::NoSendActions => {
-                handle_no_send_actions(storage, user_id, trx).await
-            }
-            ListActionsSpecOp::FailedActions => {
-                handle_failed_actions(storage, user_id, trx).await
-            }
+            ListActionsSpecOp::NoSendActions => handle_no_send_actions(storage, user_id, trx).await,
+            ListActionsSpecOp::FailedActions => handle_failed_actions(storage, user_id, trx).await,
         };
     }
 
@@ -196,8 +190,7 @@ pub async fn list_actions(
     let include_labels = *args.include_labels;
     let include_inputs = *args.include_inputs;
     let include_outputs = *args.include_outputs;
-    let include_input_source_locking_scripts =
-        *args.include_input_source_locking_scripts;
+    let include_input_source_locking_scripts = *args.include_input_source_locking_scripts;
     let include_output_locking_scripts = *args.include_output_locking_scripts;
 
     let is_query_mode_all = matches!(args.label_query_mode, Some(QueryMode::All));
@@ -333,7 +326,8 @@ pub async fn list_actions(
         };
 
         if include_labels {
-            action.labels = get_labels_for_transaction(storage, user_id, tx.transaction_id, trx).await?;
+            action.labels =
+                get_labels_for_transaction(storage, user_id, tx.transaction_id, trx).await?;
         }
 
         if include_outputs {
@@ -387,11 +381,7 @@ pub async fn list_actions(
 
             for o in &inputs {
                 let ai = ActionInput {
-                    source_outpoint: format!(
-                        "{}.{}",
-                        o.txid.as_deref().unwrap_or(""),
-                        o.vout
-                    ),
+                    source_outpoint: format!("{}.{}", o.txid.as_deref().unwrap_or(""), o.vout),
                     source_satoshis: o.satoshis as u64,
                     source_locking_script: if include_input_source_locking_scripts {
                         o.locking_script.clone()

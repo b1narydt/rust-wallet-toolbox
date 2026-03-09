@@ -181,7 +181,10 @@ pub async fn create_permission_token(
     inner
         .create_action(
             CreateActionArgs {
-                description: format!("Grant {} permission", permission_type_label(request.permission_type)),
+                description: format!(
+                    "Grant {} permission",
+                    permission_type_label(request.permission_type)
+                ),
                 input_beef: None,
                 inputs: vec![],
                 outputs: vec![CreateActionOutput {
@@ -443,16 +446,12 @@ pub async fn lookup_permission_tokens(
                     let expiry_str =
                         decrypt_token_field(inner, &fields[1], admin_originator).await?;
                     let expiry_val = expiry_str.parse::<u64>().unwrap_or(0);
-                    let priv_str =
-                        decrypt_token_field(inner, &fields[2], admin_originator).await?;
+                    let priv_str = decrypt_token_field(inner, &fields[2], admin_originator).await?;
                     let privileged = priv_str == "true";
-                    let sec_str =
-                        decrypt_token_field(inner, &fields[3], admin_originator).await?;
+                    let sec_str = decrypt_token_field(inner, &fields[3], admin_originator).await?;
                     let sec_level = sec_str.parse::<u8>().unwrap_or(0);
-                    let proto =
-                        decrypt_token_field(inner, &fields[4], admin_originator).await?;
-                    let cpty =
-                        decrypt_token_field(inner, &fields[5], admin_originator).await?;
+                    let proto = decrypt_token_field(inner, &fields[4], admin_originator).await?;
+                    let cpty = decrypt_token_field(inner, &fields[5], admin_originator).await?;
 
                     if !filters.include_expired && is_token_expired(expiry_val) {
                         continue;
@@ -533,8 +532,7 @@ pub async fn lookup_permission_tokens(
                     let expiry_str =
                         decrypt_token_field(inner, &fields[1], admin_originator).await?;
                     let expiry_val = expiry_str.parse::<u64>().unwrap_or(0);
-                    let priv_str =
-                        decrypt_token_field(inner, &fields[2], admin_originator).await?;
+                    let priv_str = decrypt_token_field(inner, &fields[2], admin_originator).await?;
                     let privileged = priv_str == "true";
                     let cert_type_decoded =
                         decrypt_token_field(inner, &fields[3], admin_originator).await?;
@@ -578,8 +576,7 @@ pub async fn lookup_permission_tokens(
                     if norm_domain != normalized {
                         continue;
                     }
-                    let amt_str =
-                        decrypt_token_field(inner, &fields[1], admin_originator).await?;
+                    let amt_str = decrypt_token_field(inner, &fields[1], admin_originator).await?;
                     let authorized_amount = amt_str.parse::<u64>().unwrap_or(0);
 
                     let (txid, output_index) = parse_outpoint(&output.outpoint);
@@ -658,9 +655,14 @@ pub async fn revoke_all_for_originator(
     ];
 
     for (perm_type, basket) in types {
-        let tokens =
-            lookup_permission_tokens(inner, perm_type, originator, admin_originator, &empty_filters)
-                .await?;
+        let tokens = lookup_permission_tokens(
+            inner,
+            perm_type,
+            originator,
+            admin_originator,
+            &empty_filters,
+        )
+        .await?;
         for token in &tokens {
             if let Err(e) = revoke_permission_token(
                 inner,
@@ -977,10 +979,19 @@ mod tests {
 
     #[test]
     fn test_basket_for_type() {
-        assert_eq!(basket_for_type(PermissionType::ProtocolPermission), BASKET_DPACP);
+        assert_eq!(
+            basket_for_type(PermissionType::ProtocolPermission),
+            BASKET_DPACP
+        );
         assert_eq!(basket_for_type(PermissionType::BasketAccess), BASKET_DBAP);
-        assert_eq!(basket_for_type(PermissionType::CertificateAccess), BASKET_DCAP);
-        assert_eq!(basket_for_type(PermissionType::SpendingAuthorization), BASKET_DSAP);
+        assert_eq!(
+            basket_for_type(PermissionType::CertificateAccess),
+            BASKET_DCAP
+        );
+        assert_eq!(
+            basket_for_type(PermissionType::SpendingAuthorization),
+            BASKET_DSAP
+        );
     }
 
     #[test]

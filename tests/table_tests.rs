@@ -25,7 +25,8 @@ fn sample_user() -> User {
         created_at: sample_datetime(),
         updated_at: sample_datetime2(),
         user_id: 1,
-        identity_key: "02abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string(),
+        identity_key: "02abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+            .to_string(),
         active_storage: "03storagekey".to_string(),
     }
 }
@@ -33,10 +34,22 @@ fn sample_user() -> User {
 #[test]
 fn user_serializes_camel_case() {
     let json = serde_json::to_value(&sample_user()).unwrap();
-    assert!(json.get("userId").is_some(), "Expected camelCase key 'userId'");
-    assert!(json.get("identityKey").is_some(), "Expected camelCase key 'identityKey'");
-    assert!(json.get("activeStorage").is_some(), "Expected camelCase key 'activeStorage'");
-    assert!(json.get("user_id").is_none(), "snake_case key 'user_id' should not be present");
+    assert!(
+        json.get("userId").is_some(),
+        "Expected camelCase key 'userId'"
+    );
+    assert!(
+        json.get("identityKey").is_some(),
+        "Expected camelCase key 'identityKey'"
+    );
+    assert!(
+        json.get("activeStorage").is_some(),
+        "Expected camelCase key 'activeStorage'"
+    );
+    assert!(
+        json.get("user_id").is_none(),
+        "snake_case key 'user_id' should not be present"
+    );
 }
 
 #[test]
@@ -371,7 +384,10 @@ fn certificate_serializes_type_field() {
     let json = serde_json::to_value(&sample_certificate()).unwrap();
     // Should serialize as "type" not "certType"
     assert!(json.get("type").is_some(), "Expected 'type' key in JSON");
-    assert!(json.get("certType").is_none(), "Should not have 'certType' key");
+    assert!(
+        json.get("certType").is_none(),
+        "Should not have 'certType' key"
+    );
     assert!(json.get("serialNumber").is_some());
     assert!(json.get("revocationOutpoint").is_some());
 }

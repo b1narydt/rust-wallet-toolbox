@@ -82,11 +82,8 @@ pub trait WalletServices: Send + Sync {
     async fn get_bsv_exchange_rate(&self) -> WalletResult<BsvExchangeRate>;
 
     /// Returns the approximate exchange rate for a fiat currency pair.
-    async fn get_fiat_exchange_rate(
-        &self,
-        currency: &str,
-        base: Option<&str>,
-    ) -> WalletResult<f64>;
+    async fn get_fiat_exchange_rate(&self, currency: &str, base: Option<&str>)
+        -> WalletResult<f64>;
 
     /// Returns fiat exchange rates for the given target currencies.
     async fn get_fiat_exchange_rates(
@@ -104,12 +101,7 @@ pub trait WalletServices: Send + Sync {
     fn hash_output_script(&self, script: &[u8]) -> String;
 
     /// Checks if an output is currently an unspent UTXO.
-    async fn is_utxo(
-        &self,
-        locking_script: &[u8],
-        txid: &str,
-        vout: u32,
-    ) -> WalletResult<bool>;
+    async fn is_utxo(&self, locking_script: &[u8], txid: &str, vout: u32) -> WalletResult<bool>;
 }
 
 // ---------------------------------------------------------------------------

@@ -32,10 +32,8 @@ pub trait StorageActionProvider: StorageProvider {
         trx: Option<&TrxToken>,
     ) -> WalletResult<StorageCreateActionResult> {
         let (user, _) = self.find_or_insert_user(auth, trx).await?;
-        crate::storage::methods::create_action::storage_create_action(
-            self, user.user_id, args, trx,
-        )
-        .await
+        crate::storage::methods::create_action::storage_create_action(self, user.user_id, args, trx)
+            .await
     }
 
     /// Process (commit) a signed transaction to storage.
@@ -50,7 +48,10 @@ pub trait StorageActionProvider: StorageProvider {
     ) -> WalletResult<StorageProcessActionResult> {
         let (user, _) = self.find_or_insert_user(auth, trx).await?;
         crate::storage::methods::process_action::storage_process_action(
-            self, user.user_id, args, trx,
+            self,
+            user.user_id,
+            args,
+            trx,
         )
         .await
     }
@@ -69,7 +70,11 @@ pub trait StorageActionProvider: StorageProvider {
     ) -> WalletResult<StorageInternalizeActionResult> {
         let (user, _) = self.find_or_insert_user(auth, trx).await?;
         crate::storage::methods::internalize_action::storage_internalize_action(
-            self, services, user.user_id, args, trx,
+            self,
+            services,
+            user.user_id,
+            args,
+            trx,
         )
         .await
     }

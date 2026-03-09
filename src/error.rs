@@ -98,9 +98,7 @@ impl WalletError {
     /// Returns the WERR string code for wire serialization.
     pub fn code(&self) -> &'static str {
         match self {
-            Self::Internal(_) | Self::Sqlx(_) | Self::Io(_) | Self::SerdeJson(_) => {
-                "WERR_INTERNAL"
-            }
+            Self::Internal(_) | Self::Sqlx(_) | Self::Io(_) | Self::SerdeJson(_) => "WERR_INTERNAL",
             Self::InvalidParameter { .. } => "WERR_INVALID_PARAMETER",
             Self::NotImplemented(_) => "WERR_NOT_IMPLEMENTED",
             Self::BadRequest(_) => "WERR_BAD_REQUEST",

@@ -39,9 +39,7 @@ pub async fn process_sync_chunk(
 
     // 1. User
     if let Some(ref user) = chunk.user {
-        let (local_user, _created) = storage
-            .find_or_insert_user(&user.identity_key, trx)
-            .await?;
+        let (local_user, _created) = storage.find_or_insert_user(&user.identity_key, trx).await?;
 
         // Update if incoming is newer
         if user.updated_at > local_user.updated_at {
@@ -537,9 +535,7 @@ pub async fn process_sync_chunk(
     // 11. CertificateField (depends on Certificate)
     if let Some(certificate_fields) = chunk.certificate_fields {
         for incoming in &certificate_fields {
-            sync_map
-                .certificate_field
-                .update_max(incoming.updated_at);
+            sync_map.certificate_field.update_max(incoming.updated_at);
             sync_map.certificate_field.count += 1;
 
             // Remap certificate_id FK

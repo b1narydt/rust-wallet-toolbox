@@ -204,7 +204,10 @@ mod sync_tests {
         let result = process_sync_chunk(&target, chunk, &mut target_sync_map, None)
             .await
             .unwrap();
-        assert!(result.inserts > 0, "should have inserted at least one entity");
+        assert!(
+            result.inserts > 0,
+            "should have inserted at least one entity"
+        );
 
         // Verify transaction exists in target
         let target_txs = target
@@ -220,7 +223,11 @@ mod sync_tests {
             )
             .await
             .unwrap();
-        assert_eq!(target_txs.len(), 1, "transaction should be synced to target");
+        assert_eq!(
+            target_txs.len(),
+            1,
+            "transaction should be synced to target"
+        );
         assert_eq!(target_txs[0].reference, "ref-process-test");
     }
 
@@ -247,17 +254,14 @@ mod sync_tests {
             minimum_desired_utxo_value: 500,
             is_deleted: false,
         };
-        let _local_basket_id = target
-            .insert_output_basket(&basket, None)
-            .await
-            .unwrap();
+        let _local_basket_id = target.insert_output_basket(&basket, None).await.unwrap();
 
         // Build a SyncChunk with a newer version of the same basket
         let incoming_basket = OutputBasket {
             created_at: old_time,
             updated_at: new_time, // newer
-            basket_id: 99, // foreign ID
-            user_id: 77,   // foreign user_id
+            basket_id: 99,        // foreign ID
+            user_id: 77,          // foreign user_id
             name: "merge-basket".to_string(),
             number_of_desired_utxos: 20,
             minimum_desired_utxo_value: 2000,
@@ -306,7 +310,10 @@ mod sync_tests {
             .await
             .unwrap();
         assert_eq!(baskets.len(), 1);
-        assert!(baskets[0].is_deleted, "basket should be marked as deleted after merge");
+        assert!(
+            baskets[0].is_deleted,
+            "basket should be marked as deleted after merge"
+        );
 
         // Verify ID mapping
         let local_id = sync_map.output_basket.get_local_id(99);
@@ -329,7 +336,7 @@ mod sync_tests {
             created_at: now,
             updated_at: now,
             transaction_id: 100, // foreign ID
-            user_id: 77,        // foreign user_id
+            user_id: 77,         // foreign user_id
             proven_tx_id: None,
             status: TransactionStatus::Completed,
             reference: "ref-fk-remap".to_string(),
@@ -346,8 +353,8 @@ mod sync_tests {
         let foreign_output = Output {
             created_at: now,
             updated_at: now,
-            output_id: 200, // foreign ID
-            user_id: 77,    // foreign user_id
+            output_id: 200,      // foreign ID
+            user_id: 77,         // foreign user_id
             transaction_id: 100, // references foreign tx ID
             basket_id: None,
             spendable: true,
@@ -398,7 +405,9 @@ mod sync_tests {
         assert_eq!(result.inserts, 2, "should insert transaction + output");
 
         // Get the local transaction ID that was assigned
-        let local_tx_id = sync_map.transaction.get_local_id(100)
+        let local_tx_id = sync_map
+            .transaction
+            .get_local_id(100)
             .expect("foreign tx ID 100 should be mapped to local ID");
 
         // Get the local output and verify its transaction_id was remapped
@@ -417,7 +426,11 @@ mod sync_tests {
             .await
             .unwrap();
 
-        assert_eq!(local_outputs.len(), 1, "output should exist with remapped transaction_id");
+        assert_eq!(
+            local_outputs.len(),
+            1,
+            "output should exist with remapped transaction_id"
+        );
         assert_eq!(
             local_outputs[0].transaction_id, local_tx_id,
             "output's transaction_id should point to the local transaction"
@@ -426,6 +439,9 @@ mod sync_tests {
 
         // Verify output ID mapping
         let local_output_id = sync_map.output.get_local_id(200);
-        assert!(local_output_id.is_some(), "foreign output ID 200 should be mapped");
+        assert!(
+            local_output_id.is_some(),
+            "foreign output ID 200 should be mapped"
+        );
     }
 }

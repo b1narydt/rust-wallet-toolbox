@@ -15,8 +15,8 @@ pub mod traits;
 
 // Re-export key types for convenience.
 pub use find_args::*;
-pub use sqlx_impl::trx_token::TrxToken;
 pub use manager::WalletStorageManager;
+pub use sqlx_impl::trx_token::TrxToken;
 pub use traits::{StorageProvider, StorageReader, StorageReaderWriter};
 
 use crate::error::{WalletError, WalletResult};

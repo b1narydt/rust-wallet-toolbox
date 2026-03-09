@@ -1,11 +1,11 @@
 //! Individual monitor task implementations.
 
 // Plan 02 tasks:
-pub mod task_send_waiting;
 pub mod task_check_for_proofs;
+pub mod task_fail_abandoned;
 pub mod task_new_header;
 pub mod task_reorg;
-pub mod task_fail_abandoned;
+pub mod task_send_waiting;
 
 // Plan 03 tasks:
 pub mod task_arc_sse;

@@ -95,10 +95,7 @@ impl WalletSigner for DefaultWalletSigner {
         Ok(result)
     }
 
-    async fn sign_action(
-        &self,
-        args: ValidSignActionArgs,
-    ) -> WalletResult<SignerSignActionResult> {
+    async fn sign_action(&self, args: ValidSignActionArgs) -> WalletResult<SignerSignActionResult> {
         // Look up the pending sign action
         let pending = {
             let mut map = self.pending_sign_actions.lock().await;
@@ -137,10 +134,7 @@ impl WalletSigner for DefaultWalletSigner {
         .await
     }
 
-    async fn abort_action(
-        &self,
-        args: ValidAbortActionArgs,
-    ) -> WalletResult<AbortActionResult> {
+    async fn abort_action(&self, args: ValidAbortActionArgs) -> WalletResult<AbortActionResult> {
         // Remove from in-memory pending map if present
         {
             let mut map = self.pending_sign_actions.lock().await;

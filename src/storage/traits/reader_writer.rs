@@ -36,11 +36,7 @@ pub trait StorageReaderWriter: StorageReader {
     // -----------------------------------------------------------------------
 
     /// Insert a user and return the new user_id.
-    async fn insert_user(
-        &self,
-        user: &User,
-        trx: Option<&TrxToken>,
-    ) -> WalletResult<i64>;
+    async fn insert_user(&self, user: &User, trx: Option<&TrxToken>) -> WalletResult<i64>;
 
     /// Insert a certificate and return the new certificate_id.
     async fn insert_certificate(
@@ -78,11 +74,8 @@ pub trait StorageReaderWriter: StorageReader {
     ) -> WalletResult<i64>;
 
     /// Insert an output tag and return the new output_tag_id.
-    async fn insert_output_tag(
-        &self,
-        tag: &OutputTag,
-        trx: Option<&TrxToken>,
-    ) -> WalletResult<i64>;
+    async fn insert_output_tag(&self, tag: &OutputTag, trx: Option<&TrxToken>)
+        -> WalletResult<i64>;
 
     /// Insert an output tag map entry.
     async fn insert_output_tag_map(
@@ -92,11 +85,7 @@ pub trait StorageReaderWriter: StorageReader {
     ) -> WalletResult<()>;
 
     /// Insert an output and return the new output_id.
-    async fn insert_output(
-        &self,
-        output: &Output,
-        trx: Option<&TrxToken>,
-    ) -> WalletResult<i64>;
+    async fn insert_output(&self, output: &Output, trx: Option<&TrxToken>) -> WalletResult<i64>;
 
     /// Insert a proven transaction and return the new proven_tx_id.
     async fn insert_proven_tx(
@@ -120,11 +109,7 @@ pub trait StorageReaderWriter: StorageReader {
     ) -> WalletResult<i64>;
 
     /// Insert a transaction label and return the new tx_label_id.
-    async fn insert_tx_label(
-        &self,
-        label: &TxLabel,
-        trx: Option<&TrxToken>,
-    ) -> WalletResult<i64>;
+    async fn insert_tx_label(&self, label: &TxLabel, trx: Option<&TrxToken>) -> WalletResult<i64>;
 
     /// Insert a transaction label map entry.
     async fn insert_tx_label_map(
@@ -348,10 +333,7 @@ pub trait StorageReaderWriter: StorageReader {
     ///
     /// Default implementation returns `NotImplemented`. Storage backends
     /// (e.g., SQLite) can override with real SQL aggregate queries.
-    async fn admin_stats(
-        &self,
-        _auth_id: &str,
-    ) -> WalletResult<AdminStatsResult> {
+    async fn admin_stats(&self, _auth_id: &str) -> WalletResult<AdminStatsResult> {
         Err(crate::error::WalletError::NotImplemented(
             "admin_stats".to_string(),
         ))

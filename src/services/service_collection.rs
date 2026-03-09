@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 
 use super::types::{
-    ProviderCallHistory, ServiceCall, ServiceCallError, ServiceCallHistoryCounts,
-    ServiceCallHistory, MAX_CALL_HISTORY, MAX_RESET_COUNTS,
+    ProviderCallHistory, ServiceCall, ServiceCallError, ServiceCallHistory,
+    ServiceCallHistoryCounts, MAX_CALL_HISTORY, MAX_RESET_COUNTS,
 };
 use crate::error::WalletError;
 
@@ -157,11 +157,7 @@ impl<T: ?Sized> ServiceCollection<T> {
     }
 
     /// Record a failed service call (without a thrown error) for a provider.
-    pub fn add_service_call_failure(
-        &mut self,
-        provider: &str,
-        call: ServiceCall,
-    ) {
+    pub fn add_service_call_failure(&mut self, provider: &str, call: ServiceCall) {
         let h = self.ensure_provider_history(provider);
         h.calls.insert(0, call);
         h.calls.truncate(MAX_CALL_HISTORY);
@@ -195,7 +191,8 @@ impl<T: ?Sized> ServiceCollection<T> {
                     rc.until = now;
                 }
                 // Insert a new zero-count interval at the front
-                h.reset_counts.insert(0, ServiceCallHistoryCounts::new_at(now));
+                h.reset_counts
+                    .insert(0, ServiceCallHistoryCounts::new_at(now));
                 h.reset_counts.truncate(MAX_RESET_COUNTS);
             }
 

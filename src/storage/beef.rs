@@ -120,9 +120,8 @@ pub async fn get_valid_beef_for_txid(
 
     // Serialize BEEF to bytes
     let mut buf = Vec::new();
-    beef.to_binary(&mut buf).map_err(|e| {
-        WalletError::Internal(format!("Failed to serialize BEEF: {}", e))
-    })?;
+    beef.to_binary(&mut buf)
+        .map_err(|e| WalletError::Internal(format!("Failed to serialize BEEF: {}", e)))?;
 
     Ok(Some(buf))
 }

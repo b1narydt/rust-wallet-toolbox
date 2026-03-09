@@ -36,11 +36,7 @@ async fn test_builder_missing_chain_returns_error() {
     match result {
         Err(e) => {
             let err = e.to_string();
-            assert!(
-                err.contains("chain"),
-                "Expected chain error, got: {}",
-                err
-            );
+            assert!(err.contains("chain"), "Expected chain error, got: {}", err);
         }
         Ok(_) => panic!("Expected error for missing chain"),
     }

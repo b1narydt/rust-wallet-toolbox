@@ -35,10 +35,7 @@ pub trait WalletSigner: Send + Sync {
     ///
     /// The `args.reference` must match a pending sign action from a prior
     /// `create_action` call with `is_sign_action=true`.
-    async fn sign_action(
-        &self,
-        args: ValidSignActionArgs,
-    ) -> WalletResult<SignerSignActionResult>;
+    async fn sign_action(&self, args: ValidSignActionArgs) -> WalletResult<SignerSignActionResult>;
 
     /// Internalize outputs from an external transaction.
     ///
@@ -52,8 +49,5 @@ pub trait WalletSigner: Send + Sync {
     /// Abort a pending transaction.
     ///
     /// Releases any locked UTXOs and removes pending state.
-    async fn abort_action(
-        &self,
-        args: ValidAbortActionArgs,
-    ) -> WalletResult<AbortActionResult>;
+    async fn abort_action(&self, args: ValidAbortActionArgs) -> WalletResult<AbortActionResult>;
 }

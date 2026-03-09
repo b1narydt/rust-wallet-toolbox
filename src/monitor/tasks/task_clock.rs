@@ -43,8 +43,8 @@ impl WalletMonitorTask for TaskClock {
     }
 
     async fn run_task(&mut self) -> Result<String, WalletError> {
-        let dt = chrono::DateTime::from_timestamp_millis(self.next_minute as i64)
-            .unwrap_or_default();
+        let dt =
+            chrono::DateTime::from_timestamp_millis(self.next_minute as i64).unwrap_or_default();
         let log = dt.to_rfc3339();
         self.next_minute = Self::get_next_minute();
         Ok(log)
@@ -59,7 +59,10 @@ mod tests {
     fn test_clock_trigger_before_next_minute() {
         let mut clock = TaskClock::new();
         // next_minute is in the future, so trigger should be false now
-        assert!(clock.next_minute > now_msecs(), "next_minute should be in the future");
+        assert!(
+            clock.next_minute > now_msecs(),
+            "next_minute should be in the future"
+        );
         assert!(!clock.trigger(now_msecs()));
     }
 
@@ -69,7 +72,11 @@ mod tests {
         let result = clock.run_task().await.unwrap();
         // Should be an ISO timestamp string
         assert!(!result.is_empty());
-        assert!(result.contains("T"), "Expected ISO timestamp, got: {}", result);
+        assert!(
+            result.contains("T"),
+            "Expected ISO timestamp, got: {}",
+            result
+        );
     }
 
     #[test]

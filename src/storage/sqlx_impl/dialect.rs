@@ -197,10 +197,7 @@ mod tests {
         let mut wb = WhereBuilder::new(Dialect::Sqlite);
         wb.add_eq("userId");
         wb.add_gte("created_at");
-        assert_eq!(
-            wb.build_where(),
-            " WHERE userId = ? AND created_at >= ?"
-        );
+        assert_eq!(wb.build_where(), " WHERE userId = ? AND created_at >= ?");
         assert_eq!(wb.param_count(), 2);
     }
 
@@ -209,10 +206,7 @@ mod tests {
         let mut wb = WhereBuilder::new(Dialect::Mysql);
         wb.add_eq("userId");
         wb.add_eq("status");
-        assert_eq!(
-            wb.build_where(),
-            " WHERE userId = ? AND status = ?"
-        );
+        assert_eq!(wb.build_where(), " WHERE userId = ? AND status = ?");
     }
 
     #[test]
@@ -237,11 +231,7 @@ mod tests {
 
     #[test]
     fn upsert_sqlite() {
-        let result = upsert_suffix(
-            Dialect::Sqlite,
-            &["userId"],
-            &["name", "updated_at"],
-        );
+        let result = upsert_suffix(Dialect::Sqlite, &["userId"], &["name", "updated_at"]);
         assert_eq!(
             result,
             " ON CONFLICT (userId) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at"
@@ -250,11 +240,7 @@ mod tests {
 
     #[test]
     fn upsert_mysql() {
-        let result = upsert_suffix(
-            Dialect::Mysql,
-            &["userId"],
-            &["name", "updated_at"],
-        );
+        let result = upsert_suffix(Dialect::Mysql, &["userId"], &["name", "updated_at"]);
         assert_eq!(
             result,
             " ON DUPLICATE KEY UPDATE name = VALUES(name), updated_at = VALUES(updated_at)"

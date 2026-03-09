@@ -162,14 +162,12 @@ pub fn convert_proof_to_merkle_path(
     }
 
     // Use MerklePath to serialize to binary
-    let mp = bsv::transaction::MerklePath::new(block_height, path).map_err(|e| {
-        WalletError::Internal(format!("Failed to construct MerklePath: {}", e))
-    })?;
+    let mp = bsv::transaction::MerklePath::new(block_height, path)
+        .map_err(|e| WalletError::Internal(format!("Failed to construct MerklePath: {}", e)))?;
 
     let mut buf = Vec::new();
-    mp.to_binary(&mut buf).map_err(|e| {
-        WalletError::Internal(format!("Failed to serialize MerklePath: {}", e))
-    })?;
+    mp.to_binary(&mut buf)
+        .map_err(|e| WalletError::Internal(format!("Failed to serialize MerklePath: {}", e)))?;
 
     Ok(buf)
 }
@@ -350,7 +348,9 @@ impl WhatsOnChain {
             return Ok(resp);
         }
 
-        Err(WalletError::Internal("Rate limit exceeded after retries".to_string()))
+        Err(WalletError::Internal(
+            "Rate limit exceeded after retries".to_string(),
+        ))
     }
 }
 
@@ -736,7 +736,8 @@ impl PostBeefProvider for WhatsOnChain {
                             competing_txs: None,
                             service_error: None,
                         }
-                    } else if body_text.contains("mempool-conflict") || body_text.contains("Missing inputs")
+                    } else if body_text.contains("mempool-conflict")
+                        || body_text.contains("Missing inputs")
                     {
                         PostTxResultForTxid {
                             txid: txid.clone(),
@@ -834,10 +835,7 @@ impl GetUtxoStatusProvider for WhatsOnChain {
             if !resp.status().is_success() {
                 let status = resp.status();
                 if retry > 2 {
-                    r.error = Some(format!(
-                        "WoC getUtxoStatus response {}",
-                        status
-                    ));
+                    r.error = Some(format!("WoC getUtxoStatus response {}", status));
                     return r;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
@@ -879,11 +877,9 @@ impl GetUtxoStatusProvider for WhatsOnChain {
                 // Parse outpoint: "txid.vout"
                 if let Some((op_txid, op_vout_str)) = outpoint_str.split_once('.') {
                     if let Ok(op_vout) = op_vout_str.parse::<u32>() {
-                        r.is_utxo = Some(
-                            r.details.iter().any(|d| {
-                                d.txid.as_deref() == Some(op_txid) && d.index == Some(op_vout)
-                            }),
-                        );
+                        r.is_utxo = Some(r.details.iter().any(|d| {
+                            d.txid.as_deref() == Some(op_txid) && d.index == Some(op_vout)
+                        }));
                     } else {
                         r.is_utxo = Some(!r.details.is_empty());
                     }
@@ -937,7 +933,10 @@ impl GetStatusForTxidsProvider for WhatsOnChain {
         };
 
         if !resp.status().is_success() {
-            r.error = Some(format!("Unable to get status for txids, status {}", resp.status()));
+            r.error = Some(format!(
+                "Unable to get status for txids, status {}",
+                resp.status()
+            ));
             return r;
         }
 
@@ -1009,13 +1008,17 @@ impl GetScriptHashHistoryProvider for WhatsOnChain {
 
     async fn get_script_hash_history(&self, hash: &str) -> GetScriptHashHistoryResult {
         // Confirmed history
-        let confirmed = self.get_script_hash_history_inner(hash, "confirmed/history").await;
+        let confirmed = self
+            .get_script_hash_history_inner(hash, "confirmed/history")
+            .await;
         if confirmed.status != "success" || confirmed.error.is_some() {
             return confirmed;
         }
 
         // Unconfirmed history
-        let unconfirmed = self.get_script_hash_history_inner(hash, "unconfirmed/history").await;
+        let unconfirmed = self
+            .get_script_hash_history_inner(hash, "unconfirmed/history")
+            .await;
         if unconfirmed.status != "success" || unconfirmed.error.is_some() {
             return unconfirmed;
         }

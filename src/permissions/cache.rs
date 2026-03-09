@@ -190,8 +190,7 @@ impl PermissionCache {
         // Notify any waiters before clearing
         let mut active = self.active_requests.lock().await;
         for (_, req) in active.drain() {
-            *req.result.lock().await =
-                Some(Err("Cache cleared".to_string()));
+            *req.result.lock().await = Some(Err("Cache cleared".to_string()));
             req.notify.notify_waiters();
         }
     }
@@ -271,9 +270,7 @@ mod tests {
         assert!(matches!(result, DeduplicateResult::Wait(..)));
 
         // Clean up by completing the request
-        cache
-            .complete_request("proto:dedup2", Ok(true))
-            .await;
+        cache.complete_request("proto:dedup2", Ok(true)).await;
     }
 
     #[tokio::test]

@@ -7,8 +7,8 @@
 use serde::{Deserialize, Serialize};
 
 use bsv::wallet::interfaces::{
-    CreateActionOptions, CreateActionOutput, InternalizeOutput, SendWithResult,
-    SignActionOptions, SignActionSpend,
+    CreateActionOptions, CreateActionOutput, InternalizeOutput, SendWithResult, SignActionOptions,
+    SignActionSpend,
 };
 use bsv::wallet::types::{
     DescriptionString5to50Bytes, LabelStringUnder300Bytes, OutpointString, TXIDHexString,

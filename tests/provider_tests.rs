@@ -44,7 +44,10 @@ fn test_get_raw_tx_hash_validation_reject_mismatching_txid() {
 
     // A wrong txid should NOT match
     let wrong_txid = "0000000000000000000000000000000000000000000000000000000000000000";
-    assert_ne!(computed_txid, wrong_txid, "doubleSha256BE should not match a zero hash");
+    assert_ne!(
+        computed_txid, wrong_txid,
+        "doubleSha256BE should not match a zero hash"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -83,7 +86,8 @@ fn test_get_utxo_status_hashes_script_to_hash_be() {
     expected_be.reverse();
     let expected_be_hex = bytes_to_hex(&expected_be);
 
-    let result = validate_script_hash(script_hex, Some(&GetUtxoStatusOutputFormat::Script)).unwrap();
+    let result =
+        validate_script_hash(script_hex, Some(&GetUtxoStatusOutputFormat::Script)).unwrap();
     assert_eq!(result, expected_be_hex);
 }
 
@@ -159,17 +163,9 @@ fn test_bitails_constructor_rejects_invalid_chain() {
 
     let client = reqwest::Client::new();
 
-    let main_provider = Bitails::new(
-        bsv_wallet_toolbox::types::Chain::Main,
-        None,
-        client.clone(),
-    );
+    let main_provider = Bitails::new(bsv_wallet_toolbox::types::Chain::Main, None, client.clone());
     assert_eq!(main_provider.name_str(), "BitailsTsc");
 
-    let test_provider = Bitails::new(
-        bsv_wallet_toolbox::types::Chain::Test,
-        None,
-        client,
-    );
+    let test_provider = Bitails::new(bsv_wallet_toolbox::types::Chain::Test, None, client);
     assert_eq!(test_provider.name_str(), "BitailsTsc");
 }

@@ -10,7 +10,7 @@ use crate::error::{WalletError, WalletResult};
 use crate::status::{ProvenTxReqStatus, TransactionStatus};
 use crate::storage::action_types::{StorageProcessActionArgs, StorageProcessActionResult};
 use crate::storage::find_args::{
-    FindCommissionsArgs, FindOutputsArgs, FindTransactionsArgs, CommissionPartial, OutputPartial,
+    CommissionPartial, FindCommissionsArgs, FindOutputsArgs, FindTransactionsArgs, OutputPartial,
     TransactionPartial,
 };
 use crate::storage::traits::reader_writer::StorageReaderWriter;
@@ -107,7 +107,9 @@ pub async fn storage_process_action<S: StorageReaderWriter + ?Sized>(
             tx: TransactionStatus::Unprocessed,
         }
     } else {
-        return Err(WalletError::Internal("logic error in status determination".to_string()));
+        return Err(WalletError::Internal(
+            "logic error in status determination".to_string(),
+        ));
     };
 
     // Begin a database transaction for atomicity
@@ -181,17 +183,17 @@ pub async fn storage_process_action<S: StorageReaderWriter + ?Sized>(
 #[cfg(feature = "sqlite")]
 mod tests {
     use super::*;
-    use crate::storage::action_types::StorageProcessActionArgs;
-    use crate::storage::sqlx_impl::SqliteStorage;
-    use crate::storage::StorageConfig;
     use crate::status::{ProvenTxReqStatus, TransactionStatus};
+    use crate::storage::action_types::StorageProcessActionArgs;
     use crate::storage::find_args::{
-        FindOutputsArgs, FindProvenTxReqsArgs, FindTransactionsArgs,
-        OutputPartial, ProvenTxReqPartial, TransactionPartial,
+        FindOutputsArgs, FindProvenTxReqsArgs, FindTransactionsArgs, OutputPartial,
+        ProvenTxReqPartial, TransactionPartial,
     };
+    use crate::storage::sqlx_impl::SqliteStorage;
     use crate::storage::traits::provider::StorageProvider;
     use crate::storage::traits::reader::StorageReader;
     use crate::storage::traits::reader_writer::StorageReaderWriter;
+    use crate::storage::StorageConfig;
     use crate::tables::{Output, Transaction};
     use crate::types::Chain;
     use chrono::Utc;
@@ -202,7 +204,9 @@ mod tests {
             url: "sqlite::memory:".to_string(),
             ..Default::default()
         };
-        let storage = SqliteStorage::new_sqlite(config, Chain::Test).await.expect("create storage");
+        let storage = SqliteStorage::new_sqlite(config, Chain::Test)
+            .await
+            .expect("create storage");
         storage.migrate_database().await.expect("migrate");
         storage.make_available().await.expect("make available");
 
@@ -284,7 +288,8 @@ mod tests {
     async fn test_process_action_creates_proven_tx_req() {
         let (storage, user_id, _tx_id, reference) = setup_test_storage().await;
 
-        let fake_txid = "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234".to_string();
+        let fake_txid =
+            "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234".to_string();
         let fake_raw_tx = vec![0x01, 0x00, 0x00, 0x00, 0x00];
 
         let args = StorageProcessActionArgs {
@@ -340,7 +345,8 @@ mod tests {
     async fn test_process_action_nosend_status() {
         let (storage, user_id, _tx_id, reference) = setup_test_storage().await;
 
-        let fake_txid = "1111222233334444111122223333444411112222333344441111222233334444".to_string();
+        let fake_txid =
+            "1111222233334444111122223333444411112222333344441111222233334444".to_string();
         let fake_raw_tx = vec![0x01, 0x00, 0x00, 0x00, 0x00];
 
         let args = StorageProcessActionArgs {
@@ -392,7 +398,8 @@ mod tests {
     async fn test_process_action_delayed_status() {
         let (storage, user_id, _tx_id, reference) = setup_test_storage().await;
 
-        let fake_txid = "5555666677778888555566667777888855556666777788885555666677778888".to_string();
+        let fake_txid =
+            "5555666677778888555566667777888855556666777788885555666677778888".to_string();
         let fake_raw_tx = vec![0x01, 0x00, 0x00, 0x00, 0x00];
 
         let args = StorageProcessActionArgs {
@@ -444,7 +451,8 @@ mod tests {
     async fn test_process_action_updates_output_txid() {
         let (storage, user_id, _tx_id, reference) = setup_test_storage().await;
 
-        let fake_txid = "aaaa1111bbbb2222aaaa1111bbbb2222aaaa1111bbbb2222aaaa1111bbbb2222".to_string();
+        let fake_txid =
+            "aaaa1111bbbb2222aaaa1111bbbb2222aaaa1111bbbb2222aaaa1111bbbb2222".to_string();
         let fake_raw_tx = vec![0x01, 0x00, 0x00, 0x00, 0x00];
 
         let args = StorageProcessActionArgs {

@@ -8,17 +8,15 @@ use std::io::Cursor;
 
 use bsv::primitives::public_key::PublicKey;
 use bsv::script::locking_script::LockingScript;
-use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 use bsv::script::unlocking_script::UnlockingScript;
 use bsv::transaction::transaction::Transaction;
 use bsv::transaction::transaction_input::TransactionInput;
 use bsv::transaction::transaction_output::TransactionOutput;
+use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 
 use crate::error::{WalletError, WalletResult};
 use crate::signer::types::{PendingStorageInput, ValidCreateActionArgs};
-use crate::storage::action_types::{
-    StorageCreateActionResult, StorageCreateTransactionSdkInput,
-};
+use crate::storage::action_types::{StorageCreateActionResult, StorageCreateTransactionSdkInput};
 use crate::types::StorageProvidedBy;
 use crate::utility::script_template_brc29::ScriptTemplateBRC29;
 
@@ -82,8 +80,8 @@ pub fn build_signable_transaction(
         let i = vout_to_index[vout];
         let out = &storage_outputs[i];
 
-        let is_change =
-            out.provided_by == StorageProvidedBy::Storage && out.purpose.as_deref() == Some("change");
+        let is_change = out.provided_by == StorageProvidedBy::Storage
+            && out.purpose.as_deref() == Some("change");
 
         let locking_script = if is_change {
             // Derive change output locking script using BRC-29
@@ -167,14 +165,8 @@ pub fn build_signable_transaction(
 
             pending_storage_inputs.push(PendingStorageInput {
                 vin: tx.inputs.len() as u32,
-                derivation_prefix: storage_input
-                    .derivation_prefix
-                    .clone()
-                    .unwrap_or_default(),
-                derivation_suffix: storage_input
-                    .derivation_suffix
-                    .clone()
-                    .unwrap_or_default(),
+                derivation_prefix: storage_input.derivation_prefix.clone().unwrap_or_default(),
+                derivation_suffix: storage_input.derivation_suffix.clone().unwrap_or_default(),
                 unlocker_pub_key: storage_input.sender_identity_key.clone(),
                 source_satoshis: storage_input.source_satoshis,
                 locking_script: storage_input.source_locking_script.clone(),
@@ -221,7 +213,9 @@ fn make_change_lock(
     let derivation_suffix = out
         .derivation_suffix
         .as_ref()
-        .ok_or_else(|| WalletError::Internal("change output missing derivation_suffix".to_string()))?
+        .ok_or_else(|| {
+            WalletError::Internal("change output missing derivation_suffix".to_string())
+        })?
         .clone();
 
     let sabppp = ScriptTemplateBRC29::new(derivation_prefix, derivation_suffix);
@@ -238,8 +232,8 @@ mod tests {
         StorageCreateActionResult, StorageCreateTransactionSdkInput,
         StorageCreateTransactionSdkOutput,
     };
-    use bsv::primitives::private_key::PrivateKey;
     use crate::types::StorageProvidedBy;
+    use bsv::primitives::private_key::PrivateKey;
 
     fn test_keys() -> (CachedKeyDeriver, PublicKey) {
         let priv_key = PrivateKey::from_hex("aa").unwrap();
@@ -259,8 +253,8 @@ mod tests {
                     .to_string(),
                 source_vout: 0,
                 source_satoshis: 10_000,
-                source_locking_script:
-                    "76a91400000000000000000000000000000000000000008ac".to_string(),
+                source_locking_script: "76a91400000000000000000000000000000000000000008ac"
+                    .to_string(),
                 source_transaction: None,
                 unlocking_script_length: 107,
                 provided_by: StorageProvidedBy::Storage,
@@ -274,8 +268,8 @@ mod tests {
                 StorageCreateTransactionSdkOutput {
                     vout: 0,
                     satoshis: 5_000,
-                    locking_script:
-                        "76a914bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb88ac".to_string(),
+                    locking_script: "76a914bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb88ac"
+                        .to_string(),
                     provided_by: StorageProvidedBy::You,
                     purpose: None,
                     basket: None,
@@ -392,7 +386,11 @@ mod tests {
 
         // Change output (vout=1) should have a valid P2PKH script (25 bytes)
         let change_script = tx.outputs[1].locking_script.to_binary();
-        assert_eq!(change_script.len(), 25, "P2PKH locking script should be 25 bytes");
+        assert_eq!(
+            change_script.len(),
+            25,
+            "P2PKH locking script should be 25 bytes"
+        );
         assert_eq!(change_script[0], 0x76, "should start with OP_DUP");
         assert_eq!(change_script[24], 0xac, "should end with OP_CHECKSIG");
     }

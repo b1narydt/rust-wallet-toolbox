@@ -77,7 +77,10 @@ fn test_beef_v2_downgrade_all_raw() {
 
     // Result should be V1
     let result_version = u32::from_le_bytes([result[0], result[1], result[2], result[3]]);
-    assert_eq!(result_version, BEEF_V1, "Result should be V1 after downgrade");
+    assert_eq!(
+        result_version, BEEF_V1,
+        "Result should be V1 after downgrade"
+    );
 }
 
 #[test]
@@ -88,7 +91,10 @@ fn test_beef_v2_no_downgrade_with_txid_only() {
 
     // Result should still be V2
     let result_version = u32::from_le_bytes([result[0], result[1], result[2], result[3]]);
-    assert_eq!(result_version, BEEF_V2, "Result should remain V2 when txid-only present");
+    assert_eq!(
+        result_version, BEEF_V2,
+        "Result should remain V2 when txid-only present"
+    );
 }
 
 #[test]
@@ -192,8 +198,8 @@ fn test_chaintracks_default_url_testnet() {
 
 #[tokio::test]
 async fn test_chain_tracker_cache_hit() {
-    use bsv_wallet_toolbox::types::Chain;
     use bsv::transaction::chain_tracker::ChainTracker;
+    use bsv_wallet_toolbox::types::Chain;
 
     // Create a chain tracker pointing to a dummy URL (won't make real HTTP calls)
     let service_client = bsv_wallet_toolbox::services::chaintracker::ChaintracksServiceClient::new(
@@ -201,9 +207,8 @@ async fn test_chain_tracker_cache_hit() {
         Some("http://localhost:1"),
         reqwest::Client::new(),
     );
-    let tracker = bsv_wallet_toolbox::services::chaintracker::ChaintracksChainTracker::new(
-        service_client,
-    );
+    let tracker =
+        bsv_wallet_toolbox::services::chaintracker::ChaintracksChainTracker::new(service_client);
 
     // Manually insert a cached merkle root
     let test_root = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";

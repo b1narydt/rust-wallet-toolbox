@@ -3,8 +3,8 @@
 //! Verifies that migrations run successfully against an in-memory SQLite database
 //! and that all 16 tables are created with the expected schema.
 
-use sqlx::SqlitePool;
 use sqlx::Row;
+use sqlx::SqlitePool;
 
 use bsv_wallet_toolbox::migrations::run_sqlite_migrations;
 
@@ -69,14 +69,12 @@ async fn sqlite_insert_select_user() {
     let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
     run_sqlite_migrations(&pool).await.unwrap();
 
-    sqlx::query(
-        "INSERT INTO users (identityKey, activeStorage) VALUES (?, ?)"
-    )
-    .bind("02abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab")
-    .bind("03storagekey")
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO users (identityKey, activeStorage) VALUES (?, ?)")
+        .bind("02abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab")
+        .bind("03storagekey")
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let row = sqlx::query("SELECT userId, identityKey, activeStorage FROM users WHERE userId = 1")
         .fetch_one(&pool)
@@ -88,7 +86,10 @@ async fn sqlite_insert_select_user() {
     let active_storage: String = row.get("activeStorage");
 
     assert_eq!(user_id, 1);
-    assert_eq!(identity_key, "02abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab");
+    assert_eq!(
+        identity_key,
+        "02abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+    );
     assert_eq!(active_storage, "03storagekey");
 }
 
@@ -178,20 +179,31 @@ async fn sqlite_key_columns_exist() {
     run_sqlite_migrations(&pool).await.unwrap();
 
     // Spot-check: query pragma for outputs table columns
-    let rows: Vec<(String,)> = sqlx::query_as(
-        "SELECT name FROM pragma_table_info('outputs')"
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap();
+    let rows: Vec<(String,)> = sqlx::query_as("SELECT name FROM pragma_table_info('outputs')")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
 
     let col_names: Vec<&str> = rows.iter().map(|r| r.0.as_str()).collect();
 
     let expected_cols = [
-        "outputId", "userId", "transactionId", "basketId",
-        "spendable", "change", "vout", "satoshis", "providedBy",
-        "purpose", "type", "outputDescription", "txid",
-        "lockingScript", "spentBy", "scriptLength", "scriptOffset",
+        "outputId",
+        "userId",
+        "transactionId",
+        "basketId",
+        "spendable",
+        "change",
+        "vout",
+        "satoshis",
+        "providedBy",
+        "purpose",
+        "type",
+        "outputDescription",
+        "txid",
+        "lockingScript",
+        "spentBy",
+        "scriptLength",
+        "scriptOffset",
     ];
 
     for expected in &expected_cols {

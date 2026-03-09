@@ -36,9 +36,9 @@ mod sqlite_impl {
                     )
                 })?;
             let mut guard = inner.lock().await;
-            let tx = guard.take().ok_or_else(|| {
-                WalletError::Internal("Transaction already consumed".to_string())
-            })?;
+            let tx = guard
+                .take()
+                .ok_or_else(|| WalletError::Internal("Transaction already consumed".to_string()))?;
             tx.commit().await?;
             Ok(())
         }
@@ -52,20 +52,16 @@ mod sqlite_impl {
                     )
                 })?;
             let mut guard = inner.lock().await;
-            let tx = guard.take().ok_or_else(|| {
-                WalletError::Internal("Transaction already consumed".to_string())
-            })?;
+            let tx = guard
+                .take()
+                .ok_or_else(|| WalletError::Internal("Transaction already consumed".to_string()))?;
             tx.rollback().await?;
             Ok(())
         }
 
         // ----- Insert methods -----
 
-        async fn insert_user(
-            &self,
-            user: &User,
-            trx: Option<&TrxToken>,
-        ) -> WalletResult<i64> {
+        async fn insert_user(&self, user: &User, trx: Option<&TrxToken>) -> WalletResult<i64> {
             self.insert_user_impl(user, trx).await
         }
 
@@ -343,23 +339,23 @@ mod sqlite_impl {
             use crate::storage::traits::reader::StorageReader;
 
             // Find the transaction by txid
-            let txs = self.find_transactions(
-                &FindTransactionsArgs {
-                    partial: TransactionPartial {
-                        txid: Some(txid.to_string()),
+            let txs = self
+                .find_transactions(
+                    &FindTransactionsArgs {
+                        partial: TransactionPartial {
+                            txid: Some(txid.to_string()),
+                            ..Default::default()
+                        },
+                        no_raw_tx: true,
                         ..Default::default()
                     },
-                    no_raw_tx: true,
-                    ..Default::default()
-                },
-                trx,
-            ).await?;
+                    trx,
+                )
+                .await?;
 
-            let tx = txs.first().ok_or_else(|| {
-                WalletError::InvalidParameter {
-                    parameter: "txid".to_string(),
-                    must_be: format!("an existing transaction, '{}' not found", txid),
-                }
+            let tx = txs.first().ok_or_else(|| WalletError::InvalidParameter {
+                parameter: "txid".to_string(),
+                must_be: format!("an existing transaction, '{}' not found", txid),
             })?;
 
             // Update transaction status
@@ -370,20 +366,23 @@ mod sqlite_impl {
                     ..Default::default()
                 },
                 trx,
-            ).await?;
+            )
+            .await?;
 
             // If setting to Failed, release locked UTXOs
             if new_status == crate::status::TransactionStatus::Failed {
-                let outputs = self.find_outputs(
-                    &FindOutputsArgs {
-                        partial: OutputPartial {
-                            spent_by: Some(tx.transaction_id),
+                let outputs = self
+                    .find_outputs(
+                        &FindOutputsArgs {
+                            partial: OutputPartial {
+                                spent_by: Some(tx.transaction_id),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
-                        ..Default::default()
-                    },
-                    trx,
-                ).await?;
+                        trx,
+                    )
+                    .await?;
 
                 for output in &outputs {
                     self.update_output_impl(
@@ -394,7 +393,8 @@ mod sqlite_impl {
                             ..Default::default()
                         },
                         trx,
-                    ).await?;
+                    )
+                    .await?;
                 }
             }
 
@@ -408,7 +408,8 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<()> {
             for txid in txids {
-                self.update_transaction_status(txid, new_status.clone(), trx).await?;
+                self.update_transaction_status(txid, new_status.clone(), trx)
+                    .await?;
             }
             Ok(())
         }
@@ -431,7 +432,8 @@ mod sqlite_impl {
                     ..Default::default()
                 },
                 trx,
-            ).await?;
+            )
+            .await?;
 
             Ok(proven_tx_id)
         }
@@ -449,14 +451,16 @@ mod sqlite_impl {
                 crate::status::ProvenTxReqStatus::Sending,
             ];
 
-            let reqs = self.find_proven_tx_reqs(
-                &FindProvenTxReqsArgs {
-                    statuses: Some(stale_statuses),
-                    since: None,
-                    ..Default::default()
-                },
-                trx,
-            ).await?;
+            let reqs = self
+                .find_proven_tx_reqs(
+                    &FindProvenTxReqsArgs {
+                        statuses: Some(stale_statuses),
+                        since: None,
+                        ..Default::default()
+                    },
+                    trx,
+                )
+                .await?;
 
             let mut corrected = 0u32;
             for req in &reqs {
@@ -469,12 +473,17 @@ mod sqlite_impl {
                             ..Default::default()
                         },
                         trx,
-                    ).await?;
+                    )
+                    .await?;
                     corrected += 1;
                 }
             }
 
-            Ok(format!("review_status: checked {} reqs, corrected {}", reqs.len(), corrected))
+            Ok(format!(
+                "review_status: checked {} reqs, corrected {}",
+                reqs.len(),
+                corrected
+            ))
         }
 
         async fn purge_data(
@@ -486,8 +495,8 @@ mod sqlite_impl {
 
             if params.purge_failed {
                 let age_ms = params.purge_failed_age;
-                let cutoff = chrono::Utc::now().naive_utc()
-                    - chrono::Duration::milliseconds(age_ms as i64);
+                let cutoff =
+                    chrono::Utc::now().naive_utc() - chrono::Duration::milliseconds(age_ms as i64);
                 let sql = "DELETE FROM proven_tx_reqs WHERE status = 'invalid' AND updated_at < ?";
                 let result = sqlx::query(sql)
                     .bind(cutoff)
@@ -498,9 +507,10 @@ mod sqlite_impl {
 
             if params.purge_completed {
                 let age_ms = params.purge_completed_age;
-                let cutoff = chrono::Utc::now().naive_utc()
-                    - chrono::Duration::milliseconds(age_ms as i64);
-                let sql = "DELETE FROM proven_tx_reqs WHERE status = 'completed' AND updated_at < ?";
+                let cutoff =
+                    chrono::Utc::now().naive_utc() - chrono::Duration::milliseconds(age_ms as i64);
+                let sql =
+                    "DELETE FROM proven_tx_reqs WHERE status = 'completed' AND updated_at < ?";
                 let result = sqlx::query(sql)
                     .bind(cutoff)
                     .execute(&self.write_pool)
@@ -510,8 +520,8 @@ mod sqlite_impl {
 
             if params.purge_spent {
                 let age_ms = params.purge_spent_age;
-                let cutoff = chrono::Utc::now().naive_utc()
-                    - chrono::Duration::milliseconds(age_ms as i64);
+                let cutoff =
+                    chrono::Utc::now().naive_utc() - chrono::Duration::milliseconds(age_ms as i64);
                 let sql = "DELETE FROM outputs WHERE spendable = 0 AND spent_by IS NOT NULL AND updated_at < ?";
                 let result = sqlx::query(sql)
                     .bind(cutoff)
@@ -685,13 +695,12 @@ macro_rules! impl_storage_rw_and_provider {
                 }
 
                 async fn commit_transaction(&self, trx: TrxToken) -> WalletResult<()> {
-                    let inner = trx
-                        .downcast::<$trx_inner>()
-                        .map_err(|_| {
-                            WalletError::Internal(
-                                concat!("TrxToken does not contain a ", $trx_name, " transaction").to_string(),
-                            )
-                        })?;
+                    let inner = trx.downcast::<$trx_inner>().map_err(|_| {
+                        WalletError::Internal(
+                            concat!("TrxToken does not contain a ", $trx_name, " transaction")
+                                .to_string(),
+                        )
+                    })?;
                     let mut guard = inner.lock().await;
                     let tx = guard.take().ok_or_else(|| {
                         WalletError::Internal("Transaction already consumed".to_string())
@@ -701,13 +710,12 @@ macro_rules! impl_storage_rw_and_provider {
                 }
 
                 async fn rollback_transaction(&self, trx: TrxToken) -> WalletResult<()> {
-                    let inner = trx
-                        .downcast::<$trx_inner>()
-                        .map_err(|_| {
-                            WalletError::Internal(
-                                concat!("TrxToken does not contain a ", $trx_name, " transaction").to_string(),
-                            )
-                        })?;
+                    let inner = trx.downcast::<$trx_inner>().map_err(|_| {
+                        WalletError::Internal(
+                            concat!("TrxToken does not contain a ", $trx_name, " transaction")
+                                .to_string(),
+                        )
+                    })?;
                     let mut guard = inner.lock().await;
                     let tx = guard.take().ok_or_else(|| {
                         WalletError::Internal("Transaction already consumed".to_string())
@@ -717,39 +725,243 @@ macro_rules! impl_storage_rw_and_provider {
                 }
 
                 // Insert methods
-                async fn insert_user(&self, user: &User, trx: Option<&TrxToken>) -> WalletResult<i64> { self.insert_user_impl(user, trx).await }
-                async fn insert_certificate(&self, cert: &Certificate, trx: Option<&TrxToken>) -> WalletResult<i64> { self.insert_certificate_impl(cert, trx).await }
-                async fn insert_certificate_field(&self, field: &CertificateField, trx: Option<&TrxToken>) -> WalletResult<()> { self.insert_certificate_field_impl(field, trx).await }
-                async fn insert_commission(&self, c: &Commission, trx: Option<&TrxToken>) -> WalletResult<i64> { self.insert_commission_impl(c, trx).await }
-                async fn insert_monitor_event(&self, e: &MonitorEvent, trx: Option<&TrxToken>) -> WalletResult<i64> { self.insert_monitor_event_impl(e, trx).await }
-                async fn insert_output_basket(&self, b: &OutputBasket, trx: Option<&TrxToken>) -> WalletResult<i64> { self.insert_output_basket_impl(b, trx).await }
-                async fn insert_output_tag(&self, t: &OutputTag, trx: Option<&TrxToken>) -> WalletResult<i64> { self.insert_output_tag_impl(t, trx).await }
-                async fn insert_output_tag_map(&self, m: &OutputTagMap, trx: Option<&TrxToken>) -> WalletResult<()> { self.insert_output_tag_map_impl(m, trx).await }
-                async fn insert_output(&self, o: &Output, trx: Option<&TrxToken>) -> WalletResult<i64> { self.insert_output_impl(o, trx).await }
-                async fn insert_proven_tx(&self, p: &ProvenTx, trx: Option<&TrxToken>) -> WalletResult<i64> { self.insert_proven_tx_impl(p, trx).await }
-                async fn insert_proven_tx_req(&self, r: &ProvenTxReq, trx: Option<&TrxToken>) -> WalletResult<i64> { self.insert_proven_tx_req_impl(r, trx).await }
-                async fn insert_transaction(&self, t: &Transaction, trx: Option<&TrxToken>) -> WalletResult<i64> { self.insert_transaction_impl(t, trx).await }
-                async fn insert_tx_label(&self, l: &TxLabel, trx: Option<&TrxToken>) -> WalletResult<i64> { self.insert_tx_label_impl(l, trx).await }
-                async fn insert_tx_label_map(&self, m: &TxLabelMap, trx: Option<&TrxToken>) -> WalletResult<()> { self.insert_tx_label_map_impl(m, trx).await }
-                async fn insert_sync_state(&self, ss: &SyncState, trx: Option<&TrxToken>) -> WalletResult<i64> { self.insert_sync_state_impl(ss, trx).await }
+                async fn insert_user(
+                    &self,
+                    user: &User,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.insert_user_impl(user, trx).await
+                }
+                async fn insert_certificate(
+                    &self,
+                    cert: &Certificate,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.insert_certificate_impl(cert, trx).await
+                }
+                async fn insert_certificate_field(
+                    &self,
+                    field: &CertificateField,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<()> {
+                    self.insert_certificate_field_impl(field, trx).await
+                }
+                async fn insert_commission(
+                    &self,
+                    c: &Commission,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.insert_commission_impl(c, trx).await
+                }
+                async fn insert_monitor_event(
+                    &self,
+                    e: &MonitorEvent,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.insert_monitor_event_impl(e, trx).await
+                }
+                async fn insert_output_basket(
+                    &self,
+                    b: &OutputBasket,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.insert_output_basket_impl(b, trx).await
+                }
+                async fn insert_output_tag(
+                    &self,
+                    t: &OutputTag,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.insert_output_tag_impl(t, trx).await
+                }
+                async fn insert_output_tag_map(
+                    &self,
+                    m: &OutputTagMap,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<()> {
+                    self.insert_output_tag_map_impl(m, trx).await
+                }
+                async fn insert_output(
+                    &self,
+                    o: &Output,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.insert_output_impl(o, trx).await
+                }
+                async fn insert_proven_tx(
+                    &self,
+                    p: &ProvenTx,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.insert_proven_tx_impl(p, trx).await
+                }
+                async fn insert_proven_tx_req(
+                    &self,
+                    r: &ProvenTxReq,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.insert_proven_tx_req_impl(r, trx).await
+                }
+                async fn insert_transaction(
+                    &self,
+                    t: &Transaction,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.insert_transaction_impl(t, trx).await
+                }
+                async fn insert_tx_label(
+                    &self,
+                    l: &TxLabel,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.insert_tx_label_impl(l, trx).await
+                }
+                async fn insert_tx_label_map(
+                    &self,
+                    m: &TxLabelMap,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<()> {
+                    self.insert_tx_label_map_impl(m, trx).await
+                }
+                async fn insert_sync_state(
+                    &self,
+                    ss: &SyncState,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.insert_sync_state_impl(ss, trx).await
+                }
 
                 // Update methods
-                async fn update_user(&self, id: i64, u: &UserPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_user_impl(id, u, trx).await }
-                async fn update_certificate(&self, id: i64, u: &CertificatePartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_certificate_impl(id, u, trx).await }
-                async fn update_certificate_field(&self, cid: i64, fname: &str, u: &CertificateFieldPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_certificate_field_impl(cid, fname, u, trx).await }
-                async fn update_commission(&self, id: i64, u: &CommissionPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_commission_impl(id, u, trx).await }
-                async fn update_monitor_event(&self, id: i64, u: &MonitorEventPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_monitor_event_impl(id, u, trx).await }
-                async fn update_output_basket(&self, id: i64, u: &OutputBasketPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_output_basket_impl(id, u, trx).await }
-                async fn update_output_tag(&self, id: i64, u: &OutputTagPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_output_tag_impl(id, u, trx).await }
-                async fn update_output_tag_map(&self, oid: i64, tid: i64, u: &OutputTagMapPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_output_tag_map_impl(oid, tid, u, trx).await }
-                async fn update_output(&self, id: i64, u: &OutputPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_output_impl(id, u, trx).await }
-                async fn update_proven_tx(&self, id: i64, u: &ProvenTxPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_proven_tx_impl(id, u, trx).await }
-                async fn update_proven_tx_req(&self, id: i64, u: &ProvenTxReqPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_proven_tx_req_impl(id, u, trx).await }
-                async fn update_settings(&self, u: &SettingsPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_settings_impl(u, trx).await }
-                async fn update_transaction(&self, id: i64, u: &TransactionPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_transaction_impl(id, u, trx).await }
-                async fn update_tx_label(&self, id: i64, u: &TxLabelPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_tx_label_impl(id, u, trx).await }
-                async fn update_tx_label_map(&self, tid: i64, lid: i64, u: &TxLabelMapPartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_tx_label_map_impl(tid, lid, u, trx).await }
-                async fn update_sync_state(&self, id: i64, u: &SyncStatePartial, trx: Option<&TrxToken>) -> WalletResult<i64> { self.update_sync_state_impl(id, u, trx).await }
+                async fn update_user(
+                    &self,
+                    id: i64,
+                    u: &UserPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_user_impl(id, u, trx).await
+                }
+                async fn update_certificate(
+                    &self,
+                    id: i64,
+                    u: &CertificatePartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_certificate_impl(id, u, trx).await
+                }
+                async fn update_certificate_field(
+                    &self,
+                    cid: i64,
+                    fname: &str,
+                    u: &CertificateFieldPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_certificate_field_impl(cid, fname, u, trx).await
+                }
+                async fn update_commission(
+                    &self,
+                    id: i64,
+                    u: &CommissionPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_commission_impl(id, u, trx).await
+                }
+                async fn update_monitor_event(
+                    &self,
+                    id: i64,
+                    u: &MonitorEventPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_monitor_event_impl(id, u, trx).await
+                }
+                async fn update_output_basket(
+                    &self,
+                    id: i64,
+                    u: &OutputBasketPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_output_basket_impl(id, u, trx).await
+                }
+                async fn update_output_tag(
+                    &self,
+                    id: i64,
+                    u: &OutputTagPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_output_tag_impl(id, u, trx).await
+                }
+                async fn update_output_tag_map(
+                    &self,
+                    oid: i64,
+                    tid: i64,
+                    u: &OutputTagMapPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_output_tag_map_impl(oid, tid, u, trx).await
+                }
+                async fn update_output(
+                    &self,
+                    id: i64,
+                    u: &OutputPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_output_impl(id, u, trx).await
+                }
+                async fn update_proven_tx(
+                    &self,
+                    id: i64,
+                    u: &ProvenTxPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_proven_tx_impl(id, u, trx).await
+                }
+                async fn update_proven_tx_req(
+                    &self,
+                    id: i64,
+                    u: &ProvenTxReqPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_proven_tx_req_impl(id, u, trx).await
+                }
+                async fn update_settings(
+                    &self,
+                    u: &SettingsPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_settings_impl(u, trx).await
+                }
+                async fn update_transaction(
+                    &self,
+                    id: i64,
+                    u: &TransactionPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_transaction_impl(id, u, trx).await
+                }
+                async fn update_tx_label(
+                    &self,
+                    id: i64,
+                    u: &TxLabelPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_tx_label_impl(id, u, trx).await
+                }
+                async fn update_tx_label_map(
+                    &self,
+                    tid: i64,
+                    lid: i64,
+                    u: &TxLabelMapPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_tx_label_map_impl(tid, lid, u, trx).await
+                }
+                async fn update_sync_state(
+                    &self,
+                    id: i64,
+                    u: &SyncStatePartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.update_sync_state_impl(id, u, trx).await
+                }
             }
 
             #[async_trait]
@@ -815,10 +1027,22 @@ macro_rules! impl_storage_rw_and_provider {
 
                 async fn drop_all_data(&self) -> WalletResult<()> {
                     let tables = [
-                        "output_tags_map", "tx_labels_map", "certificate_fields",
-                        "commissions", "outputs", "output_tags", "output_baskets",
-                        "tx_labels", "transactions", "proven_tx_reqs", "proven_txs",
-                        "certificates", "sync_states", "monitor_events", "settings", "users",
+                        "output_tags_map",
+                        "tx_labels_map",
+                        "certificate_fields",
+                        "commissions",
+                        "outputs",
+                        "output_tags",
+                        "output_baskets",
+                        "tx_labels",
+                        "transactions",
+                        "proven_tx_reqs",
+                        "proven_txs",
+                        "certificates",
+                        "sync_states",
+                        "monitor_events",
+                        "settings",
+                        "users",
                     ];
                     for table in &tables {
                         let sql = format!("DELETE FROM {}", table);

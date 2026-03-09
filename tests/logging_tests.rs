@@ -1,9 +1,7 @@
 //! Tests for logging initialization and status enum serialization.
 
 use bsv_wallet_toolbox::logging::init_logging;
-use bsv_wallet_toolbox::status::{
-    OutputStatus, ProvenTxReqStatus, SyncStatus, TransactionStatus,
-};
+use bsv_wallet_toolbox::status::{OutputStatus, ProvenTxReqStatus, SyncStatus, TransactionStatus};
 
 #[test]
 fn init_logging_does_not_panic() {

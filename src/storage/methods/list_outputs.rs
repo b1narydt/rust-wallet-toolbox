@@ -12,8 +12,8 @@ use crate::error::WalletResult;
 use crate::status::TransactionStatus;
 use crate::storage::find_args::{
     FindOutputBasketsArgs, FindOutputTagMapsArgs, FindOutputTagsArgs, FindOutputsArgs,
-    FindTxLabelMapsArgs, OutputBasketPartial, OutputPartial,
-    OutputTagMapPartial, OutputTagPartial, Paged, TxLabelMapPartial,
+    FindTxLabelMapsArgs, OutputBasketPartial, OutputPartial, OutputTagMapPartial, OutputTagPartial,
+    Paged, TxLabelMapPartial,
 };
 use crate::storage::traits::reader::StorageReader;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
@@ -241,14 +241,8 @@ async fn handle_set_change_params(
     tags: &[String],
     trx: Option<&TrxToken>,
 ) -> WalletResult<ListOutputsResult> {
-    let count: i64 = tags
-        .first()
-        .and_then(|t| t.parse().ok())
-        .unwrap_or(0);
-    let satoshis: i64 = tags
-        .get(1)
-        .and_then(|t| t.parse().ok())
-        .unwrap_or(0);
+    let count: i64 = tags.first().and_then(|t| t.parse().ok()).unwrap_or(0);
+    let satoshis: i64 = tags.get(1).and_then(|t| t.parse().ok()).unwrap_or(0);
 
     let baskets = storage
         .find_output_baskets(

@@ -124,8 +124,9 @@ fn validate_params(args: &GenerateChangeSdkArgs) -> WalletResult<Option<usize>> 
             if has_max_possible_output.is_some() {
                 return Err(WalletError::InvalidParameter {
                     parameter: format!("fixed_outputs[{}].satoshis", i),
-                    must_be: "valid satoshis amount. Only one 'maxPossibleSatoshis' output allowed."
-                        .to_string(),
+                    must_be:
+                        "valid satoshis amount. Only one 'maxPossibleSatoshis' output allowed."
+                            .to_string(),
                 });
             }
             has_max_possible_output = Some(i);
@@ -157,8 +158,7 @@ fn compute_size(
         .iter()
         .map(|x| x.locking_script_length)
         .chain(
-            std::iter::repeat(args.change_locking_script_length)
-                .take(change_len + added_outputs),
+            std::iter::repeat(args.change_locking_script_length).take(change_len + added_outputs),
         )
         .collect();
     transaction_size(&input_script_lengths, &output_script_lengths)
@@ -259,8 +259,7 @@ pub fn generate_change_sdk(
     let target_net_count = args.target_net_count.unwrap_or(0);
 
     // Net change count = change outputs created - change inputs consumed
-    let net_change_count =
-        |co_len: usize, ai_len: usize| -> i64 { co_len as i64 - ai_len as i64 };
+    let net_change_count = |co_len: usize, ai_len: usize| -> i64 { co_len as i64 - ai_len as i64 };
 
     // Whether we should add a change output to balance a new input
     let should_add_output = |has_tnc: bool, co_len: usize, ai_len: usize| -> bool {
@@ -273,8 +272,7 @@ pub fn generate_change_sdk(
     // If we want more change outputs, create them now.
     // They may be removed if we cannot fund them.
     while (has_target_net_count
-        && target_net_count
-            > net_change_count(change_outputs.len(), allocated_change_inputs.len()))
+        && target_net_count > net_change_count(change_outputs.len(), allocated_change_inputs.len()))
         || (change_outputs.is_empty()
             && fee_excess(
                 args,
@@ -554,7 +552,13 @@ pub fn generate_change_sdk(
     }
 
     // Compute final size and fee
-    let final_size = compute_size(args, allocated_change_inputs.len(), change_outputs.len(), 0, 0);
+    let final_size = compute_size(
+        args,
+        allocated_change_inputs.len(),
+        change_outputs.len(),
+        0,
+        0,
+    );
     let actual_fee = {
         let f = funding(args, &allocated_change_inputs);
         let s = spending(&fixed_output_satoshis);
@@ -652,13 +656,24 @@ mod tests {
         );
         let available = make_utxos(&[2000, 5000, 10000]);
         let result = generate_change_sdk(&args, &available).unwrap();
-        assert!(!result.change_outputs.is_empty(), "should have at least 1 change output");
+        assert!(
+            !result.change_outputs.is_empty(),
+            "should have at least 1 change output"
+        );
         assert!(result.fee > 0, "fee should be positive");
         // Verify: funding - spending - change = fee
-        let total_funding: u64 =
-            10_000 + result.allocated_change_inputs.iter().map(|i| i.satoshis).sum::<u64>();
-        let total_spending: u64 =
-            5_000 + result.change_outputs.iter().map(|o| o.satoshis).sum::<u64>();
+        let total_funding: u64 = 10_000
+            + result
+                .allocated_change_inputs
+                .iter()
+                .map(|i| i.satoshis)
+                .sum::<u64>();
+        let total_spending: u64 = 5_000
+            + result
+                .change_outputs
+                .iter()
+                .map(|o| o.satoshis)
+                .sum::<u64>();
         assert_eq!(total_funding - total_spending, result.fee);
     }
 
@@ -701,10 +716,18 @@ mod tests {
         let result = generate_change_sdk(&args, &available).unwrap();
         assert!(result.fee > 0);
         // Verify balance
-        let total_funding: u64 =
-            2000 + result.allocated_change_inputs.iter().map(|i| i.satoshis).sum::<u64>();
-        let total_spending: u64 =
-            500 + result.change_outputs.iter().map(|o| o.satoshis).sum::<u64>();
+        let total_funding: u64 = 2000
+            + result
+                .allocated_change_inputs
+                .iter()
+                .map(|i| i.satoshis)
+                .sum::<u64>();
+        let total_spending: u64 = 500
+            + result
+                .change_outputs
+                .iter()
+                .map(|o| o.satoshis)
+                .sum::<u64>();
         assert_eq!(total_funding - total_spending, result.fee);
     }
 
@@ -725,8 +748,12 @@ mod tests {
         let available = make_utxos(&[5000]);
         let result = generate_change_sdk(&args, &available).unwrap();
         let change_sum: u64 = result.change_outputs.iter().map(|o| o.satoshis).sum();
-        let total_funding: u64 =
-            50_000 + result.allocated_change_inputs.iter().map(|i| i.satoshis).sum::<u64>();
+        let total_funding: u64 = 50_000
+            + result
+                .allocated_change_inputs
+                .iter()
+                .map(|i| i.satoshis)
+                .sum::<u64>();
         assert_eq!(total_funding - 1_000 - result.fee, change_sum);
     }
 
@@ -769,8 +796,12 @@ mod tests {
         let available = make_utxos(&[5000, 5000]);
         let result = generate_change_sdk(&args, &available).unwrap();
         assert!(!result.change_outputs.is_empty());
-        let total_funding: u64 =
-            100_000 + result.allocated_change_inputs.iter().map(|i| i.satoshis).sum::<u64>();
+        let total_funding: u64 = 100_000
+            + result
+                .allocated_change_inputs
+                .iter()
+                .map(|i| i.satoshis)
+                .sum::<u64>();
         let total_change: u64 = result.change_outputs.iter().map(|o| o.satoshis).sum();
         assert_eq!(total_funding - 1_000 - result.fee, total_change);
     }

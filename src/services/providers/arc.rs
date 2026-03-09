@@ -68,9 +68,8 @@ pub fn build_arc_headers(config: &ArcConfig) -> HeaderMap {
 
     headers.insert(
         "XDeployment-ID",
-        HeaderValue::from_str(&config.deployment_id).unwrap_or_else(|_| {
-            HeaderValue::from_static("wallet-toolbox")
-        }),
+        HeaderValue::from_str(&config.deployment_id)
+            .unwrap_or_else(|_| HeaderValue::from_static("wallet-toolbox")),
     );
 
     if let Some(ref api_key) = config.api_key {
@@ -140,7 +139,11 @@ pub fn maybe_downgrade_beef_v2(beef: &[u8]) -> Vec<u8> {
             let mut out = Vec::new();
             match downgraded.to_binary(&mut out) {
                 Ok(()) => {
-                    tracing::debug!("Downgraded BEEF V2 to V1 ({} bytes -> {} bytes)", beef.len(), out.len());
+                    tracing::debug!(
+                        "Downgraded BEEF V2 to V1 ({} bytes -> {} bytes)",
+                        beef.len(),
+                        out.len()
+                    );
                     out
                 }
                 Err(e) => {
@@ -228,7 +231,9 @@ impl PostBeefProvider for ArcProvider {
                     Err(e) => {
                         tracing::warn!(
                             "[{}] Failed to parse ARC response (status {}): {}",
-                            self.name, status_code, e
+                            self.name,
+                            status_code,
+                            e
                         );
                         PostBeefResult {
                             name: self.name.clone(),

@@ -8,9 +8,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use super::types::{
-    GroupedPermissions, PermissionRequest, PermissionResponse, PermissionType,
-};
+use super::types::{GroupedPermissions, PermissionRequest, PermissionResponse, PermissionType};
 use crate::WalletError;
 
 // ---------------------------------------------------------------------------
@@ -85,15 +83,9 @@ pub async fn fire_permission_callback(
     };
 
     let result = match request.permission_type {
-        PermissionType::ProtocolPermission => {
-            cbs.on_protocol_permission_requested(request).await
-        }
-        PermissionType::BasketAccess => {
-            cbs.on_basket_access_requested(request).await
-        }
-        PermissionType::CertificateAccess => {
-            cbs.on_certificate_access_requested(request).await
-        }
+        PermissionType::ProtocolPermission => cbs.on_protocol_permission_requested(request).await,
+        PermissionType::BasketAccess => cbs.on_basket_access_requested(request).await,
+        PermissionType::CertificateAccess => cbs.on_certificate_access_requested(request).await,
         PermissionType::SpendingAuthorization => {
             cbs.on_spending_authorization_requested(request).await
         }
@@ -196,8 +188,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fire_callback_dispatches_by_type() {
-        let cbs: Option<Arc<dyn PermissionCallbacks>> =
-            Some(Arc::new(AlwaysGrantCallbacks));
+        let cbs: Option<Arc<dyn PermissionCallbacks>> = Some(Arc::new(AlwaysGrantCallbacks));
 
         for ptype in [
             PermissionType::ProtocolPermission,
@@ -256,8 +247,7 @@ mod tests {
             }
         }
 
-        let cbs: Option<Arc<dyn PermissionCallbacks>> =
-            Some(Arc::new(FailingCallbacks));
+        let cbs: Option<Arc<dyn PermissionCallbacks>> = Some(Arc::new(FailingCallbacks));
         let req = make_request(PermissionType::ProtocolPermission);
         let resp = fire_permission_callback(&cbs, &req).await.unwrap();
         assert!(matches!(resp, PermissionResponse::Deny { .. }));

@@ -126,8 +126,8 @@ impl WalletMonitorTask for TaskSendWaiting {
         let mut offset = 0i64;
 
         // Calculate the age cutoff
-        let aged_limit = chrono::Utc::now().naive_utc()
-            - chrono::Duration::milliseconds(self.aged_msecs as i64);
+        let aged_limit =
+            chrono::Utc::now().naive_utc() - chrono::Duration::milliseconds(self.aged_msecs as i64);
 
         // Build status filter
         let statuses = if self.include_sending {

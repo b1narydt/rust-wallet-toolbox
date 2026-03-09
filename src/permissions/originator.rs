@@ -138,7 +138,11 @@ fn parse_url_parts(url: &str) -> Option<(String, String, Option<String>)> {
             let after_bracket = &host_port[bracket_end + 1..];
             let port = if after_bracket.starts_with(':') {
                 let p = &after_bracket[1..];
-                if p.is_empty() { None } else { Some(p.to_string()) }
+                if p.is_empty() {
+                    None
+                } else {
+                    Some(p.to_string())
+                }
             } else {
                 None
             };
@@ -179,18 +183,12 @@ mod tests {
 
     #[test]
     fn test_normalize_originator_strips_port_80() {
-        assert_eq!(
-            normalize_originator("http://example.com:80"),
-            "example.com"
-        );
+        assert_eq!(normalize_originator("http://example.com:80"), "example.com");
     }
 
     #[test]
     fn test_normalize_originator_preserves_custom_port() {
-        assert_eq!(
-            normalize_originator("example.com:8080"),
-            "example.com:8080"
-        );
+        assert_eq!(normalize_originator("example.com:8080"), "example.com:8080");
         assert_eq!(
             normalize_originator("https://example.com:9090"),
             "example.com:9090"
@@ -200,10 +198,7 @@ mod tests {
     #[test]
     fn test_normalize_originator_lowercases() {
         assert_eq!(normalize_originator("EXAMPLE.COM"), "example.com");
-        assert_eq!(
-            normalize_originator("https://MyDomain.Org"),
-            "mydomain.org"
-        );
+        assert_eq!(normalize_originator("https://MyDomain.Org"), "mydomain.org");
     }
 
     #[test]
@@ -214,10 +209,7 @@ mod tests {
 
     #[test]
     fn test_normalize_originator_trims_whitespace() {
-        assert_eq!(
-            normalize_originator("  example.com  "),
-            "example.com"
-        );
+        assert_eq!(normalize_originator("  example.com  "), "example.com");
     }
 
     #[test]

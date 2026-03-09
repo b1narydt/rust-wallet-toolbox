@@ -178,10 +178,7 @@ impl ArcSseClient {
                 break;
             }
 
-            tracing::info!(
-                "[ArcSSE] Reconnecting in {}s (backoff)",
-                backoff_secs
-            );
+            tracing::info!("[ArcSSE] Reconnecting in {}s (backoff)", backoff_secs);
 
             tokio::select! {
                 _ = self.cancel_token.cancelled() => {

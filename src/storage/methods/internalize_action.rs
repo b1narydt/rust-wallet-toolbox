@@ -56,9 +56,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                 let valid = chain_tracker
                     .is_valid_root_for_height(&merkle_root, bump.block_height)
                     .await
-                    .map_err(|e| {
-                        WalletError::Internal(format!("Chain tracker error: {}", e))
-                    })?;
+                    .map_err(|e| WalletError::Internal(format!("Chain tracker error: {}", e)))?;
                 if !valid {
                     return Err(WalletError::InvalidParameter {
                         parameter: "tx".to_string(),
@@ -86,14 +84,14 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
     }
 
     // Find the main transaction in the BEEF
-    let beef_tx = ab
-        .txs
-        .iter()
-        .find(|t| t.txid == txid)
-        .ok_or_else(|| WalletError::InvalidParameter {
-            parameter: "tx".to_string(),
-            must_be: format!("valid AtomicBEEF containing transaction {}", txid),
-        })?;
+    let beef_tx =
+        ab.txs
+            .iter()
+            .find(|t| t.txid == txid)
+            .ok_or_else(|| WalletError::InvalidParameter {
+                parameter: "tx".to_string(),
+                must_be: format!("valid AtomicBEEF containing transaction {}", txid),
+            })?;
 
     let tx = beef_tx.tx.as_ref().ok_or_else(|| {
         WalletError::Internal(format!("BEEF transaction {} has no raw tx data", txid))
@@ -243,9 +241,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                     ..Default::default()
                 };
                 let existing_proven = verify_one_or_none(
-                    storage
-                        .find_proven_txs(&find_proven, Some(&db_trx))
-                        .await?,
+                    storage.find_proven_txs(&find_proven, Some(&db_trx)).await?,
                 )?;
 
                 if let Some(ep) = existing_proven {
@@ -263,9 +259,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                         block_hash: String::new(),
                         merkle_root,
                     };
-                    let ptx_id = storage
-                        .insert_proven_tx(&new_proven, Some(&db_trx))
-                        .await?;
+                    let ptx_id = storage.insert_proven_tx(&new_proven, Some(&db_trx)).await?;
                     proven_tx_id = Some(ptx_id);
                 }
             }
@@ -304,9 +298,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
             input_beef: None,
             raw_tx: None,
         };
-        storage
-            .insert_transaction(&new_tx, Some(&db_trx))
-            .await?
+        storage.insert_transaction(&new_tx, Some(&db_trx)).await?
     };
 
     // Add labels
@@ -321,9 +313,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
             tx_label_id: tx_label.tx_label_id,
             is_deleted: false,
         };
-        let _ = storage
-            .insert_tx_label_map(&label_map, Some(&db_trx))
-            .await;
+        let _ = storage.insert_tx_label_map(&label_map, Some(&db_trx)).await;
     }
 
     // Process each output specification
@@ -345,9 +335,8 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                         },
                         ..Default::default()
                     };
-                    let eo = verify_one_or_none(
-                        storage.find_outputs(&find_out, Some(&db_trx)).await?,
-                    )?;
+                    let eo =
+                        verify_one_or_none(storage.find_outputs(&find_out, Some(&db_trx)).await?)?;
 
                     if let Some(existing_output) = eo {
                         if existing_output.basket_id == Some(default_basket.basket_id) {
@@ -413,9 +402,8 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                         },
                         ..Default::default()
                     };
-                    let eo = verify_one_or_none(
-                        storage.find_outputs(&find_out, Some(&db_trx)).await?,
-                    )?;
+                    let eo =
+                        verify_one_or_none(storage.find_outputs(&find_out, Some(&db_trx)).await?)?;
 
                     if let Some(existing_output) = eo {
                         let update = OutputPartial {
@@ -474,9 +462,9 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                         },
                         ..Default::default()
                     };
-                    if let Some(out) = verify_one_or_none(
-                        storage.find_outputs(&find_out, Some(&db_trx)).await?,
-                    )? {
+                    if let Some(out) =
+                        verify_one_or_none(storage.find_outputs(&find_out, Some(&db_trx)).await?)?
+                    {
                         let tag_map = crate::tables::OutputTagMap {
                             created_at: Utc::now().naive_utc(),
                             updated_at: Utc::now().naive_utc(),
@@ -484,9 +472,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                             output_tag_id: output_tag.output_tag_id,
                             is_deleted: false,
                         };
-                        let _ = storage
-                            .insert_output_tag_map(&tag_map, Some(&db_trx))
-                            .await;
+                        let _ = storage.insert_output_tag_map(&tag_map, Some(&db_trx)).await;
                     }
                 }
             }
@@ -696,11 +682,7 @@ mod tests {
             }
         }
 
-        async fn post_beef(
-            &self,
-            _beef: &[u8],
-            _txids: &[String],
-        ) -> Vec<types::PostBeefResult> {
+        async fn post_beef(&self, _beef: &[u8], _txids: &[String]) -> Vec<types::PostBeefResult> {
             vec![]
         }
 
@@ -758,10 +740,7 @@ mod tests {
             Ok(100_000)
         }
 
-        async fn n_lock_time_is_final(
-            &self,
-            _input: types::NLockTimeInput,
-        ) -> WalletResult<bool> {
+        async fn n_lock_time_is_final(&self, _input: types::NLockTimeInput) -> WalletResult<bool> {
             Ok(true)
         }
 
@@ -785,9 +764,7 @@ mod tests {
         }
 
         fn get_services_call_history(&self, _reset: bool) -> types::ServicesCallHistory {
-            types::ServicesCallHistory {
-                services: vec![],
-            }
+            types::ServicesCallHistory { services: vec![] }
         }
 
         async fn get_beef_for_txid(&self, _txid: &str) -> WalletResult<Beef> {
@@ -854,8 +831,7 @@ mod tests {
 
         // Add two outputs with P2PKH-like scripts
         let script1 =
-            LockingScript::from_hex("76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac")
-                .unwrap();
+            LockingScript::from_hex("76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac").unwrap();
         let out1 = TransactionOutput {
             satoshis: Some(1000),
             locking_script: script1,
@@ -864,8 +840,7 @@ mod tests {
         tx.add_output(out1);
 
         let script2 =
-            LockingScript::from_hex("76a91400112233445566778899aabbccddeeff0011223388ac")
-                .unwrap();
+            LockingScript::from_hex("76a91400112233445566778899aabbccddeeff0011223388ac").unwrap();
         let out2 = TransactionOutput {
             satoshis: Some(2000),
             locking_script: script2,

@@ -5,12 +5,10 @@
 
 use crate::error::WalletResult;
 use crate::services::traits::WalletServices;
-use bsv::wallet::interfaces::InternalizeOutput;
-use crate::signer::types::{
-    SignerInternalizeActionResult, ValidInternalizeActionArgs,
-};
+use crate::signer::types::{SignerInternalizeActionResult, ValidInternalizeActionArgs};
 use crate::storage::action_traits::StorageActionProvider;
 use crate::storage::action_types::{StorageInternalizeActionArgs, StorageInternalizeOutput};
+use bsv::wallet::interfaces::InternalizeOutput;
 
 /// Execute the signer-level internalizeAction flow.
 ///
@@ -32,36 +30,36 @@ pub async fn signer_internalize_action(
             .outputs
             .iter()
             .map(|o| match o {
-                InternalizeOutput::WalletPayment { output_index, payment } => {
-                    StorageInternalizeOutput {
-                        output_index: *output_index,
-                        protocol: "wallet payment".to_string(),
-                        basket: None,
-                        custom_instructions: None,
-                        tags: vec![],
-                        derivation_prefix: Some(
-                            String::from_utf8_lossy(&payment.derivation_prefix).to_string(),
-                        ),
-                        derivation_suffix: Some(
-                            String::from_utf8_lossy(&payment.derivation_suffix).to_string(),
-                        ),
-                        sender_identity_key: Some(
-                            payment.sender_identity_key.to_der_hex(),
-                        ),
-                    }
-                }
-                InternalizeOutput::BasketInsertion { output_index, insertion } => {
-                    StorageInternalizeOutput {
-                        output_index: *output_index,
-                        protocol: "basket insertion".to_string(),
-                        basket: Some(insertion.basket.to_string()),
-                        custom_instructions: insertion.custom_instructions.clone(),
-                        tags: insertion.tags.iter().map(|t| t.to_string()).collect(),
-                        derivation_prefix: None,
-                        derivation_suffix: None,
-                        sender_identity_key: None,
-                    }
-                }
+                InternalizeOutput::WalletPayment {
+                    output_index,
+                    payment,
+                } => StorageInternalizeOutput {
+                    output_index: *output_index,
+                    protocol: "wallet payment".to_string(),
+                    basket: None,
+                    custom_instructions: None,
+                    tags: vec![],
+                    derivation_prefix: Some(
+                        String::from_utf8_lossy(&payment.derivation_prefix).to_string(),
+                    ),
+                    derivation_suffix: Some(
+                        String::from_utf8_lossy(&payment.derivation_suffix).to_string(),
+                    ),
+                    sender_identity_key: Some(payment.sender_identity_key.to_der_hex()),
+                },
+                InternalizeOutput::BasketInsertion {
+                    output_index,
+                    insertion,
+                } => StorageInternalizeOutput {
+                    output_index: *output_index,
+                    protocol: "basket insertion".to_string(),
+                    basket: Some(insertion.basket.to_string()),
+                    custom_instructions: insertion.custom_instructions.clone(),
+                    tags: insertion.tags.iter().map(|t| t.to_string()).collect(),
+                    derivation_prefix: None,
+                    derivation_suffix: None,
+                    sender_identity_key: None,
+                },
             })
             .collect(),
     };

@@ -74,10 +74,9 @@ impl WABClient {
             )));
         }
 
-        response
-            .json::<T>()
-            .await
-            .map_err(|e| WalletError::Internal(format!("Failed to parse response from {}: {}", url, e)))
+        response.json::<T>().await.map_err(|e| {
+            WalletError::Internal(format!("Failed to parse response from {}: {}", url, e))
+        })
     }
 
     // ========================================================================
@@ -301,7 +300,12 @@ mod tests {
     fn test_generate_random_presentation_key() {
         let key = WABClient::generate_random_presentation_key().unwrap();
         // A hex-encoded 256-bit private key should be 64 characters
-        assert_eq!(key.len(), 64, "Presentation key should be 64 hex chars, got {}", key.len());
+        assert_eq!(
+            key.len(),
+            64,
+            "Presentation key should be 64 hex chars, got {}",
+            key.len()
+        );
         // Verify it is valid hex
         assert!(
             key.chars().all(|c| c.is_ascii_hexdigit()),

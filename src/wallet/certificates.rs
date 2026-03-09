@@ -16,16 +16,16 @@ use bsv::auth::certificates::MasterCertificate;
 use bsv::auth::utils::nonce::{create_nonce, verify_nonce};
 use bsv::primitives::public_key::PublicKey;
 use bsv::wallet::interfaces::{
-    AcquireCertificateArgs, Certificate as SdkCertificate, CertificateType,
-    GetPublicKeyArgs, KeyringRevealer, ProveCertificateArgs, ProveCertificateResult,
-    SerialNumber, VerifyHmacArgs, WalletInterface,
+    AcquireCertificateArgs, Certificate as SdkCertificate, CertificateType, GetPublicKeyArgs,
+    KeyringRevealer, ProveCertificateArgs, ProveCertificateResult, SerialNumber, VerifyHmacArgs,
+    WalletInterface,
 };
 use bsv::wallet::types::{Counterparty, CounterpartyType, Protocol};
 
 use crate::error::{WalletError, WalletResult};
 use crate::storage::find_args::{
-    CertificateFieldPartial, CertificatePartial, FindCertificateFieldsArgs,
-    FindCertificatesArgs, Paged,
+    CertificateFieldPartial, CertificatePartial, FindCertificateFieldsArgs, FindCertificatesArgs,
+    Paged,
 };
 use crate::storage::manager::WalletStorageManager;
 use crate::tables::{Certificate, CertificateField};
@@ -90,10 +90,7 @@ pub async fn acquire_direct_certificate<W: WalletInterface + ?Sized>(
     );
     let certifier_str = args.certifier.to_der_hex();
     let subject_str = get_identity_key(wallet).await?;
-    let revocation_outpoint_str = args
-        .revocation_outpoint
-        .clone()
-        .unwrap_or_default();
+    let revocation_outpoint_str = args.revocation_outpoint.clone().unwrap_or_default();
     let signature_str = args
         .signature
         .as_ref()
@@ -199,10 +196,7 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
         ..Default::default()
     };
 
-    let certs = storage
-        .active()
-        .find_certificates(&find_args, None)
-        .await?;
+    let certs = storage.active().find_certificates(&find_args, None).await?;
 
     if certs.len() != 1 {
         return Err(WalletError::InvalidParameter {
@@ -238,10 +232,8 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
         .collect();
 
     // Rebuild the SDK certificate from storage data.
-    let certifier_pk =
-        PublicKey::from_string(&storage_cert.certifier).map_err(|e| {
-            WalletError::Internal(format!("Invalid certifier key: {}", e))
-        })?;
+    let certifier_pk = PublicKey::from_string(&storage_cert.certifier)
+        .map_err(|e| WalletError::Internal(format!("Invalid certifier key: {}", e)))?;
 
     let sdk_cert = SdkCertificate {
         cert_type: args.certificate.cert_type.clone(),
@@ -254,9 +246,8 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
     };
 
     // Build MasterCertificate and create verifier keyring.
-    let master_cert = MasterCertificate::new(sdk_cert, keyring).map_err(|e| {
-        WalletError::Internal(format!("Failed to create MasterCertificate: {}", e))
-    })?;
+    let master_cert = MasterCertificate::new(sdk_cert, keyring)
+        .map_err(|e| WalletError::Internal(format!("Failed to create MasterCertificate: {}", e)))?;
 
     let keyring_for_verifier = master_cert
         .create_keyring_for_verifier(
@@ -300,12 +291,13 @@ pub async fn acquire_issuance_certificate<W: WalletInterface + ?Sized>(
     auth: &AuthId,
     args: &AcquireCertificateArgs,
 ) -> WalletResult<AcquireCertificateResult> {
-    let certifier_url = args.certifier_url.as_deref().ok_or_else(|| {
-        WalletError::InvalidParameter {
-            parameter: "certifierUrl".to_string(),
-            must_be: "required for issuance protocol".to_string(),
-        }
-    })?;
+    let certifier_url =
+        args.certifier_url
+            .as_deref()
+            .ok_or_else(|| WalletError::InvalidParameter {
+                parameter: "certifierUrl".to_string(),
+                must_be: "required for issuance protocol".to_string(),
+            })?;
 
     // Step 1: Create a random client nonce.
     let client_nonce = create_nonce(wallet)
@@ -370,11 +362,9 @@ pub async fn acquire_issuance_certificate<W: WalletInterface + ?Sized>(
         .await
         .map_err(|e| WalletError::Internal(format!("Failed to parse certifier response: {}", e)))?;
 
-    let certificate_json = response_body
-        .get("certificate")
-        .ok_or_else(|| {
-            WalletError::Internal("No certificate received from certifier!".to_string())
-        })?;
+    let certificate_json = response_body.get("certificate").ok_or_else(|| {
+        WalletError::Internal("No certificate received from certifier!".to_string())
+    })?;
 
     let server_nonce = response_body
         .get("serverNonce")
@@ -516,12 +506,10 @@ pub async fn acquire_issuance_certificate<W: WalletInterface + ?Sized>(
     }
 
     // Step 10: Build SDK certificate and verify signature.
-    let subject_pk = PublicKey::from_string(resp_subject).map_err(|e| {
-        WalletError::Internal(format!("Invalid subject in response: {}", e))
-    })?;
-    let certifier_resp_pk = PublicKey::from_string(resp_certifier).map_err(|e| {
-        WalletError::Internal(format!("Invalid certifier in response: {}", e))
-    })?;
+    let subject_pk = PublicKey::from_string(resp_subject)
+        .map_err(|e| WalletError::Internal(format!("Invalid subject in response: {}", e)))?;
+    let certifier_resp_pk = PublicKey::from_string(resp_certifier)
+        .map_err(|e| WalletError::Internal(format!("Invalid certifier in response: {}", e)))?;
 
     let serial_number_arr = {
         let decoded = base64_decode(resp_serial).unwrap_or_default();
@@ -559,17 +547,13 @@ pub async fn acquire_issuance_certificate<W: WalletInterface + ?Sized>(
     }
 
     // Step 11: Test decryption works with the master keyring.
-    let master_cert =
-        MasterCertificate::new(signed_cert.clone(), master_keyring.clone()).map_err(|e| {
-            WalletError::Internal(format!("Failed to build MasterCertificate: {}", e))
-        })?;
+    let master_cert = MasterCertificate::new(signed_cert.clone(), master_keyring.clone())
+        .map_err(|e| WalletError::Internal(format!("Failed to build MasterCertificate: {}", e)))?;
 
     let _decrypted = master_cert
         .decrypt_fields(wallet, certifier_pk)
         .await
-        .map_err(|e| {
-            WalletError::Internal(format!("Field decryption test failed: {}", e))
-        })?;
+        .map_err(|e| WalletError::Internal(format!("Field decryption test failed: {}", e)))?;
 
     // Step 12: Store via acquire_direct_certificate.
     let store_args = AcquireCertificateArgs {
@@ -712,8 +696,7 @@ fn base64_decode(s: &str) -> Result<Vec<u8>, WalletError> {
         } else {
             0
         };
-        let triple =
-            ((a as u32) << 18) | ((b as u32) << 12) | ((c as u32) << 6) | (d as u32);
+        let triple = ((a as u32) << 18) | ((b as u32) << 12) | ((c as u32) << 6) | (d as u32);
         result.push(((triple >> 16) & 0xFF) as u8);
         if i + 2 < bytes.len() && bytes[i + 2] != b'=' {
             result.push(((triple >> 8) & 0xFF) as u8);

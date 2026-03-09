@@ -68,12 +68,14 @@ impl ScriptTemplateBRC29 {
         };
         let derived_pub = key_deriver
             .derive_public_key(&brc29_protocol(), &self.key_id(), &counterparty, false)
-            .map_err(|e| crate::error::WalletError::Internal(format!("BRC-29 lock derivation failed: {}", e)))?;
+            .map_err(|e| {
+                crate::error::WalletError::Internal(format!("BRC-29 lock derivation failed: {}", e))
+            })?;
 
         let p2pkh = P2PKH::from_public_key_hash(Self::pubkey_to_hash(&derived_pub));
-        let locking_script = p2pkh
-            .lock()
-            .map_err(|e| crate::error::WalletError::Internal(format!("P2PKH lock failed: {}", e)))?;
+        let locking_script = p2pkh.lock().map_err(|e| {
+            crate::error::WalletError::Internal(format!("P2PKH lock failed: {}", e))
+        })?;
         Ok(locking_script.to_binary())
     }
 
@@ -94,7 +96,12 @@ impl ScriptTemplateBRC29 {
         };
         let derived_priv = key_deriver
             .derive_private_key(&brc29_protocol(), &self.key_id(), &counterparty)
-            .map_err(|e| crate::error::WalletError::Internal(format!("BRC-29 unlock derivation failed: {}", e)))?;
+            .map_err(|e| {
+                crate::error::WalletError::Internal(format!(
+                    "BRC-29 unlock derivation failed: {}",
+                    e
+                ))
+            })?;
 
         Ok(P2PKH::from_private_key(derived_priv))
     }
@@ -191,7 +198,8 @@ mod tests {
         // The P2PKH from unlock should have the same hash
         let unlock_hash = p2pkh.public_key_hash.unwrap();
         assert_eq!(
-            lock_hash, &unlock_hash[..],
+            lock_hash,
+            &unlock_hash[..],
             "lock and unlock should derive corresponding keys"
         );
     }

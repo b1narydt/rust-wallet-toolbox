@@ -33,7 +33,10 @@ mod sqlite_tests {
         // read_pool() returns a reference to the read pool, which should
         // be the dedicated reader (not the write pool) for SQLite.
         let _rp = storage.read_pool();
-        assert!(storage.read_pool.is_some(), "read_pool should be Some for SQLite");
+        assert!(
+            storage.read_pool.is_some(),
+            "read_pool should be Some for SQLite"
+        );
     }
 
     /// Test 4: Dual-pool SQLite -- begin_transaction returns a TrxToken,
@@ -55,8 +58,8 @@ mod sqlite_tests {
             .expect("begin_transaction should succeed");
 
         // Extract and verify it is a valid SQLite transaction
-        let inner = SqliteStorage::extract_sqlite_trx(&trx)
-            .expect("should extract SQLite trx inner");
+        let inner =
+            SqliteStorage::extract_sqlite_trx(&trx).expect("should extract SQLite trx inner");
 
         // The inner should contain Some(transaction)
         let guard = inner.lock().await;
@@ -64,10 +67,13 @@ mod sqlite_tests {
         drop(guard);
 
         // Commit (take the transaction out and commit it)
-        let inner = trx.downcast::<bsv_wallet_toolbox::storage::sqlx_impl::SqliteTrxInner>()
+        let inner = trx
+            .downcast::<bsv_wallet_toolbox::storage::sqlx_impl::SqliteTrxInner>()
             .expect("should downcast to SqliteTrxInner");
         let mut guard = inner.lock().await;
-        let tx = guard.take().expect("Transaction should be present for commit");
+        let tx = guard
+            .take()
+            .expect("Transaction should be present for commit");
         tx.commit().await.expect("commit should succeed");
     }
 

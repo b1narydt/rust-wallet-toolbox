@@ -6,8 +6,8 @@
 
 use tracing::{error, info, instrument};
 
-use crate::WalletResult;
 use crate::error::WalletError;
+use crate::WalletResult;
 
 /// Returns the SQLite migrator with embedded migration files.
 #[cfg(feature = "sqlite")]

@@ -68,10 +68,7 @@ async fn test_list_no_send_actions_empty() {
         result.total_actions, 0,
         "Fresh wallet should have no nosend actions"
     );
-    assert!(
-        result.actions.is_empty(),
-        "Actions list should be empty"
-    );
+    assert!(result.actions.is_empty(), "Actions list should be empty");
     setup.wallet.destroy().await.unwrap();
 }
 
@@ -84,10 +81,7 @@ async fn test_list_failed_actions_empty() {
         result.total_actions, 0,
         "Fresh wallet should have no failed actions"
     );
-    assert!(
-        result.actions.is_empty(),
-        "Actions list should be empty"
-    );
+    assert!(result.actions.is_empty(), "Actions list should be empty");
     setup.wallet.destroy().await.unwrap();
 }
 

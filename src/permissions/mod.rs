@@ -343,12 +343,11 @@ fn counterparty_str(cpty: &bsv::wallet::types::Counterparty) -> String {
     match cpty.counterparty_type {
         bsv::wallet::types::CounterpartyType::Self_ => "self".to_string(),
         bsv::wallet::types::CounterpartyType::Anyone => "anyone".to_string(),
-        bsv::wallet::types::CounterpartyType::Other => {
-            cpty.public_key
-                .as_ref()
-                .map(|pk| pk.to_der_hex())
-                .unwrap_or_default()
-        }
+        bsv::wallet::types::CounterpartyType::Other => cpty
+            .public_key
+            .as_ref()
+            .map(|pk| pk.to_der_hex())
+            .unwrap_or_default(),
         bsv::wallet::types::CounterpartyType::Uninitialized => String::new(),
     }
 }
@@ -435,9 +434,12 @@ impl WalletInterface for WalletPermissionsManager {
 
         // Encrypt metadata if configured
         if self.config.encrypt_wallet_metadata {
-            args.description =
-                metadata::encrypt_action_metadata(self.inner.as_ref(), &args.description, &self.admin_originator)
-                    .await?;
+            args.description = metadata::encrypt_action_metadata(
+                self.inner.as_ref(),
+                &args.description,
+                &self.admin_originator,
+            )
+            .await?;
         }
 
         self.inner.create_action(args, originator).await
@@ -562,9 +564,19 @@ impl WalletInterface for WalletPermissionsManager {
         let o = orig(originator);
         if let Some(ref proto) = args.protocol_id {
             let (name, sec) = protocol_info(proto);
-            let cpty = args.counterparty.as_ref().map(|c| counterparty_str(c)).unwrap_or_default();
+            let cpty = args
+                .counterparty
+                .as_ref()
+                .map(|c| counterparty_str(c))
+                .unwrap_or_default();
             ensure::ensure_protocol_permission(
-                self, o, &name, sec, &cpty, args.privileged, "publicKey",
+                self,
+                o,
+                &name,
+                sec,
+                &cpty,
+                args.privileged,
+                "publicKey",
             )
             .await?;
         }
@@ -583,7 +595,13 @@ impl WalletInterface for WalletPermissionsManager {
         let cpty = args.counterparty.to_der_hex();
         let privileged = args.privileged.unwrap_or(false);
         ensure::ensure_protocol_permission(
-            self, o, "key linkage revelation", 2, &cpty, privileged, "keyLinkage",
+            self,
+            o,
+            "key linkage revelation",
+            2,
+            &cpty,
+            privileged,
+            "keyLinkage",
         )
         .await?;
         self.inner
@@ -601,10 +619,8 @@ impl WalletInterface for WalletPermissionsManager {
         let (name, sec) = protocol_info(&args.protocol_id);
         let cpty = counterparty_str(&args.counterparty);
         let privileged = args.privileged.unwrap_or(false);
-        ensure::ensure_protocol_permission(
-            self, o, &name, sec, &cpty, privileged, "keyLinkage",
-        )
-        .await?;
+        ensure::ensure_protocol_permission(self, o, &name, sec, &cpty, privileged, "keyLinkage")
+            .await?;
         self.inner
             .reveal_specific_key_linkage(args, originator)
             .await
@@ -620,7 +636,13 @@ impl WalletInterface for WalletPermissionsManager {
         let (name, sec) = protocol_info(&args.protocol_id);
         let cpty = counterparty_str(&args.counterparty);
         ensure::ensure_protocol_permission(
-            self, o, &name, sec, &cpty, args.privileged, "encrypting",
+            self,
+            o,
+            &name,
+            sec,
+            &cpty,
+            args.privileged,
+            "encrypting",
         )
         .await?;
         self.inner.encrypt(args, originator).await
@@ -636,7 +658,13 @@ impl WalletInterface for WalletPermissionsManager {
         let (name, sec) = protocol_info(&args.protocol_id);
         let cpty = counterparty_str(&args.counterparty);
         ensure::ensure_protocol_permission(
-            self, o, &name, sec, &cpty, args.privileged, "decryption",
+            self,
+            o,
+            &name,
+            sec,
+            &cpty,
+            args.privileged,
+            "decryption",
         )
         .await?;
         self.inner.decrypt(args, originator).await
@@ -666,7 +694,13 @@ impl WalletInterface for WalletPermissionsManager {
         let (name, sec) = protocol_info(&args.protocol_id);
         let cpty = counterparty_str(&args.counterparty);
         ensure::ensure_protocol_permission(
-            self, o, &name, sec, &cpty, args.privileged, "hmacVerification",
+            self,
+            o,
+            &name,
+            sec,
+            &cpty,
+            args.privileged,
+            "hmacVerification",
         )
         .await?;
         self.inner.verify_hmac(args, originator).await
@@ -681,10 +715,8 @@ impl WalletInterface for WalletPermissionsManager {
         let o = orig(originator);
         let (name, sec) = protocol_info(&args.protocol_id);
         let cpty = counterparty_str(&args.counterparty);
-        ensure::ensure_protocol_permission(
-            self, o, &name, sec, &cpty, args.privileged, "signing",
-        )
-        .await?;
+        ensure::ensure_protocol_permission(self, o, &name, sec, &cpty, args.privileged, "signing")
+            .await?;
         self.inner.create_signature(args, originator).await
     }
 
@@ -698,7 +730,13 @@ impl WalletInterface for WalletPermissionsManager {
         let (name, sec) = protocol_info(&args.protocol_id);
         let cpty = counterparty_str(&args.counterparty);
         ensure::ensure_protocol_permission(
-            self, o, &name, sec, &cpty, args.privileged, "signatureVerification",
+            self,
+            o,
+            &name,
+            sec,
+            &cpty,
+            args.privileged,
+            "signatureVerification",
         )
         .await?;
         self.inner.verify_signature(args, originator).await
@@ -825,14 +863,9 @@ impl WalletInterface for WalletPermissionsManager {
     ) -> Result<DiscoverCertificatesResult, bsv::wallet::error::WalletError> {
         if self.config.require_certificate_access_for_discovery {
             let o = orig(originator);
-            ensure::ensure_certificate_access(
-                self, o, "*", None, None, false, "discovery",
-            )
-            .await?;
+            ensure::ensure_certificate_access(self, o, "*", None, None, false, "discovery").await?;
         }
-        self.inner
-            .discover_by_identity_key(args, originator)
-            .await
+        self.inner.discover_by_identity_key(args, originator).await
     }
 
     /// Checks certificate access if config flag is set.
@@ -843,10 +876,7 @@ impl WalletInterface for WalletPermissionsManager {
     ) -> Result<DiscoverCertificatesResult, bsv::wallet::error::WalletError> {
         if self.config.require_certificate_access_for_discovery {
             let o = orig(originator);
-            ensure::ensure_certificate_access(
-                self, o, "*", None, None, false, "discovery",
-            )
-            .await?;
+            ensure::ensure_certificate_access(self, o, "*", None, None, false, "discovery").await?;
         }
         self.inner.discover_by_attributes(args, originator).await
     }
@@ -871,21 +901,27 @@ mod tests {
             &self,
             _originator: Option<&str>,
         ) -> Result<AuthenticatedResult, bsv::wallet::error::WalletError> {
-            Ok(AuthenticatedResult { authenticated: true })
+            Ok(AuthenticatedResult {
+                authenticated: true,
+            })
         }
 
         async fn wait_for_authentication(
             &self,
             _originator: Option<&str>,
         ) -> Result<AuthenticatedResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("wait_for_authentication".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "wait_for_authentication".into(),
+            ))
         }
 
         async fn get_height(
             &self,
             _originator: Option<&str>,
         ) -> Result<GetHeightResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("get_height".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "get_height".into(),
+            ))
         }
 
         async fn get_header_for_height(
@@ -893,21 +929,27 @@ mod tests {
             _args: GetHeaderArgs,
             _originator: Option<&str>,
         ) -> Result<GetHeaderResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("get_header_for_height".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "get_header_for_height".into(),
+            ))
         }
 
         async fn get_network(
             &self,
             _originator: Option<&str>,
         ) -> Result<GetNetworkResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("get_network".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "get_network".into(),
+            ))
         }
 
         async fn get_version(
             &self,
             _originator: Option<&str>,
         ) -> Result<GetVersionResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("get_version".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "get_version".into(),
+            ))
         }
 
         async fn create_action(
@@ -915,7 +957,9 @@ mod tests {
             _args: CreateActionArgs,
             _originator: Option<&str>,
         ) -> Result<CreateActionResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("create_action".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "create_action".into(),
+            ))
         }
 
         async fn sign_action(
@@ -923,7 +967,9 @@ mod tests {
             _args: SignActionArgs,
             _originator: Option<&str>,
         ) -> Result<SignActionResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("sign_action".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "sign_action".into(),
+            ))
         }
 
         async fn abort_action(
@@ -931,7 +977,9 @@ mod tests {
             _args: AbortActionArgs,
             _originator: Option<&str>,
         ) -> Result<AbortActionResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("abort_action".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "abort_action".into(),
+            ))
         }
 
         async fn list_actions(
@@ -939,7 +987,9 @@ mod tests {
             _args: ListActionsArgs,
             _originator: Option<&str>,
         ) -> Result<ListActionsResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("list_actions".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "list_actions".into(),
+            ))
         }
 
         async fn internalize_action(
@@ -947,7 +997,9 @@ mod tests {
             _args: InternalizeActionArgs,
             _originator: Option<&str>,
         ) -> Result<InternalizeActionResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("internalize_action".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "internalize_action".into(),
+            ))
         }
 
         async fn list_outputs(
@@ -955,7 +1007,9 @@ mod tests {
             _args: ListOutputsArgs,
             _originator: Option<&str>,
         ) -> Result<ListOutputsResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("list_outputs".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "list_outputs".into(),
+            ))
         }
 
         async fn relinquish_output(
@@ -963,7 +1017,9 @@ mod tests {
             _args: RelinquishOutputArgs,
             _originator: Option<&str>,
         ) -> Result<RelinquishOutputResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("relinquish_output".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "relinquish_output".into(),
+            ))
         }
 
         async fn get_public_key(
@@ -971,7 +1027,9 @@ mod tests {
             _args: GetPublicKeyArgs,
             _originator: Option<&str>,
         ) -> Result<GetPublicKeyResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("get_public_key".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "get_public_key".into(),
+            ))
         }
 
         async fn reveal_counterparty_key_linkage(
@@ -979,7 +1037,9 @@ mod tests {
             _args: RevealCounterpartyKeyLinkageArgs,
             _originator: Option<&str>,
         ) -> Result<RevealCounterpartyKeyLinkageResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("reveal_counterparty_key_linkage".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "reveal_counterparty_key_linkage".into(),
+            ))
         }
 
         async fn reveal_specific_key_linkage(
@@ -987,7 +1047,9 @@ mod tests {
             _args: RevealSpecificKeyLinkageArgs,
             _originator: Option<&str>,
         ) -> Result<RevealSpecificKeyLinkageResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("reveal_specific_key_linkage".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "reveal_specific_key_linkage".into(),
+            ))
         }
 
         async fn encrypt(
@@ -995,7 +1057,9 @@ mod tests {
             _args: EncryptArgs,
             _originator: Option<&str>,
         ) -> Result<EncryptResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("encrypt".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "encrypt".into(),
+            ))
         }
 
         async fn decrypt(
@@ -1003,7 +1067,9 @@ mod tests {
             _args: DecryptArgs,
             _originator: Option<&str>,
         ) -> Result<DecryptResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("decrypt".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "decrypt".into(),
+            ))
         }
 
         async fn create_hmac(
@@ -1011,7 +1077,9 @@ mod tests {
             _args: CreateHmacArgs,
             _originator: Option<&str>,
         ) -> Result<CreateHmacResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("create_hmac".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "create_hmac".into(),
+            ))
         }
 
         async fn verify_hmac(
@@ -1019,7 +1087,9 @@ mod tests {
             _args: VerifyHmacArgs,
             _originator: Option<&str>,
         ) -> Result<VerifyHmacResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("verify_hmac".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "verify_hmac".into(),
+            ))
         }
 
         async fn create_signature(
@@ -1027,7 +1097,9 @@ mod tests {
             _args: CreateSignatureArgs,
             _originator: Option<&str>,
         ) -> Result<CreateSignatureResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("create_signature".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "create_signature".into(),
+            ))
         }
 
         async fn verify_signature(
@@ -1035,7 +1107,9 @@ mod tests {
             _args: VerifySignatureArgs,
             _originator: Option<&str>,
         ) -> Result<VerifySignatureResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("verify_signature".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "verify_signature".into(),
+            ))
         }
 
         async fn acquire_certificate(
@@ -1043,7 +1117,9 @@ mod tests {
             _args: AcquireCertificateArgs,
             _originator: Option<&str>,
         ) -> Result<Certificate, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("acquire_certificate".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "acquire_certificate".into(),
+            ))
         }
 
         async fn list_certificates(
@@ -1051,7 +1127,9 @@ mod tests {
             _args: ListCertificatesArgs,
             _originator: Option<&str>,
         ) -> Result<ListCertificatesResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("list_certificates".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "list_certificates".into(),
+            ))
         }
 
         async fn prove_certificate(
@@ -1059,7 +1137,9 @@ mod tests {
             _args: ProveCertificateArgs,
             _originator: Option<&str>,
         ) -> Result<ProveCertificateResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("prove_certificate".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "prove_certificate".into(),
+            ))
         }
 
         async fn relinquish_certificate(
@@ -1067,7 +1147,9 @@ mod tests {
             _args: RelinquishCertificateArgs,
             _originator: Option<&str>,
         ) -> Result<RelinquishCertificateResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("relinquish_certificate".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "relinquish_certificate".into(),
+            ))
         }
 
         async fn discover_by_identity_key(
@@ -1075,7 +1157,9 @@ mod tests {
             _args: DiscoverByIdentityKeyArgs,
             _originator: Option<&str>,
         ) -> Result<DiscoverCertificatesResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("discover_by_identity_key".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "discover_by_identity_key".into(),
+            ))
         }
 
         async fn discover_by_attributes(
@@ -1083,7 +1167,9 @@ mod tests {
             _args: DiscoverByAttributesArgs,
             _originator: Option<&str>,
         ) -> Result<DiscoverCertificatesResult, bsv::wallet::error::WalletError> {
-            Err(bsv::wallet::error::WalletError::NotImplemented("discover_by_attributes".into()))
+            Err(bsv::wallet::error::WalletError::NotImplemented(
+                "discover_by_attributes".into(),
+            ))
         }
     }
 

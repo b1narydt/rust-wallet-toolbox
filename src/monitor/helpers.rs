@@ -281,10 +281,9 @@ pub async fn get_proofs(
         // If already linked to a proven tx, mark completed
         if let Some(proven_tx_id) = req.proven_tx_id {
             if proven_tx_id > 0 {
-                result.log.push_str(&format!(
-                    "already linked to provenTxId {}.\n",
-                    proven_tx_id
-                ));
+                result
+                    .log
+                    .push_str(&format!("already linked to provenTxId {}.\n", proven_tx_id));
                 let update = ProvenTxReqPartial {
                     status: Some(ProvenTxReqStatus::Completed),
                     notified: Some(false),
@@ -300,10 +299,9 @@ pub async fn get_proofs(
 
         // Check attempt limit
         if req.attempts > unproven_attempts_limit as i32 {
-            result.log.push_str(&format!(
-                "too many failed attempts {}\n",
-                req.attempts
-            ));
+            result
+                .log
+                .push_str(&format!("too many failed attempts {}\n", req.attempts));
             let update = ProvenTxReqPartial {
                 status: Some(ProvenTxReqStatus::Invalid),
                 notified: Some(false),
@@ -336,11 +334,7 @@ pub async fn get_proofs(
             };
 
             match storage
-                .update_proven_tx_req_with_new_proven_tx(
-                    req.proven_tx_req_id,
-                    &proven_tx,
-                    None,
-                )
+                .update_proven_tx_req_with_new_proven_tx(req.proven_tx_req_id, &proven_tx, None)
                 .await
             {
                 Ok(_proven_tx_id) => {
@@ -351,10 +345,7 @@ pub async fn get_proofs(
                     result.proven.push(req.clone());
                 }
                 Err(e) => {
-                    result.log.push_str(&format!(
-                        "error saving proof: {}\n",
-                        e
-                    ));
+                    result.log.push_str(&format!("error saving proof: {}\n", e));
                 }
             }
         } else {

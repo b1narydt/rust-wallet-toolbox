@@ -44,10 +44,16 @@ pub async fn signer_abort_action(
         ..Default::default()
     };
     let txs = storage.find_transactions(&find_tx_args, None).await?;
-    let transaction = txs.into_iter().next().ok_or_else(|| WalletError::InvalidParameter {
-        parameter: "reference".to_string(),
-        must_be: format!("a valid transaction reference. '{}' not found", args.reference),
-    })?;
+    let transaction = txs
+        .into_iter()
+        .next()
+        .ok_or_else(|| WalletError::InvalidParameter {
+            parameter: "reference".to_string(),
+            must_be: format!(
+                "a valid transaction reference. '{}' not found",
+                args.reference
+            ),
+        })?;
 
     // Only allow aborting unsigned or unprocessed transactions
     if transaction.status != TransactionStatus::Unsigned

@@ -144,23 +144,14 @@ impl ChaintracksServiceClient {
 
     /// Get a block header by height.
     pub async fn get_header_for_height(&self, height: u32) -> WalletResult<Option<BlockHeader>> {
-        self.get_json_or_none(&format!(
-            "/findHeaderHexForHeight?height={}",
-            height
-        ))
-        .await
+        self.get_json_or_none(&format!("/findHeaderHexForHeight?height={}", height))
+            .await
     }
 
     /// Get a block header by block hash.
-    pub async fn get_header_for_block_hash(
-        &self,
-        hash: &str,
-    ) -> WalletResult<Option<BlockHeader>> {
-        self.get_json_or_none(&format!(
-            "/findHeaderHexForBlockHash?hash={}",
-            hash
-        ))
-        .await
+    pub async fn get_header_for_block_hash(&self, hash: &str) -> WalletResult<Option<BlockHeader>> {
+        self.get_json_or_none(&format!("/findHeaderHexForBlockHash?hash={}", hash))
+            .await
     }
 
     /// Get the current chain tip header.

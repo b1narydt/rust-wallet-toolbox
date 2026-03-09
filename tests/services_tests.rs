@@ -173,7 +173,11 @@ fn test_get_services_call_history_empty() {
     let history = services.get_services_call_history(false);
 
     // Should have entries for each service collection
-    assert_eq!(history.services.len(), 6, "Should have 6 service collections");
+    assert_eq!(
+        history.services.len(),
+        6,
+        "Should have 6 service collections"
+    );
 
     // Each should have service name but empty history
     let names: Vec<&str> = history

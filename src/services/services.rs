@@ -17,10 +17,7 @@ use crate::error::{WalletError, WalletResult};
 use crate::types::Chain;
 
 use super::chaintracker::{ChaintracksChainTracker, ChaintracksServiceClient};
-use super::providers::exchange_rates::{
-    fetch_bsv_exchange_rate, fetch_fiat_exchange_rates,
-};
-use bsv::transaction::beef::BEEF_V1;
+use super::providers::exchange_rates::{fetch_bsv_exchange_rate, fetch_fiat_exchange_rates};
 use super::providers::{ArcProvider, Bitails, WhatsOnChain};
 use super::service_collection::ServiceCollection;
 use super::traits::{
@@ -33,6 +30,7 @@ use super::types::{
     GetUtxoStatusResult, NLockTimeInput, PostBeefMode, PostBeefResult, ServiceCall,
     ServicesCallHistory, ServicesConfig,
 };
+use bsv::transaction::beef::BEEF_V1;
 
 /// The main services orchestrator struct.
 ///
@@ -81,8 +79,7 @@ impl Services {
         }
 
         // -- getRawTx collection --
-        let mut get_raw_tx_coll =
-            ServiceCollection::<dyn GetRawTxProvider>::new("getRawTx");
+        let mut get_raw_tx_coll = ServiceCollection::<dyn GetRawTxProvider>::new("getRawTx");
         let woc_raw = WhatsOnChain::new(
             chain.clone(),
             config.whats_on_chain_api_key.clone(),
@@ -92,16 +89,11 @@ impl Services {
 
         // -- postBeef collection --
         // Order matches TS: GorillaPool (if main), Taal, Bitails (if main/test), WoC
-        let mut post_beef_coll =
-            ServiceCollection::<dyn PostBeefProvider>::new("postBeef");
+        let mut post_beef_coll = ServiceCollection::<dyn PostBeefProvider>::new("postBeef");
 
         if let Some(ref gp_url) = config.arc_gorilla_pool_url {
-            let gp_config = config
-                .arc_gorilla_pool_config
-                .clone()
-                .unwrap_or_default();
-            let arc_gp =
-                ArcProvider::new("GorillaPoolArcBeef", gp_url, gp_config, client.clone());
+            let gp_config = config.arc_gorilla_pool_config.clone().unwrap_or_default();
+            let arc_gp = ArcProvider::new("GorillaPoolArcBeef", gp_url, gp_config, client.clone());
             post_beef_coll.add("GorillaPoolArcBeef", Box::new(arc_gp));
         }
 
@@ -247,9 +239,7 @@ impl WalletServices for Services {
 
             let start = Utc::now();
             let result = provider.get_merkle_path(txid, self).await;
-            let elapsed = Utc::now()
-                .signed_duration_since(start)
-                .num_milliseconds();
+            let elapsed = Utc::now().signed_duration_since(start).num_milliseconds();
 
             if r0.name.is_none() {
                 r0.name = result.name.clone();
@@ -318,9 +308,7 @@ impl WalletServices for Services {
 
             let start = Utc::now();
             let result = provider.get_raw_tx(txid).await;
-            let elapsed = Utc::now()
-                .signed_duration_since(start)
-                .num_milliseconds();
+            let elapsed = Utc::now().signed_duration_since(start).num_milliseconds();
 
             if result.raw_tx.is_some() && result.error.is_none() {
                 let call = ServiceCall {
@@ -413,9 +401,7 @@ impl WalletServices for Services {
                 let result = provider
                     .get_utxo_status(output, output_format.clone(), outpoint)
                     .await;
-                let elapsed = Utc::now()
-                    .signed_duration_since(start)
-                    .num_milliseconds();
+                let elapsed = Utc::now().signed_duration_since(start).num_milliseconds();
 
                 if result.status == "success" {
                     let call = ServiceCall {
@@ -490,9 +476,7 @@ impl WalletServices for Services {
 
             let start = Utc::now();
             let result = provider.get_status_for_txids(txids).await;
-            let elapsed = Utc::now()
-                .signed_duration_since(start)
-                .num_milliseconds();
+            let elapsed = Utc::now().signed_duration_since(start).num_milliseconds();
 
             if result.status == "success" {
                 let call = ServiceCall {
@@ -561,9 +545,7 @@ impl WalletServices for Services {
 
             let start = Utc::now();
             let result = provider.get_script_hash_history(hash).await;
-            let elapsed = Utc::now()
-                .signed_duration_since(start)
-                .num_milliseconds();
+            let elapsed = Utc::now().signed_duration_since(start).num_milliseconds();
 
             if result.status == "success" {
                 let call = ServiceCall {
@@ -616,9 +598,10 @@ impl WalletServices for Services {
 
     async fn get_height(&self) -> WalletResult<u32> {
         use bsv::transaction::chain_tracker::ChainTracker as _;
-        self.chain_tracker.current_height().await.map_err(|e| {
-            WalletError::Internal(format!("ChainTracker error: {}", e))
-        })
+        self.chain_tracker
+            .current_height()
+            .await
+            .map_err(|e| WalletError::Internal(format!("ChainTracker error: {}", e)))
     }
 
     async fn n_lock_time_is_final(&self, input: NLockTimeInput) -> WalletResult<bool> {
@@ -710,12 +693,10 @@ impl WalletServices for Services {
         })?;
 
         // Parse the raw transaction
-        let tx = bsv::transaction::Transaction::from_binary(
-            &mut std::io::Cursor::new(&raw_tx),
-        )
-        .map_err(|e| {
-            WalletError::Internal(format!("Failed to parse transaction {}: {}", txid, e))
-        })?;
+        let tx = bsv::transaction::Transaction::from_binary(&mut std::io::Cursor::new(&raw_tx))
+            .map_err(|e| {
+                WalletError::Internal(format!("Failed to parse transaction {}: {}", txid, e))
+            })?;
 
         // Construct a simple Beef containing just this transaction
         let beef_tx = bsv::transaction::beef_tx::BeefTx {
@@ -742,12 +723,7 @@ impl WalletServices for Services {
         hex
     }
 
-    async fn is_utxo(
-        &self,
-        locking_script: &[u8],
-        txid: &str,
-        vout: u32,
-    ) -> WalletResult<bool> {
+    async fn is_utxo(&self, locking_script: &[u8], txid: &str, vout: u32) -> WalletResult<bool> {
         let hash = self.hash_output_script(locking_script);
         let outpoint = format!("{}.{}", txid, vout);
         let result = self
@@ -771,9 +747,7 @@ impl Services {
                 self.post_beef_until_success(beef, txids, soft_timeout_ms)
                     .await
             }
-            PostBeefMode::PromiseAll => {
-                self.post_beef_promise_all(beef, txids).await
-            }
+            PostBeefMode::PromiseAll => self.post_beef_promise_all(beef, txids).await,
         }
     }
 
@@ -842,9 +816,7 @@ impl Services {
                     None => break,
                 }
             };
-            let elapsed = Utc::now()
-                .signed_duration_since(start)
-                .num_milliseconds();
+            let elapsed = Utc::now().signed_duration_since(start).num_milliseconds();
 
             let is_success = result.status == "success";
             let is_timeout = result
@@ -915,11 +887,7 @@ impl Services {
     }
 
     /// PromiseAll mode: call all providers concurrently and collect results.
-    async fn post_beef_promise_all(
-        &self,
-        beef: &[u8],
-        txids: &[String],
-    ) -> Vec<PostBeefResult> {
+    async fn post_beef_promise_all(&self, beef: &[u8], txids: &[String]) -> Vec<PostBeefResult> {
         // Collect provider info while holding the lock briefly
         let provider_count = {
             let coll = self.post_beef.lock().await;
@@ -965,9 +933,7 @@ impl Services {
             for (provider, name) in &providers {
                 let start = Utc::now();
                 let result = provider.post_beef(&beef_bytes, &txids_vec).await;
-                let elapsed = Utc::now()
-                    .signed_duration_since(start)
-                    .num_milliseconds();
+                let elapsed = Utc::now().signed_duration_since(start).num_milliseconds();
                 results.push((name.clone(), start, elapsed, result));
             }
         }
@@ -1091,13 +1057,9 @@ impl Services {
     }
 
     /// Internal: update fiat exchange rates cache if stale for any requested currencies.
-    async fn update_fiat_exchange_rates(
-        &self,
-        target_currencies: &[String],
-    ) -> WalletResult<()> {
+    async fn update_fiat_exchange_rates(&self, target_currencies: &[String]) -> WalletResult<()> {
         let update_ms = self.config.fiat_update_msecs;
-        let freshness_cutoff = Utc::now()
-            - chrono::Duration::milliseconds(update_ms as i64);
+        let freshness_cutoff = Utc::now() - chrono::Duration::milliseconds(update_ms as i64);
 
         let to_fetch: Vec<String> = {
             let cached = self.fiat_exchange_rates.lock().await;

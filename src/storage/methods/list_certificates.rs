@@ -14,8 +14,8 @@ use bsv::wallet::interfaces::{
 
 use crate::error::{WalletError, WalletResult};
 use crate::storage::find_args::{
-    CertificateFieldPartial, CertificatePartial, FindCertificateFieldsArgs,
-    FindCertificatesArgs, Paged,
+    CertificateFieldPartial, CertificatePartial, FindCertificateFieldsArgs, FindCertificatesArgs,
+    Paged,
 };
 use crate::storage::traits::reader::StorageReader;
 use crate::storage::TrxToken;
@@ -137,14 +137,14 @@ pub async fn list_certificates(
             ))
         })?;
 
-        let cert_type = CertificateType::from_string(&cert.cert_type)
-            .unwrap_or(CertificateType([0u8; 32]));
+        let cert_type =
+            CertificateType::from_string(&cert.cert_type).unwrap_or(CertificateType([0u8; 32]));
 
-        let serial_number = SerialNumber::from_string(&cert.serial_number)
-            .unwrap_or(SerialNumber([0u8; 32]));
+        let serial_number =
+            SerialNumber::from_string(&cert.serial_number).unwrap_or(SerialNumber([0u8; 32]));
 
-        let signature = hex_decode(&cert.signature)
-            .or_else(|| Some(cert.signature.as_bytes().to_vec()));
+        let signature =
+            hex_decode(&cert.signature).or_else(|| Some(cert.signature.as_bytes().to_vec()));
 
         let sdk_cert = SdkCertificate {
             cert_type,
