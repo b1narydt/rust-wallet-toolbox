@@ -2,7 +2,13 @@
 name = "bsv-wallet-toolbox"
 version = "0.1.0"
 edition = "2021"
-description = "Production-ready BSV wallet implementation in Rust"
+rust-version = "1.87"
+description = "Pure Rust BSV wallet-toolbox implementation"
+readme = "README.md"
+repository = "https://github.com/b1narydt/rust-wallet-toolbox"
+documentation = "https://docs.rs/bsv-wallet-toolbox"
+keywords = ["bsv", "bitcoin", "blockchain", "wallet-toolbox", "cryptography", "wallet"]
+categories = ["cryptography", "authentication", "wallet"]
 
 [lib]
 name = "bsv_wallet_toolbox"
