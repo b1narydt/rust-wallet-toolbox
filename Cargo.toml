@@ -8,7 +8,7 @@ readme = "README.md"
 repository = "https://github.com/b1narydt/rust-wallet-toolbox"
 documentation = "https://docs.rs/bsv-wallet-toolbox"
 keywords = ["bsv", "bitcoin", "blockchain", "wallet", "cryptography"]
-categories = ["cryptography", "authentication", "wallet"]
+categories = ["cryptography", "authentication"]
 license-file = "LICENSE"
 
 [lib]
