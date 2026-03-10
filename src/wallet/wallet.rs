@@ -1328,3 +1328,258 @@ impl WalletInterface for Wallet {
         .map_err(to_sdk_error)
     }
 }
+
+// ---------------------------------------------------------------------------
+// WalletArc -- Clone-able newtype for Wallet
+// ---------------------------------------------------------------------------
+//
+// AuthMiddlewareFactory requires W: Clone, but Wallet cannot implement Clone
+// (WalletStorageManager contains Mutex). We use a newtype around Arc<Wallet>
+// that is Clone and implements WalletInterface by delegating to the inner Wallet.
+// This satisfies orphan rules (WalletArc is a local type).
+
+/// Clone-able wrapper around `Arc<Wallet>` implementing `WalletInterface`.
+///
+/// Needed because `Wallet` cannot implement `Clone` (contains `Mutex`),
+/// but `AuthMiddlewareFactory` requires `W: WalletInterface + Clone`.
+#[derive(Clone)]
+pub struct WalletArc(pub Arc<Wallet>);
+
+impl WalletArc {
+    /// Create a new WalletArc from an existing Arc<Wallet>.
+    pub fn new(wallet: Arc<Wallet>) -> Self {
+        Self(wallet)
+    }
+}
+
+#[async_trait]
+impl WalletInterface for WalletArc {
+    async fn get_public_key(
+        &self,
+        args: GetPublicKeyArgs,
+        originator: Option<&str>,
+    ) -> Result<GetPublicKeyResult, SdkWalletError> {
+        self.0.as_ref().get_public_key(args, originator).await
+    }
+
+    async fn encrypt(
+        &self,
+        args: EncryptArgs,
+        originator: Option<&str>,
+    ) -> Result<EncryptResult, SdkWalletError> {
+        self.0.as_ref().encrypt(args, originator).await
+    }
+
+    async fn decrypt(
+        &self,
+        args: DecryptArgs,
+        originator: Option<&str>,
+    ) -> Result<DecryptResult, SdkWalletError> {
+        self.0.as_ref().decrypt(args, originator).await
+    }
+
+    async fn create_hmac(
+        &self,
+        args: CreateHmacArgs,
+        originator: Option<&str>,
+    ) -> Result<CreateHmacResult, SdkWalletError> {
+        self.0.as_ref().create_hmac(args, originator).await
+    }
+
+    async fn verify_hmac(
+        &self,
+        args: VerifyHmacArgs,
+        originator: Option<&str>,
+    ) -> Result<VerifyHmacResult, SdkWalletError> {
+        self.0.as_ref().verify_hmac(args, originator).await
+    }
+
+    async fn create_signature(
+        &self,
+        args: CreateSignatureArgs,
+        originator: Option<&str>,
+    ) -> Result<CreateSignatureResult, SdkWalletError> {
+        self.0.as_ref().create_signature(args, originator).await
+    }
+
+    async fn verify_signature(
+        &self,
+        args: VerifySignatureArgs,
+        originator: Option<&str>,
+    ) -> Result<VerifySignatureResult, SdkWalletError> {
+        self.0.as_ref().verify_signature(args, originator).await
+    }
+
+    async fn reveal_counterparty_key_linkage(
+        &self,
+        args: RevealCounterpartyKeyLinkageArgs,
+        originator: Option<&str>,
+    ) -> Result<RevealCounterpartyKeyLinkageResult, SdkWalletError> {
+        self.0.as_ref()
+            .reveal_counterparty_key_linkage(args, originator)
+            .await
+    }
+
+    async fn reveal_specific_key_linkage(
+        &self,
+        args: RevealSpecificKeyLinkageArgs,
+        originator: Option<&str>,
+    ) -> Result<RevealSpecificKeyLinkageResult, SdkWalletError> {
+        self.0.as_ref()
+            .reveal_specific_key_linkage(args, originator)
+            .await
+    }
+
+    async fn is_authenticated(
+        &self,
+        originator: Option<&str>,
+    ) -> Result<AuthenticatedResult, SdkWalletError> {
+        self.0.as_ref().is_authenticated(originator).await
+    }
+
+    async fn wait_for_authentication(
+        &self,
+        originator: Option<&str>,
+    ) -> Result<AuthenticatedResult, SdkWalletError> {
+        self.0.as_ref().wait_for_authentication(originator).await
+    }
+
+    async fn get_height(
+        &self,
+        originator: Option<&str>,
+    ) -> Result<GetHeightResult, SdkWalletError> {
+        self.0.as_ref().get_height(originator).await
+    }
+
+    async fn get_header_for_height(
+        &self,
+        args: GetHeaderArgs,
+        originator: Option<&str>,
+    ) -> Result<GetHeaderResult, SdkWalletError> {
+        self.0.as_ref().get_header_for_height(args, originator).await
+    }
+
+    async fn get_network(
+        &self,
+        originator: Option<&str>,
+    ) -> Result<GetNetworkResult, SdkWalletError> {
+        self.0.as_ref().get_network(originator).await
+    }
+
+    async fn get_version(
+        &self,
+        originator: Option<&str>,
+    ) -> Result<GetVersionResult, SdkWalletError> {
+        self.0.as_ref().get_version(originator).await
+    }
+
+    async fn create_action(
+        &self,
+        args: CreateActionArgs,
+        originator: Option<&str>,
+    ) -> Result<CreateActionResult, SdkWalletError> {
+        self.0.as_ref().create_action(args, originator).await
+    }
+
+    async fn sign_action(
+        &self,
+        args: SignActionArgs,
+        originator: Option<&str>,
+    ) -> Result<SignActionResult, SdkWalletError> {
+        self.0.as_ref().sign_action(args, originator).await
+    }
+
+    async fn internalize_action(
+        &self,
+        args: InternalizeActionArgs,
+        originator: Option<&str>,
+    ) -> Result<InternalizeActionResult, SdkWalletError> {
+        self.0.as_ref().internalize_action(args, originator).await
+    }
+
+    async fn abort_action(
+        &self,
+        args: AbortActionArgs,
+        originator: Option<&str>,
+    ) -> Result<AbortActionResult, SdkWalletError> {
+        self.0.as_ref().abort_action(args, originator).await
+    }
+
+    async fn list_actions(
+        &self,
+        args: ListActionsArgs,
+        originator: Option<&str>,
+    ) -> Result<ListActionsResult, SdkWalletError> {
+        self.0.as_ref().list_actions(args, originator).await
+    }
+
+    async fn list_outputs(
+        &self,
+        args: ListOutputsArgs,
+        originator: Option<&str>,
+    ) -> Result<ListOutputsResult, SdkWalletError> {
+        self.0.as_ref().list_outputs(args, originator).await
+    }
+
+    async fn list_certificates(
+        &self,
+        args: ListCertificatesArgs,
+        originator: Option<&str>,
+    ) -> Result<ListCertificatesResult, SdkWalletError> {
+        self.0.as_ref().list_certificates(args, originator).await
+    }
+
+    async fn relinquish_output(
+        &self,
+        args: RelinquishOutputArgs,
+        originator: Option<&str>,
+    ) -> Result<RelinquishOutputResult, SdkWalletError> {
+        self.0.as_ref().relinquish_output(args, originator).await
+    }
+
+    async fn relinquish_certificate(
+        &self,
+        args: RelinquishCertificateArgs,
+        originator: Option<&str>,
+    ) -> Result<RelinquishCertificateResult, SdkWalletError> {
+        self.0.as_ref()
+            .relinquish_certificate(args, originator)
+            .await
+    }
+
+    async fn acquire_certificate(
+        &self,
+        args: AcquireCertificateArgs,
+        originator: Option<&str>,
+    ) -> Result<Certificate, SdkWalletError> {
+        self.0.as_ref().acquire_certificate(args, originator).await
+    }
+
+    async fn prove_certificate(
+        &self,
+        args: ProveCertificateArgs,
+        originator: Option<&str>,
+    ) -> Result<ProveCertificateResult, SdkWalletError> {
+        self.0.as_ref().prove_certificate(args, originator).await
+    }
+
+    async fn discover_by_identity_key(
+        &self,
+        args: DiscoverByIdentityKeyArgs,
+        originator: Option<&str>,
+    ) -> Result<DiscoverCertificatesResult, SdkWalletError> {
+        self.0.as_ref()
+            .discover_by_identity_key(args, originator)
+            .await
+    }
+
+    async fn discover_by_attributes(
+        &self,
+        args: DiscoverByAttributesArgs,
+        originator: Option<&str>,
+    ) -> Result<DiscoverCertificatesResult, SdkWalletError> {
+        self.0.as_ref()
+            .discover_by_attributes(args, originator)
+            .await
+    }
+}
