@@ -1,18 +1,17 @@
 //! Status enums for wallet entities.
 //!
 //! Each enum serializes to camelCase strings matching the TypeScript values exactly.
-//! All enums derive sqlx::Type for database storage, serde for JSON serialization,
-//! and strum for Display/FromStr conversions.
+//! All enums derive serde for JSON serialization and strum for Display/FromStr conversions.
+//! Database encoding/decoding is handled by the `impl_sqlx_string_enum!` macro in
+//! the sqlx_string_enum module, which treats each enum as a VARCHAR/TEXT string column.
 
 use serde::{Deserialize, Serialize};
-use sqlx::Type;
 use strum::{Display, EnumString};
 
 /// Status of a wallet transaction.
 ///
 /// Maps to TS `TransactionStatus` in `wallet-toolbox/src/sdk/types.ts`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, Display, EnumString)]
-#[sqlx(type_name = "TEXT", rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, EnumString)]
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
 pub enum TransactionStatus {
@@ -39,8 +38,7 @@ pub enum TransactionStatus {
 /// Status of a proven transaction request.
 ///
 /// Maps to TS `ProvenTxReqStatus` in `wallet-toolbox/src/sdk/types.ts`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, Display, EnumString)]
-#[sqlx(type_name = "TEXT", rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, EnumString)]
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
 pub enum ProvenTxReqStatus {
@@ -75,8 +73,7 @@ pub enum ProvenTxReqStatus {
 /// Status of wallet synchronization.
 ///
 /// Maps to TS `SyncStatus` in `wallet-toolbox/src/sdk/WalletStorage.interfaces.ts`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, Display, EnumString)]
-#[sqlx(type_name = "TEXT", rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, EnumString)]
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
 pub enum SyncStatus {
@@ -93,8 +90,7 @@ pub enum SyncStatus {
 }
 
 /// Status of a transaction output.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, Display, EnumString)]
-#[sqlx(type_name = "TEXT", rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, EnumString)]
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
 pub enum OutputStatus {
@@ -103,3 +99,12 @@ pub enum OutputStatus {
     /// The output has been consumed as an input in another transaction.
     Spent,
 }
+
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgres"))]
+impl_sqlx_string_enum!(TransactionStatus);
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgres"))]
+impl_sqlx_string_enum!(ProvenTxReqStatus);
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgres"))]
+impl_sqlx_string_enum!(SyncStatus);
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgres"))]
+impl_sqlx_string_enum!(OutputStatus);

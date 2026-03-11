@@ -808,7 +808,12 @@ impl WalletInterface for WalletPermissionsManager {
         originator: Option<&str>,
     ) -> Result<ProveCertificateResult, bsv::wallet::error::WalletError> {
         let o = orig(originator);
-        let cert_type_str = BASE64_STANDARD.encode(args.certificate.cert_type.0);
+        let cert_type_str = args
+            .certificate
+            .cert_type
+            .as_ref()
+            .map(|ct| BASE64_STANDARD.encode(ct.0))
+            .unwrap_or_default();
         let verifier_hex = args.verifier.to_der_hex();
         ensure::ensure_certificate_access(
             self,

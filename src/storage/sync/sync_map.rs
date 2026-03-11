@@ -64,6 +64,7 @@ pub struct EntitySyncMap {
     /// Maps foreign entity IDs to local entity IDs.
     pub id_map: HashMap<i64, i64>,
     /// The maximum updated_at value seen for this entity over all chunks received.
+    #[serde(default, with = "crate::serde_datetime::option")]
     pub max_updated_at: Option<NaiveDateTime>,
     /// Cumulative count of items received since the last `since` update.
     pub count: i64,

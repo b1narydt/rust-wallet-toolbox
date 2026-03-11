@@ -13,9 +13,19 @@ use sqlx::FromRow;
 pub struct Commission {
     /// When this record was created.
     #[sqlx(rename = "created_at")]
+    #[serde(
+        rename = "created_at",
+        alias = "createdAt",
+        with = "crate::serde_datetime"
+    )]
     pub created_at: NaiveDateTime,
     /// When this record was last updated.
     #[sqlx(rename = "updated_at")]
+    #[serde(
+        rename = "updated_at",
+        alias = "updatedAt",
+        with = "crate::serde_datetime"
+    )]
     pub updated_at: NaiveDateTime,
     /// Primary key.
     pub commission_id: i64,

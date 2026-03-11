@@ -4,6 +4,8 @@
 //! timestamp in the SyncMap, collecting up to max_items_per_entity items.
 //! This implements the incremental sync protocol's "pull" side.
 
+use std::collections::HashSet;
+
 use crate::error::WalletResult;
 use crate::storage::find_args::*;
 use crate::storage::sync::sync_map::{SyncChunk, SyncMap};
@@ -337,6 +339,80 @@ pub async fn get_sync_chunk(
             Some(items)
         }
     };
+
+    // -----------------------------------------------------------------------
+    // Filter dependent entities so they only reference parent IDs in this chunk.
+    // When max_items_per_entity limits a parent entity list, dependent entities
+    // that reference parents outside this chunk would cause undefined ID lookups
+    // during processSyncChunk on the receiver.
+    // -----------------------------------------------------------------------
+
+    let output_ids: HashSet<i64> = outputs
+        .as_ref()
+        .map(|v| v.iter().map(|o| o.output_id).collect())
+        .unwrap_or_default();
+    let transaction_ids: HashSet<i64> = transactions
+        .as_ref()
+        .map(|v| v.iter().map(|t| t.transaction_id).collect())
+        .unwrap_or_default();
+    let tx_label_ids: HashSet<i64> = tx_labels
+        .as_ref()
+        .map(|v| v.iter().map(|t| t.tx_label_id).collect())
+        .unwrap_or_default();
+    let output_tag_ids: HashSet<i64> = output_tags
+        .as_ref()
+        .map(|v| v.iter().map(|t| t.output_tag_id).collect())
+        .unwrap_or_default();
+    let certificate_ids: HashSet<i64> = certificates
+        .as_ref()
+        .map(|v| v.iter().map(|c| c.certificate_id).collect())
+        .unwrap_or_default();
+    let proven_tx_ids: HashSet<i64> = proven_txs
+        .as_ref()
+        .map(|v| v.iter().map(|p| p.proven_tx_id).collect())
+        .unwrap_or_default();
+
+    // Filter outputTagMaps: must reference outputs AND outputTags in this chunk
+    let output_tag_maps = output_tag_maps.map(|v| {
+        v.into_iter()
+            .filter(|m| {
+                output_ids.contains(&m.output_id) && output_tag_ids.contains(&m.output_tag_id)
+            })
+            .collect::<Vec<_>>()
+    });
+
+    // Filter txLabelMaps: must reference transactions AND txLabels in this chunk
+    let tx_label_maps = tx_label_maps.map(|v| {
+        v.into_iter()
+            .filter(|m| {
+                transaction_ids.contains(&m.transaction_id) && tx_label_ids.contains(&m.tx_label_id)
+            })
+            .collect::<Vec<_>>()
+    });
+
+    // Filter certificateFields: must reference certificates in this chunk
+    let certificate_fields = certificate_fields.map(|v| {
+        v.into_iter()
+            .filter(|f| certificate_ids.contains(&f.certificate_id))
+            .collect::<Vec<_>>()
+    });
+
+    // Filter commissions: must reference transactions in this chunk
+    let commissions = commissions.map(|v| {
+        v.into_iter()
+            .filter(|c| transaction_ids.contains(&c.transaction_id))
+            .collect::<Vec<_>>()
+    });
+
+    // Filter provenTxReqs: must reference provenTxs in this chunk (if they have one)
+    let proven_tx_reqs = proven_tx_reqs.map(|v| {
+        v.into_iter()
+            .filter(|r| match r.proven_tx_id {
+                Some(id) => proven_tx_ids.contains(&id),
+                None => true, // no FK dependency, always include
+            })
+            .collect::<Vec<_>>()
+    });
 
     Ok(SyncChunk {
         from_storage_identity_key: args.from_storage_identity_key,

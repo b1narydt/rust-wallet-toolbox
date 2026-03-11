@@ -101,6 +101,7 @@ pub struct WalletBuilder {
     chain: Option<Chain>,
     root_key: Option<PrivateKey>,
     storage_config: Option<StorageKind>,
+    storage_identity_key: Option<String>,
     services: Option<Arc<dyn WalletServices>>,
     use_default_services: bool,
     monitor_enabled: bool,
@@ -114,6 +115,7 @@ impl WalletBuilder {
             chain: None,
             root_key: None,
             storage_config: None,
+            storage_identity_key: None,
             services: None,
             use_default_services: false,
             monitor_enabled: false,
@@ -175,6 +177,15 @@ impl WalletBuilder {
     /// Enable the background monitor with default tasks.
     pub fn with_monitor(mut self) -> Self {
         self.monitor_enabled = true;
+        self
+    }
+
+    /// Set the storage identity key (the server's public key identifying this storage instance).
+    ///
+    /// Must be set before `build()` so that `make_available()` creates Settings
+    /// with the correct `storageIdentityKey`. Without this, the key defaults to empty.
+    pub fn with_storage_identity_key(mut self, key: String) -> Self {
+        self.storage_identity_key = Some(key);
         self
     }
 
@@ -247,11 +258,14 @@ impl WalletBuilder {
                     };
                     #[cfg(feature = "mysql")]
                     {
-                        let storage = crate::storage::sqlx_impl::MysqlStorage::new_mysql(
+                        let mut storage = crate::storage::sqlx_impl::MysqlStorage::new_mysql(
                             config,
                             chain.clone(),
                         )
                         .await?;
+                        if let Some(ref sik) = self.storage_identity_key {
+                            storage.storage_identity_key = sik.clone();
+                        }
                         Arc::new(storage)
                     }
                     #[cfg(not(feature = "mysql"))]

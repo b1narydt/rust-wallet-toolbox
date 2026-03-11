@@ -9,8 +9,10 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+use tracing::warn;
 
 use crate::error::WalletResult;
+use crate::storage::find_args::{FindSettingsArgs, SettingsPartial};
 use crate::storage::traits::provider::StorageProvider;
 
 /// Cache time-to-live: 2 minutes.
@@ -152,12 +154,12 @@ impl<T> CacheEntry<T> {
 
 /// Manages wallet settings with a 2-minute TTL cache.
 ///
-/// Reads settings from storage via a key-value pattern. If no settings
-/// exist in storage, returns the default settings. Settings are cached
-/// in memory for 2 minutes to avoid repeated storage reads.
+/// Reads settings from storage via the `settings` table `walletSettingsJson`
+/// column. If no settings exist in storage, returns the default settings.
+/// Settings are cached in memory for 2 minutes to avoid repeated storage reads.
 pub struct WalletSettingsManager {
     /// Storage provider for reading/writing settings.
-    _storage: Arc<dyn StorageProvider>,
+    storage: Arc<dyn StorageProvider>,
     /// Cached settings with TTL.
     cache: Mutex<Option<CacheEntry<WalletSettings>>>,
     /// Default settings to use when none are stored.
@@ -176,7 +178,7 @@ impl WalletSettingsManager {
         default_settings: WalletSettings,
     ) -> Self {
         WalletSettingsManager {
-            _storage: storage,
+            storage,
             cache: Mutex::new(None),
             default_settings,
         }
@@ -186,30 +188,59 @@ impl WalletSettingsManager {
     ///
     /// Returns cached settings if the cache is still fresh (within 2-minute TTL).
     /// Otherwise reads from storage, updates the cache, and returns the settings.
-    /// If no settings exist in storage, returns the default settings.
+    /// If no settings exist in storage, or if the stored JSON is invalid,
+    /// returns the default settings.
     pub async fn get(&self) -> WalletResult<WalletSettings> {
         let mut cache = self.cache.lock().await;
 
-        // Check if cache is still fresh
+        // Return cache if still fresh.
         if let Some(ref entry) = *cache {
             if entry.is_fresh() {
                 return Ok(entry.value.clone());
             }
         }
 
-        // TODO: Read from storage via LocalKVStore pattern when available.
-        // For now, return default settings and cache them.
-        let settings = self.default_settings.clone();
+        // Read from the settings table.
+        let args = FindSettingsArgs::default();
+        let rows = self.storage.find_settings(&args, None).await?;
+
+        let settings = if let Some(row) = rows.into_iter().next() {
+            match row.wallet_settings_json {
+                Some(ref json) if !json.is_empty() => {
+                    match serde_json::from_str::<WalletSettings>(json) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            warn!(
+                                error = %e,
+                                "Stored walletSettingsJson is invalid JSON; using defaults"
+                            );
+                            self.default_settings.clone()
+                        }
+                    }
+                }
+                _ => self.default_settings.clone(),
+            }
+        } else {
+            self.default_settings.clone()
+        };
 
         *cache = Some(CacheEntry::new(settings.clone(), CACHE_TTL));
         Ok(settings)
     }
 
-    /// Set new wallet settings (also updates the cache).
+    /// Set new wallet settings, persisting them to storage and updating the cache.
     pub async fn set(&self, settings: WalletSettings) -> WalletResult<()> {
-        // TODO: Write to storage via LocalKVStore pattern when available.
+        let json = serde_json::to_string(&settings).map_err(|e| {
+            crate::error::WalletError::Internal(format!("Failed to serialize WalletSettings: {e}"))
+        })?;
 
-        // Update cache immediately
+        let update = SettingsPartial {
+            wallet_settings_json: Some(json),
+            ..Default::default()
+        };
+        self.storage.update_settings(&update, None).await?;
+
+        // Update cache immediately after successful storage write.
         let mut cache = self.cache.lock().await;
         *cache = Some(CacheEntry::new(settings, CACHE_TTL));
         Ok(())

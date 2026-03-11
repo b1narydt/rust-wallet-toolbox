@@ -15,9 +15,19 @@ use crate::status::SyncStatus;
 pub struct SyncState {
     /// When this record was created.
     #[sqlx(rename = "created_at")]
+    #[serde(
+        rename = "created_at",
+        alias = "createdAt",
+        with = "crate::serde_datetime"
+    )]
     pub created_at: NaiveDateTime,
     /// When this record was last updated.
     #[sqlx(rename = "updated_at")]
+    #[serde(
+        rename = "updated_at",
+        alias = "updatedAt",
+        with = "crate::serde_datetime"
+    )]
     pub updated_at: NaiveDateTime,
     /// Primary key.
     pub sync_state_id: i64,
@@ -36,6 +46,7 @@ pub struct SyncState {
     /// JSON-encoded sync map tracking per-entity sync positions.
     pub sync_map: String,
     /// Timestamp of last successful sync.
+    #[serde(default, with = "crate::serde_datetime::option")]
     pub when: Option<NaiveDateTime>,
     /// Net satoshi delta from last sync.
     pub satoshis: Option<i64>,

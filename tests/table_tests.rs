@@ -486,6 +486,7 @@ fn sample_settings() -> Settings {
         chain: Chain::Main,
         dbtype: "SQLite".to_string(),
         max_output_script: 100,
+        wallet_settings_json: None,
     }
 }
 

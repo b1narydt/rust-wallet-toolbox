@@ -1141,6 +1141,11 @@ impl WalletInterface for Wallet {
         args: ListOutputsArgs,
         originator: Option<&str>,
     ) -> Result<ListOutputsResult, SdkWalletError> {
+        use bsv::transaction::beef::{Beef, BEEF_V2};
+        use bsv::wallet::interfaces::OutputInclude;
+        use std::collections::HashSet;
+        use std::io::Cursor;
+
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_list_outputs_args(&args)?;
 
@@ -1150,6 +1155,84 @@ impl WalletInterface for Wallet {
             .list_outputs(&auth.identity_key, &args)
             .await
             .map_err(to_sdk_error)?;
+
+        // BEEF assembly at the wallet layer for EntireTransactions requests.
+        // The storage layer returns beef = None (stub); we build it here where
+        // we have access to StorageProvider (required by get_valid_beef_for_txid).
+        if matches!(args.include, Some(OutputInclude::EntireTransactions)) && result.beef.is_none()
+        {
+            // Collect unique txids from outpoints (format: "txid.vout")
+            let mut unique_txids: Vec<String> = Vec::new();
+            let mut seen: HashSet<String> = HashSet::new();
+            for output in &result.outputs {
+                if let Some(dot_pos) = output.outpoint.find('.') {
+                    let txid = output.outpoint[..dot_pos].to_string();
+                    if seen.insert(txid.clone()) {
+                        unique_txids.push(txid);
+                    }
+                }
+            }
+
+            if !unique_txids.is_empty() {
+                // Map SDK TrustSelf to local beef TrustSelf
+                let beef_trust_self = match &self.trust_self {
+                    Some(TrustSelf::Known) => crate::storage::beef::TrustSelf::Known,
+                    None => crate::storage::beef::TrustSelf::No,
+                };
+                let known_txids: HashSet<String> = HashSet::new();
+                let storage_provider = self.storage.active();
+
+                // Build a single merged BEEF from all txids
+                let mut merged_beef = Beef::new(BEEF_V2);
+                for txid in &unique_txids {
+                    let beef_bytes_opt = crate::storage::beef::get_valid_beef_for_txid(
+                        storage_provider.as_ref(),
+                        txid,
+                        beef_trust_self,
+                        &known_txids,
+                        None,
+                    )
+                    .await
+                    .map_err(to_sdk_error)?;
+
+                    if let Some(beef_bytes) = beef_bytes_opt {
+                        // Parse the returned BEEF and merge bumps and txs
+                        let mut cursor = Cursor::new(&beef_bytes);
+                        let parsed = Beef::from_binary(&mut cursor).map_err(|e| {
+                            to_sdk_error(crate::error::WalletError::Internal(format!(
+                                "Failed to parse BEEF for {}: {}",
+                                txid, e
+                            )))
+                        })?;
+                        // Merge bumps
+                        let bump_offset = merged_beef.bumps.len();
+                        merged_beef.bumps.extend(parsed.bumps);
+                        // Merge txs, adjusting bump_index offsets
+                        for mut beef_tx in parsed.txs {
+                            if let Some(ref mut idx) = beef_tx.bump_index {
+                                *idx += bump_offset;
+                            }
+                            // Only add if not already present (dedup by txid)
+                            let tx_txid = beef_tx.txid.clone();
+                            if !merged_beef.txs.iter().any(|t| t.txid == tx_txid) {
+                                merged_beef.txs.push(beef_tx);
+                            }
+                        }
+                    }
+                }
+
+                if !merged_beef.txs.is_empty() {
+                    let mut buf = Vec::new();
+                    merged_beef.to_binary(&mut buf).map_err(|e| {
+                        to_sdk_error(crate::error::WalletError::Internal(format!(
+                            "Failed to serialize merged BEEF: {}",
+                            e
+                        )))
+                    })?;
+                    result.beef = Some(buf);
+                }
+            }
+        }
 
         // Merge BEEF into BeefParty and verify returned txid-only
         if let Some(ref mut beef_bytes) = result.beef {
@@ -1415,7 +1498,8 @@ impl WalletInterface for WalletArc {
         args: RevealCounterpartyKeyLinkageArgs,
         originator: Option<&str>,
     ) -> Result<RevealCounterpartyKeyLinkageResult, SdkWalletError> {
-        self.0.as_ref()
+        self.0
+            .as_ref()
             .reveal_counterparty_key_linkage(args, originator)
             .await
     }
@@ -1425,7 +1509,8 @@ impl WalletInterface for WalletArc {
         args: RevealSpecificKeyLinkageArgs,
         originator: Option<&str>,
     ) -> Result<RevealSpecificKeyLinkageResult, SdkWalletError> {
-        self.0.as_ref()
+        self.0
+            .as_ref()
             .reveal_specific_key_linkage(args, originator)
             .await
     }
@@ -1456,7 +1541,10 @@ impl WalletInterface for WalletArc {
         args: GetHeaderArgs,
         originator: Option<&str>,
     ) -> Result<GetHeaderResult, SdkWalletError> {
-        self.0.as_ref().get_header_for_height(args, originator).await
+        self.0
+            .as_ref()
+            .get_header_for_height(args, originator)
+            .await
     }
 
     async fn get_network(
@@ -1542,7 +1630,8 @@ impl WalletInterface for WalletArc {
         args: RelinquishCertificateArgs,
         originator: Option<&str>,
     ) -> Result<RelinquishCertificateResult, SdkWalletError> {
-        self.0.as_ref()
+        self.0
+            .as_ref()
             .relinquish_certificate(args, originator)
             .await
     }
@@ -1568,7 +1657,8 @@ impl WalletInterface for WalletArc {
         args: DiscoverByIdentityKeyArgs,
         originator: Option<&str>,
     ) -> Result<DiscoverCertificatesResult, SdkWalletError> {
-        self.0.as_ref()
+        self.0
+            .as_ref()
             .discover_by_identity_key(args, originator)
             .await
     }
@@ -1578,7 +1668,8 @@ impl WalletInterface for WalletArc {
         args: DiscoverByAttributesArgs,
         originator: Option<&str>,
     ) -> Result<DiscoverCertificatesResult, SdkWalletError> {
-        self.0.as_ref()
+        self.0
+            .as_ref()
             .discover_by_attributes(args, originator)
             .await
     }

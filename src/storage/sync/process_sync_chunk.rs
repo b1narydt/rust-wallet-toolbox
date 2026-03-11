@@ -9,6 +9,9 @@
 //! Entities are processed in dependency order so that foreign key remapping
 //! has all needed mappings available when processing dependent entities.
 
+use chrono::NaiveDateTime;
+use serde::Serialize;
+
 use crate::error::{WalletError, WalletResult};
 use crate::storage::find_args::*;
 use crate::storage::sync::merge::MergeEntity;
@@ -715,8 +718,18 @@ pub async fn process_sync_chunk(
 }
 
 /// Result of processing a sync chunk.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProcessSyncChunkResult {
+    /// Whether the sync is complete (no more chunks pending).
+    pub done: bool,
+    /// Latest updated_at timestamp seen in this chunk.
+    #[serde(
+        rename = "maxUpdated_at",
+        default,
+        with = "crate::serde_datetime::option"
+    )]
+    pub max_updated_at: Option<NaiveDateTime>,
     /// Number of entities inserted.
     pub inserts: i64,
     /// Number of entities updated.

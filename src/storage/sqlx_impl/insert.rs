@@ -88,7 +88,7 @@ mod sqlite_impl {
             cert: &Certificate,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO certificates (created_at, updated_at, userId, type, \
+            let sql = "INSERT INTO certificates (created_at, updated_at, userId, `type`, \
                        serialNumber, certifier, subject, verifier, revocationOutpoint, \
                        signature, isDeleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             let created = cert.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
@@ -257,8 +257,8 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let sql = "INSERT INTO outputs (created_at, updated_at, userId, transactionId, \
-                       basketId, spendable, change, vout, satoshis, providedBy, purpose, \
-                       type, outputDescription, txid, senderIdentityKey, derivationPrefix, \
+                       basketId, spendable, `change`, vout, satoshis, providedBy, purpose, \
+                       `type`, outputDescription, txid, senderIdentityKey, derivationPrefix, \
                        derivationSuffix, customInstructions, spentBy, sequenceNumber, \
                        spendingDescription, scriptLength, scriptOffset, lockingScript) \
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
@@ -576,7 +576,7 @@ mod mysql_insert_impl {
             cert: &Certificate,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO certificates (created_at, updated_at, userId, type, serialNumber, certifier, subject, verifier, revocationOutpoint, signature, isDeleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            let sql = "INSERT INTO certificates (created_at, updated_at, userId, `type`, serialNumber, certifier, subject, verifier, revocationOutpoint, signature, isDeleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             let created = cert.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = cert.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             exec_insert_mysql!(
@@ -720,7 +720,7 @@ mod mysql_insert_impl {
             o: &Output,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO outputs (created_at, updated_at, userId, transactionId, basketId, spendable, change, vout, satoshis, providedBy, purpose, type, outputDescription, txid, senderIdentityKey, derivationPrefix, derivationSuffix, customInstructions, spentBy, sequenceNumber, spendingDescription, scriptLength, scriptOffset, lockingScript) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            let sql = "INSERT INTO outputs (created_at, updated_at, userId, transactionId, basketId, spendable, `change`, vout, satoshis, providedBy, purpose, `type`, outputDescription, txid, senderIdentityKey, derivationPrefix, derivationSuffix, customInstructions, spentBy, sequenceNumber, spendingDescription, scriptLength, scriptOffset, lockingScript) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             let created = o.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let updated = o.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
             let provided_by_str = o.provided_by.to_string();

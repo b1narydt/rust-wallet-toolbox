@@ -584,6 +584,7 @@ mod sqlite_impl {
                     chain: self.chain.clone(),
                     dbtype: String::from("SQLite"),
                     max_output_script: 100,
+                    wallet_settings_json: None,
                 };
                 self.insert_settings_impl(&new_settings, None).await?;
                 new_settings
@@ -1004,6 +1005,7 @@ macro_rules! impl_storage_rw_and_provider {
                             chain: self.chain.clone(),
                             dbtype: String::from($dbtype_str),
                             max_output_script: 100,
+                            wallet_settings_json: None,
                         };
                         self.insert_settings_impl(&new_settings, None).await?;
                         new_settings

@@ -392,6 +392,9 @@ pub struct SettingsPartial {
     pub storage_name: Option<String>,
     /// Filter by BSV chain type.
     pub chain: Option<Chain>,
+    /// Wallet settings JSON blob to write (used by update_settings).
+    /// When set to Some("null") during update, clears the stored settings.
+    pub wallet_settings_json: Option<String>,
 }
 
 /// Arguments for querying settings.
@@ -424,6 +427,8 @@ pub struct SyncStatePartial {
     pub status: Option<SyncStatus>,
     /// Filter by initialization flag.
     pub init: Option<bool>,
+    /// Updated sync map JSON (used by update_sync_state).
+    pub sync_map: Option<String>,
 }
 
 /// Arguments for querying sync states.

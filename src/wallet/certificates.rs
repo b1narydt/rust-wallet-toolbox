@@ -176,9 +176,33 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
         .ok_or_else(|| WalletError::Unauthorized("User not found".to_string()))?;
 
     // Build search criteria from the certificate in args.
-    let cert_type_str = cert_type_to_string(&args.certificate.cert_type);
-    let serial_number_str = serial_number_to_string(&args.certificate.serial_number);
-    let certifier_str = args.certificate.certifier.to_der_hex();
+    let cert_type =
+        args.certificate
+            .cert_type
+            .as_ref()
+            .ok_or_else(|| WalletError::InvalidParameter {
+                parameter: "certificate.cert_type".to_string(),
+                must_be: "provided".to_string(),
+            })?;
+    let serial_number =
+        args.certificate
+            .serial_number
+            .as_ref()
+            .ok_or_else(|| WalletError::InvalidParameter {
+                parameter: "certificate.serial_number".to_string(),
+                must_be: "provided".to_string(),
+            })?;
+    let certifier =
+        args.certificate
+            .certifier
+            .as_ref()
+            .ok_or_else(|| WalletError::InvalidParameter {
+                parameter: "certificate.certifier".to_string(),
+                must_be: "provided".to_string(),
+            })?;
+    let cert_type_str = cert_type_to_string(cert_type);
+    let serial_number_str = serial_number_to_string(serial_number);
+    let certifier_str = certifier.to_der_hex();
 
     let find_args = FindCertificatesArgs {
         partial: CertificatePartial {
@@ -235,10 +259,18 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
     let certifier_pk = PublicKey::from_string(&storage_cert.certifier)
         .map_err(|e| WalletError::Internal(format!("Invalid certifier key: {}", e)))?;
 
+    let subject =
+        args.certificate
+            .subject
+            .as_ref()
+            .ok_or_else(|| WalletError::InvalidParameter {
+                parameter: "certificate.subject".to_string(),
+                must_be: "provided".to_string(),
+            })?;
     let sdk_cert = SdkCertificate {
-        cert_type: args.certificate.cert_type.clone(),
-        serial_number: args.certificate.serial_number.clone(),
-        subject: args.certificate.subject.clone(),
+        cert_type: cert_type.clone(),
+        serial_number: serial_number.clone(),
+        subject: subject.clone(),
         certifier: certifier_pk.clone(),
         revocation_outpoint: Some(storage_cert.revocation_outpoint.clone()),
         fields: Some(field_map),
@@ -263,6 +295,8 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
 
     Ok(ProveCertificateResult {
         keyring_for_verifier,
+        certificate: None,
+        verifier: None,
     })
 }
 

@@ -26,6 +26,15 @@ impl Dialect {
             Dialect::Postgres => "NOW()",
         }
     }
+
+    /// Quote a column name with the appropriate identifier quoting for this dialect.
+    /// MySQL uses backticks, PostgreSQL uses double quotes, SQLite accepts both.
+    pub fn quote_column(self, col: &str) -> String {
+        match self {
+            Dialect::Mysql | Dialect::Sqlite => format!("`{}`", col),
+            Dialect::Postgres => format!("\"{}\"", col),
+        }
+    }
 }
 
 /// Generate a placeholder string for the given dialect and 1-based parameter index.
@@ -120,41 +129,46 @@ impl WhereBuilder {
         placeholder(self.dialect, self.param_index)
     }
 
-    /// Add an equality condition: `column = ?` or `column = $N`
+    /// Add an equality condition: `` `column` = ? `` or `` "column" = $N ``
     pub fn add_eq(&mut self, column: &str) {
         let ph = self.next_placeholder();
-        self.clauses.push(format!("{} = {}", column, ph));
+        let qc = self.dialect.quote_column(column);
+        self.clauses.push(format!("{} = {}", qc, ph));
     }
 
-    /// Add a greater-than-or-equal condition: `column >= ?` or `column >= $N`
+    /// Add a greater-than-or-equal condition: `` `column` >= ? ``
     pub fn add_gte(&mut self, column: &str) {
         let ph = self.next_placeholder();
-        self.clauses.push(format!("{} >= {}", column, ph));
+        let qc = self.dialect.quote_column(column);
+        self.clauses.push(format!("{} >= {}", qc, ph));
     }
 
-    /// Add a less-than-or-equal condition: `column <= ?` or `column <= $N`
+    /// Add a less-than-or-equal condition: `` `column` <= ? ``
     #[allow(dead_code)]
     pub fn add_lte(&mut self, column: &str) {
         let ph = self.next_placeholder();
-        self.clauses.push(format!("{} <= {}", column, ph));
+        let qc = self.dialect.quote_column(column);
+        self.clauses.push(format!("{} <= {}", qc, ph));
     }
 
-    /// Add a LIKE condition: `column LIKE ?` or `column LIKE $N`
+    /// Add a LIKE condition: `` `column` LIKE ? ``
     #[allow(dead_code)]
     pub fn add_like(&mut self, column: &str) {
         let ph = self.next_placeholder();
-        self.clauses.push(format!("{} LIKE {}", column, ph));
+        let qc = self.dialect.quote_column(column);
+        self.clauses.push(format!("{} LIKE {}", qc, ph));
     }
 
-    /// Add an IN condition: `column IN (?, ?, ...)` or `column IN ($1, $2, ...)`
+    /// Add an IN condition: `` `column` IN (?, ?, ...) ``
     #[allow(dead_code)]
     pub fn add_in(&mut self, column: &str, count: usize) {
         if count == 0 {
             return;
         }
+        let qc = self.dialect.quote_column(column);
         let placeholders: Vec<String> = (0..count).map(|_| self.next_placeholder()).collect();
         self.clauses
-            .push(format!("{} IN ({})", column, placeholders.join(", ")));
+            .push(format!("{} IN ({})", qc, placeholders.join(", ")));
     }
 
     /// Return the current parameter count (useful for building subsequent
@@ -173,7 +187,8 @@ impl WhereBuilder {
         }
     }
 
-    /// Build ORDER BY clause.
+    /// Build ORDER BY clause. Note: column should be pre-quoted if needed,
+    /// or use `dialect.quote_column()`.
     pub fn build_order_by(column: &str, desc: bool) -> String {
         if desc {
             format!(" ORDER BY {} DESC", column)
@@ -197,7 +212,10 @@ mod tests {
         let mut wb = WhereBuilder::new(Dialect::Sqlite);
         wb.add_eq("userId");
         wb.add_gte("created_at");
-        assert_eq!(wb.build_where(), " WHERE userId = ? AND created_at >= ?");
+        assert_eq!(
+            wb.build_where(),
+            " WHERE `userId` = ? AND `created_at` >= ?"
+        );
         assert_eq!(wb.param_count(), 2);
     }
 
@@ -206,7 +224,7 @@ mod tests {
         let mut wb = WhereBuilder::new(Dialect::Mysql);
         wb.add_eq("userId");
         wb.add_eq("status");
-        assert_eq!(wb.build_where(), " WHERE userId = ? AND status = ?");
+        assert_eq!(wb.build_where(), " WHERE `userId` = ? AND `status` = ?");
     }
 
     #[test]
@@ -217,7 +235,7 @@ mod tests {
         wb.add_eq("status");
         assert_eq!(
             wb.build_where(),
-            " WHERE userId = $1 AND created_at >= $2 AND status = $3"
+            " WHERE \"userId\" = $1 AND \"created_at\" >= $2 AND \"status\" = $3"
         );
         assert_eq!(wb.param_count(), 3);
     }
@@ -226,7 +244,7 @@ mod tests {
     fn postgres_in_clause() {
         let mut wb = WhereBuilder::new(Dialect::Postgres);
         wb.add_in("id", 3);
-        assert_eq!(wb.build_where(), " WHERE id IN ($1, $2, $3)");
+        assert_eq!(wb.build_where(), " WHERE \"id\" IN ($1, $2, $3)");
     }
 
     #[test]

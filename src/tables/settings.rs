@@ -15,9 +15,19 @@ use crate::types::Chain;
 pub struct Settings {
     /// When this record was created.
     #[sqlx(rename = "created_at")]
+    #[serde(
+        rename = "created_at",
+        alias = "createdAt",
+        with = "crate::serde_datetime"
+    )]
     pub created_at: NaiveDateTime,
     /// When this record was last updated.
     #[sqlx(rename = "updated_at")]
+    #[serde(
+        rename = "updated_at",
+        alias = "updatedAt",
+        with = "crate::serde_datetime"
+    )]
     pub updated_at: NaiveDateTime,
     /// Identity key identifying this storage instance.
     pub storage_identity_key: String,
@@ -29,4 +39,6 @@ pub struct Settings {
     pub dbtype: String,
     /// Maximum locking script size to store inline (bytes).
     pub max_output_script: i32,
+    /// Serialized JSON blob of WalletSettings. NULL means use defaults.
+    pub wallet_settings_json: Option<String>,
 }

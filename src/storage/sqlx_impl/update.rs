@@ -99,7 +99,7 @@ mod sqlite_impl {
                 binds.push(BindVal::Int64(*v));
             }
             if let Some(v) = &update.cert_type {
-                sets.push("type = ?");
+                sets.push("`type` = ?");
                 binds.push(BindVal::String(v.clone()));
             }
             if let Some(v) = &update.serial_number {
@@ -335,7 +335,7 @@ mod sqlite_impl {
                 binds.push(BindVal::Bool(*v));
             }
             if let Some(v) = &update.change {
-                sets.push("change = ?");
+                sets.push("`change` = ?");
                 binds.push(BindVal::Bool(*v));
             }
             if let Some(v) = &update.vout {
@@ -355,7 +355,7 @@ mod sqlite_impl {
                 binds.push(BindVal::String(v.clone()));
             }
             if let Some(v) = &update.output_type {
-                sets.push("type = ?");
+                sets.push("`type` = ?");
                 binds.push(BindVal::String(v.clone()));
             }
             if let Some(v) = &update.txid {
@@ -460,6 +460,10 @@ mod sqlite_impl {
             if let Some(v) = &update.chain {
                 sets.push("chain = ?");
                 binds.push(BindVal::String(v.to_string()));
+            }
+            if let Some(v) = &update.wallet_settings_json {
+                sets.push("walletSettingsJson = ?");
+                binds.push(BindVal::String(v.clone()));
             }
             sets.push("updated_at = datetime('now')");
             // Settings has no PK -- update all rows
@@ -588,6 +592,10 @@ mod sqlite_impl {
                 sets.push("init = ?");
                 binds.push(BindVal::Bool(*v));
             }
+            if let Some(v) = &update.sync_map {
+                sets.push("syncMap = ?");
+                binds.push(BindVal::String(v.clone()));
+            }
             sets.push("updated_at = datetime('now')");
             let sql = format!(
                 "UPDATE sync_states SET {} WHERE syncStateId = ?",
@@ -618,7 +626,8 @@ macro_rules! impl_update_methods {
         args_ty = $args_ty:ty,
         extract_trx = $extract:path,
         now_expr = $now_expr:literal,
-        placeholder_fn = $ph_fn:expr
+        placeholder_fn = $ph_fn:expr,
+        quote_col_fn = $qc_fn:expr
     ) => {
         #[cfg(feature = $feature)]
         mod $mod_name {
@@ -678,6 +687,11 @@ macro_rules! impl_update_methods {
                 ($ph_fn)(index)
             }
 
+            /// Quote a column name for this dialect.
+            fn qc(col: &str) -> String {
+                ($qc_fn)(col)
+            }
+
             impl StorageSqlx<$db> {
                 pub(crate) async fn update_user_impl(&self, id: i64, update: &UserPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
                     let mut sets = Vec::new();
@@ -696,7 +710,7 @@ macro_rules! impl_update_methods {
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
                     if let Some(v) = &update.user_id { idx += 1; sets.push(format!("userId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.cert_type { idx += 1; sets.push(format!("type = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.cert_type { idx += 1; sets.push(format!("{} = {}", qc("type"), ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.serial_number { idx += 1; sets.push(format!("serialNumber = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.certifier { idx += 1; sets.push(format!("certifier = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.subject { idx += 1; sets.push(format!("subject = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
@@ -801,12 +815,12 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.transaction_id { idx += 1; sets.push(format!("transactionId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
                     if let Some(v) = &update.basket_id { idx += 1; sets.push(format!("basketId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
                     if let Some(v) = &update.spendable { idx += 1; sets.push(format!("spendable = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
-                    if let Some(v) = &update.change { idx += 1; sets.push(format!("change = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
+                    if let Some(v) = &update.change { idx += 1; sets.push(format!("{} = {}", qc("change"), ph(idx))); binds.push(BindVal::Bool(*v)); }
                     if let Some(v) = &update.vout { idx += 1; sets.push(format!("vout = {}", ph(idx))); binds.push(BindVal::Int32(*v)); }
                     if let Some(v) = &update.satoshis { idx += 1; sets.push(format!("satoshis = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
                     if let Some(v) = &update.provided_by { idx += 1; sets.push(format!("providedBy = {}", ph(idx))); binds.push(BindVal::String(v.to_string())); }
                     if let Some(v) = &update.purpose { idx += 1; sets.push(format!("purpose = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.output_type { idx += 1; sets.push(format!("type = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.output_type { idx += 1; sets.push(format!("{} = {}", qc("type"), ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.txid { idx += 1; sets.push(format!("txid = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.sender_identity_key { idx += 1; sets.push(format!("senderIdentityKey = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.spent_by { idx += 1; sets.push(format!("spentBy = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
@@ -851,6 +865,7 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.storage_identity_key { idx += 1; sets.push(format!("storageIdentityKey = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.storage_name { idx += 1; sets.push(format!("storageName = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.chain { idx += 1; sets.push(format!("chain = {}", ph(idx))); binds.push(BindVal::String(v.to_string())); }
+                    if let Some(v) = &update.wallet_settings_json { idx += 1; sets.push(format!("walletSettingsJson = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     sets.push(format!("updated_at = {}", $now_expr));
                     let _ = idx;
                     let sql = format!("UPDATE settings SET {}", sets.join(", "));
@@ -909,6 +924,7 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.storage_name { idx += 1; sets.push(format!("storageName = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.status { idx += 1; sets.push(format!("status = {}", ph(idx))); binds.push(BindVal::String(v.to_string())); }
                     if let Some(v) = &update.init { idx += 1; sets.push(format!("init = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
+                    if let Some(v) = &update.sync_map { idx += 1; sets.push(format!("syncMap = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     sets.push(format!("updated_at = {}", $now_expr));
                     idx += 1; let sql = format!("UPDATE sync_states SET {} WHERE syncStateId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
@@ -926,7 +942,8 @@ impl_update_methods! {
     args_ty = sqlx::mysql::MySqlArguments,
     extract_trx = StorageSqlx::<sqlx::MySql>::extract_mysql_trx,
     now_expr = "NOW()",
-    placeholder_fn = |_idx: usize| -> String { "?".to_string() }
+    placeholder_fn = |_idx: usize| -> String { "?".to_string() },
+    quote_col_fn = |col: &str| -> String { format!("`{}`", col) }
 }
 
 impl_update_methods! {
@@ -936,5 +953,6 @@ impl_update_methods! {
     args_ty = sqlx::postgres::PgArguments,
     extract_trx = StorageSqlx::<sqlx::Postgres>::extract_pg_trx,
     now_expr = "NOW()",
-    placeholder_fn = |idx: usize| -> String { format!("${}", idx) }
+    placeholder_fn = |idx: usize| -> String { format!("${}", idx) },
+    quote_col_fn = |col: &str| -> String { format!("\"{}\"", col) }
 }
