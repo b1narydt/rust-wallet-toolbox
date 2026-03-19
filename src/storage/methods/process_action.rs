@@ -139,11 +139,14 @@ pub async fn storage_process_action<S: StorageReaderWriter + ?Sized>(
         .insert_proven_tx_req(&new_req, Some(&db_trx))
         .await?;
 
-    // Update Transaction record: set txid, status, clear rawTx and inputBEEF
-    // (rawTx is now stored in ProvenTxReq, not in the transaction table)
+    // Update Transaction record: set txid, status, and store rawTx
+    // (rawTx is also stored in ProvenTxReq; keeping it on the Transaction
+    // record enables get_valid_beef_for_txid to build BEEF for later
+    // createAction calls that spend this transaction's outputs)
     let tx_update = crate::storage::find_args::TransactionPartial {
         txid: Some(txid.clone()),
         status: Some(status.tx),
+        raw_tx: Some(raw_tx.clone()),
         ..Default::default()
     };
     storage

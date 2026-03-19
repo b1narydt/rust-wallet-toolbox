@@ -22,6 +22,7 @@ mod sqlite_impl {
         Int32(i32),
         String(String),
         Bool(bool),
+        Bytes(Vec<u8>),
     }
 
     /// Execute an UPDATE with dynamic SET clauses and bind values.
@@ -44,6 +45,7 @@ mod sqlite_impl {
                     BindVal::Int32(v) => q.bind(*v),
                     BindVal::String(v) => q.bind(v.as_str()),
                     BindVal::Bool(v) => q.bind(*v),
+                    BindVal::Bytes(v) => q.bind(v.as_slice()),
                 };
             }
             let result = q.execute(&mut **tx).await?;
@@ -56,6 +58,7 @@ mod sqlite_impl {
                     BindVal::Int32(v) => q.bind(*v),
                     BindVal::String(v) => q.bind(v.as_str()),
                     BindVal::Bool(v) => q.bind(*v),
+                    BindVal::Bytes(v) => q.bind(v.as_slice()),
                 };
             }
             let result = q.execute(&storage.write_pool).await?;
@@ -503,6 +506,10 @@ mod sqlite_impl {
                 sets.push("txid = ?");
                 binds.push(BindVal::String(v.clone()));
             }
+            if let Some(v) = &update.raw_tx {
+                sets.push("rawTx = ?");
+                binds.push(BindVal::Bytes(v.clone()));
+            }
             sets.push("updated_at = datetime('now')");
             let sql = format!(
                 "UPDATE transactions SET {} WHERE transactionId = ?",
@@ -642,6 +649,7 @@ macro_rules! impl_update_methods {
                 Int32(i32),
                 String(String),
                 Bool(bool),
+                Bytes(Vec<u8>),
             }
 
             async fn exec_update(
@@ -663,6 +671,7 @@ macro_rules! impl_update_methods {
                             BindVal::Int32(v) => q.bind(*v),
                             BindVal::String(v) => q.bind(v.as_str()),
                             BindVal::Bool(v) => q.bind(*v),
+                            BindVal::Bytes(v) => q.bind(v.as_slice()),
                         };
                     }
                     let result = q.execute(&mut **tx).await?;
@@ -675,6 +684,7 @@ macro_rules! impl_update_methods {
                             BindVal::Int32(v) => q.bind(*v),
                             BindVal::String(v) => q.bind(v.as_str()),
                             BindVal::Bool(v) => q.bind(*v),
+                            BindVal::Bytes(v) => q.bind(v.as_slice()),
                         };
                     }
                     let result = q.execute(&storage.write_pool).await?;
@@ -882,6 +892,7 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.reference { idx += 1; sets.push(format!("reference = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.is_outgoing { idx += 1; sets.push(format!("isOutgoing = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
                     if let Some(v) = &update.txid { idx += 1; sets.push(format!("txid = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.raw_tx { idx += 1; sets.push(format!("rawTx = {}", ph(idx))); binds.push(BindVal::Bytes(v.clone())); }
                     sets.push(format!("updated_at = {}", $now_expr));
                     idx += 1; let sql = format!("UPDATE transactions SET {} WHERE transactionId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));

@@ -203,4 +203,29 @@ mod tests {
             "lock and unlock should derive corresponding keys"
         );
     }
+
+    #[test]
+    fn test_self_payment_lock_unlock_correspondence() {
+        // Self-payment: same key for both locker and unlocker (change outputs).
+        // This is exactly how change outputs work in the wallet.
+        let priv_key = PrivateKey::from_hex("aa").unwrap();
+        let pub_key = priv_key.to_public_key();
+        let tmpl = ScriptTemplateBRC29::new(
+            "VOP/NBBNR3V3DeJv40Qmsg==".to_string(),
+            "gN0oZKrb2L03fUnl1hJOiA==".to_string(),
+        );
+
+        // Lock: lock(self_priv, self_pub) — as done in make_change_lock
+        let lock_script = tmpl.lock(&priv_key, &pub_key).unwrap();
+        // Unlock: unlock(self_priv, self_pub) — as done in complete_signed_transaction
+        let p2pkh = tmpl.unlock(&priv_key, &pub_key).unwrap();
+
+        let lock_hash = &lock_script[3..23];
+        let unlock_hash = p2pkh.public_key_hash.unwrap();
+        assert_eq!(
+            lock_hash,
+            &unlock_hash[..],
+            "self-payment: lock and unlock should derive corresponding keys"
+        );
+    }
 }

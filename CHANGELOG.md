@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.12] - 2026-03-18
+## [0.1.13] - 2026-03-19
 
 ### Added
 
@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transaction). This allows `get_valid_beef_for_txid` to reconstruct complete
   BEEF chains for subsequent `createAction` calls.
 
+- **`raw_tx` field on `TransactionPartial`** -- Added `raw_tx: Option<Vec<u8>>`
+  to `TransactionPartial` and the corresponding `Bytes` bind variant in both
+  SQLite and MySQL update implementations.
+
+- **Self-payment BRC-29 test** -- Added `test_self_payment_lock_unlock_correspondence`
+  to verify lock/unlock key derivation works correctly when the same key is both
+  locker and unlocker (the change output scenario).
+
 ### Fixed
 
 - **`internalize_action` now stores `raw_tx` and `input_beef`** -- The
@@ -30,11 +38,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which prevented BEEF reconstruction for change inputs in later
   `createAction` calls.
 
+- **`processAction` stores `raw_tx` on Transaction record** -- The signed
+  raw transaction bytes are now persisted on the Transaction record during
+  `processAction`, enabling `get_valid_beef_for_txid` to build BEEF for
+  subsequent transactions that spend this transaction's outputs.
+
 - **`createAction` populates `source_transaction` on change inputs** -- Storage-
   allocated change input records now include the source transaction's raw bytes
   (looked up from the `transactions` table). The client signer's
   `makeSignableTransactionBeef` requires `sourceTransaction` on every input for
   the `isSignAction` flow (used by UMP token updates).
+
+- **`createAction` extracts locking script from `raw_tx` for change inputs** --
+  When the output record's `locking_script` is NULL (before `processAction`
+  populates it), the locking script is now extracted by parsing the source
+  transaction's `raw_tx` at the correct vout index. This fixes P2PKH signature
+  verification failures in the client signer.
 
 ## [0.1.11] - 2026-03-11
 

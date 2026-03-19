@@ -520,31 +520,53 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
     let change_unlock_len = 107usize;
     let mut change_vin = input_records.len() as u32;
     for alloc_output in &allocated_outputs {
+        // Look up raw_tx for this change input's source transaction.
+        // The signer needs sourceTransaction for signing (isSignAction path).
+        // We also extract the locking script from raw_tx if it's not stored
+        // on the output record (it's typically NULL until processAction).
+        let (source_transaction, locking_script_from_raw) =
+            if let Some(ref src_txid) = alloc_output.txid {
+                let find_args = FindTransactionsArgs {
+                    partial: TransactionPartial {
+                        txid: Some(src_txid.clone()),
+                        ..Default::default()
+                    },
+                    no_raw_tx: false,
+                    ..Default::default()
+                };
+                if let Ok(txs) = storage.find_transactions(&find_args, trx_opt).await {
+                    if let Some(tx_record) = txs.into_iter().next() {
+                        // Extract locking script from raw_tx at the correct vout
+                        let ls_hex = tx_record.raw_tx.as_ref().and_then(|raw| {
+                            use std::io::Cursor;
+                            let mut cursor = Cursor::new(raw);
+                            bsv::transaction::transaction::Transaction::from_binary(&mut cursor)
+                                .ok()
+                                .and_then(|parsed_tx| {
+                                    parsed_tx
+                                        .outputs
+                                        .get(alloc_output.vout as usize)
+                                        .map(|out| bytes_to_hex(&out.locking_script.to_binary()))
+                                })
+                        });
+                        (tx_record.raw_tx, ls_hex)
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            };
+
+        // Use locking script from output record if available, otherwise from raw_tx
         let locking_script_hex = alloc_output
             .locking_script
             .as_ref()
             .map(|ls| bytes_to_hex(ls))
+            .or(locking_script_from_raw)
             .unwrap_or_default();
-
-        // Look up raw_tx for this change input's source transaction.
-        // The signer needs sourceTransaction for signing (isSignAction path).
-        let source_transaction = if let Some(ref src_txid) = alloc_output.txid {
-            let find_args = FindTransactionsArgs {
-                partial: TransactionPartial {
-                    txid: Some(src_txid.clone()),
-                    ..Default::default()
-                },
-                no_raw_tx: false,
-                ..Default::default()
-            };
-            if let Ok(txs) = storage.find_transactions(&find_args, trx_opt).await {
-                txs.into_iter().next().and_then(|t| t.raw_tx)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
 
         input_records.push(StorageCreateTransactionSdkInput {
             vin: change_vin,

@@ -463,6 +463,8 @@ pub struct TransactionPartial {
     pub is_outgoing: Option<bool>,
     /// Filter by transaction ID hex.
     pub txid: Option<String>,
+    /// Update raw transaction bytes.
+    pub raw_tx: Option<Vec<u8>>,
 }
 
 /// Arguments for querying transactions.
