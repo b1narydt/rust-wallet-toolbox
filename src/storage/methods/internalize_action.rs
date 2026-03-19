@@ -215,7 +215,60 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
     // Begin database transaction
     let db_trx = storage.begin_transaction().await?;
 
-    // Create or find ProvenTx if proof is available
+    // Store ALL proven ancestor transactions from the BEEF into proven_txs table.
+    // This ensures get_valid_beef_for_txid can later reconstruct BEEF for any
+    // transaction that spends outputs from these ancestors.
+    let now_for_proven = Utc::now().naive_utc();
+    for btx in &ab.txs {
+        if let Some(bump_idx) = btx.bump_index {
+            if let Some(bump) = ab.bumps.get(bump_idx) {
+                // This tx has a merkle proof — store it as proven
+                if let Some(ref bsv_tx) = btx.tx {
+                    let ancestor_txid = &btx.txid;
+                    let merkle_root =
+                        bump.compute_root(Some(ancestor_txid)).unwrap_or_default();
+
+                    let raw_tx_bytes = bsv_tx.to_bytes().unwrap_or_default();
+                    let mut bump_bytes = Vec::new();
+                    let _ = bump.to_binary(&mut bump_bytes);
+
+                    // Check if ProvenTx already exists
+                    let find_proven = FindProvenTxsArgs {
+                        partial: ProvenTxPartial {
+                            txid: Some(ancestor_txid.clone()),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    };
+                    let existing = verify_one_or_none(
+                        storage
+                            .find_proven_txs(&find_proven, Some(&db_trx))
+                            .await?,
+                    )?;
+
+                    if existing.is_none() && !raw_tx_bytes.is_empty() && !bump_bytes.is_empty() {
+                        let new_proven = ProvenTx {
+                            created_at: now_for_proven,
+                            updated_at: now_for_proven,
+                            proven_tx_id: 0,
+                            txid: ancestor_txid.clone(),
+                            height: bump.block_height as i32,
+                            index: 0,
+                            merkle_path: bump_bytes,
+                            raw_tx: raw_tx_bytes,
+                            block_hash: String::new(),
+                            merkle_root,
+                        };
+                        let _ = storage
+                            .insert_proven_tx(&new_proven, Some(&db_trx))
+                            .await;
+                    }
+                }
+            }
+        }
+    }
+
+    // Create or find ProvenTx for the MAIN transaction if it has proof
     let mut proven_tx_id: Option<i64> = None;
     if has_proof {
         if let Some(bump_idx) = beef_tx.bump_index {
@@ -232,7 +285,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                     WalletError::Internal(format!("Failed to serialize merkle path: {}", e))
                 })?;
 
-                // Check if ProvenTx already exists
+                // Check if ProvenTx already exists (may have been inserted above)
                 let find_proven = FindProvenTxsArgs {
                     partial: ProvenTxPartial {
                         txid: Some(txid.clone()),
@@ -281,6 +334,15 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
         tid
     } else {
         let now = Utc::now().naive_utc();
+        // Store raw_tx so get_valid_beef_for_txid can build BEEF later
+        // (needed by createAction's merge_input_beef for remote clients)
+        let raw_tx_bytes = tx.to_bytes().unwrap_or_default();
+        // Store the full BEEF as input_beef to preserve ancestor proofs
+        let beef_bytes = {
+            let mut buf = Vec::new();
+            ab.to_binary(&mut buf).ok();
+            if buf.is_empty() { None } else { Some(buf) }
+        };
         let new_tx = Transaction {
             created_at: now,
             updated_at: now,
@@ -295,8 +357,8 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
             version: Some(tx.version as i32),
             lock_time: Some(tx.lock_time as i32),
             txid: Some(txid.clone()),
-            input_beef: None,
-            raw_tx: None,
+            input_beef: beef_bytes,
+            raw_tx: Some(raw_tx_bytes),
         };
         storage.insert_transaction(&new_tx, Some(&db_trx)).await?
     };

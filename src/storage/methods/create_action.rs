@@ -6,6 +6,8 @@
 
 use chrono::Utc;
 
+use std::collections::HashSet;
+
 use crate::error::{WalletError, WalletResult};
 use crate::status::TransactionStatus;
 use crate::storage::action_types::{
@@ -13,12 +15,15 @@ use crate::storage::action_types::{
     StorageCreateActionResult, StorageCreateTransactionSdkInput, StorageCreateTransactionSdkOutput,
     StorageFeeModel,
 };
+use crate::storage::beef::{get_valid_beef_for_txid, TrustSelf};
 use crate::storage::find_args::{
-    FindOutputBasketsArgs, FindOutputsArgs, OutputBasketPartial, OutputPartial,
+    FindOutputBasketsArgs, FindOutputsArgs, FindTransactionsArgs, OutputBasketPartial,
+    OutputPartial, TransactionPartial,
 };
 use crate::storage::methods::generate_change::{
     generate_change_sdk, AvailableChange, MAX_POSSIBLE_SATOSHIS,
 };
+use crate::storage::traits::provider::StorageProvider;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
 use crate::storage::{verify_one, TrxToken};
 use crate::tables::{Output, OutputBasket, Transaction, TxLabel, TxLabelMap};
@@ -104,6 +109,66 @@ pub async fn storage_create_action<S: StorageReaderWriter + ?Sized>(
             // Rollback on any error
             let _ = storage.rollback_transaction(db_trx).await;
             Err(e)
+        }
+    }
+}
+
+/// Merge BEEF data from allocated change inputs into the result's input_beef.
+///
+/// The signer needs BEEF proof data for ALL inputs (both user-provided and
+/// storage-allocated change). This function walks the allocated change inputs,
+/// fetches their BEEF from storage, and merges everything into a single BEEF.
+///
+/// This must be called AFTER storage_create_action and AFTER the db transaction
+/// is committed, so the committed data is readable.
+///
+/// Matches TS: mergeAllocatedChangeBeefs(storage, userId, vargs, allocatedChange, beef)
+pub async fn merge_input_beef(
+    storage: &dyn StorageProvider,
+    result: &mut StorageCreateActionResult,
+) {
+    use bsv::transaction::beef::{Beef, BEEF_V2};
+
+    let mut beef = Beef::new(BEEF_V2);
+
+    // Merge caller-provided input_beef first (if any)
+    if let Some(ref ib) = result.input_beef {
+        if !ib.is_empty() {
+            let _ = beef.merge_beef_from_binary(ib);
+        }
+    }
+
+    // Merge BEEF for each storage-provided input's source transaction.
+    // Use TrustSelf::No to include full raw_tx + merkle proofs — the remote
+    // client's signer needs complete BEEF data. Matches TS: trustSelf: undefined
+    let known_txids: HashSet<String> = HashSet::new();
+    for input in &result.inputs {
+        if input.provided_by == StorageProvidedBy::Storage {
+            let txid = &input.source_txid;
+            if !txid.is_empty() && beef.find_txid(txid).is_none() {
+                if let Ok(Some(tx_beef_bytes)) = get_valid_beef_for_txid(
+                    storage,
+                    txid,
+                    TrustSelf::No,
+                    &known_txids,
+                    None,
+                )
+                .await
+                {
+                    let _ = beef.merge_beef_from_binary(&tx_beef_bytes);
+                }
+            }
+        }
+    }
+
+    // Serialize BEEF into result (only if we have any transactions)
+    if beef.txs.is_empty() {
+        result.input_beef = None;
+    } else {
+        let mut buf = Vec::new();
+        match beef.to_binary(&mut buf) {
+            Ok(()) => result.input_beef = Some(buf),
+            Err(_) => result.input_beef = None,
         }
     }
 }
@@ -461,13 +526,33 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             .map(|ls| bytes_to_hex(ls))
             .unwrap_or_default();
 
+        // Look up raw_tx for this change input's source transaction.
+        // The signer needs sourceTransaction for signing (isSignAction path).
+        let source_transaction = if let Some(ref src_txid) = alloc_output.txid {
+            let find_args = FindTransactionsArgs {
+                partial: TransactionPartial {
+                    txid: Some(src_txid.clone()),
+                    ..Default::default()
+                },
+                no_raw_tx: false,
+                ..Default::default()
+            };
+            if let Ok(txs) = storage.find_transactions(&find_args, trx_opt).await {
+                txs.into_iter().next().and_then(|t| t.raw_tx)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         input_records.push(StorageCreateTransactionSdkInput {
             vin: change_vin,
             source_txid: alloc_output.txid.clone().unwrap_or_default(),
             source_vout: alloc_output.vout as u32,
             source_satoshis: alloc_output.satoshis as u64,
             source_locking_script: locking_script_hex,
-            source_transaction: None,
+            source_transaction,
             unlocking_script_length: change_unlock_len,
             provided_by: StorageProvidedBy::Storage,
             output_type: alloc_output.output_type.clone(),
@@ -502,6 +587,8 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         .await?;
 
     // --- Build result ---
+    // Note: input_beef is passed through here; the outer storage_create_action
+    // function merges allocated change BEEFs before returning.
     let no_send_change_output_vouts = if args.is_no_send {
         Some(change_vouts)
     } else {

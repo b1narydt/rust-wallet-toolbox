@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12] - 2026-03-18
+
+### Added
+
+- **`merge_input_beef` for remote storage servers** -- New public function in
+  `storage::methods::create_action` that merges BEEF proof data for all
+  storage-allocated change inputs into the `createAction` result's `inputBeef`
+  field. Remote clients' signers need complete BEEF (raw transactions + merkle
+  proofs) to build and sign transactions. Matches the TS
+  `mergeAllocatedChangeBeefs` behavior.
+
+- **Ancestor proven tx storage in `internalize_action`** -- When internalizing
+  a transaction from AtomicBEEF, all ancestor transactions that carry merkle
+  proofs are now stored in the `proven_txs` table (not just the main
+  transaction). This allows `get_valid_beef_for_txid` to reconstruct complete
+  BEEF chains for subsequent `createAction` calls.
+
+### Fixed
+
+- **`internalize_action` now stores `raw_tx` and `input_beef`** -- The
+  Transaction record created during internalization now includes the serialized
+  raw transaction bytes and the full BEEF data. Previously both were `None`,
+  which prevented BEEF reconstruction for change inputs in later
+  `createAction` calls.
+
+- **`createAction` populates `source_transaction` on change inputs** -- Storage-
+  allocated change input records now include the source transaction's raw bytes
+  (looked up from the `transactions` table). The client signer's
+  `makeSignableTransactionBeef` requires `sourceTransaction` on every input for
+  the `isSignAction` flow (used by UMP token updates).
+
 ## [0.1.11] - 2026-03-11
 
 ### Added
