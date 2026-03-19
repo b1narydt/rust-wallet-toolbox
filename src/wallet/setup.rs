@@ -106,6 +106,10 @@ pub struct WalletBuilder {
     use_default_services: bool,
     monitor_enabled: bool,
     privileged_key_manager: Option<Arc<dyn PrivilegedKeyManager>>,
+    pool_max_connections: Option<u32>,
+    pool_min_connections: Option<u32>,
+    pool_idle_timeout: Option<std::time::Duration>,
+    pool_connect_timeout: Option<std::time::Duration>,
 }
 
 impl WalletBuilder {
@@ -120,6 +124,10 @@ impl WalletBuilder {
             use_default_services: false,
             monitor_enabled: false,
             privileged_key_manager: None,
+            pool_max_connections: None,
+            pool_min_connections: None,
+            pool_idle_timeout: None,
+            pool_connect_timeout: None,
         }
     }
 
@@ -195,6 +203,39 @@ impl WalletBuilder {
         self
     }
 
+    /// Set the maximum number of connections in the database pool.
+    ///
+    /// Default: 50. For Railway replicas, divide your MySQL server's
+    /// `max_connections` by the number of replicas.
+    pub fn with_max_connections(mut self, max: u32) -> Self {
+        self.pool_max_connections = Some(max);
+        self
+    }
+
+    /// Set the minimum number of connections in the database pool.
+    ///
+    /// Default: 2.
+    pub fn with_min_connections(mut self, min: u32) -> Self {
+        self.pool_min_connections = Some(min);
+        self
+    }
+
+    /// Set the idle timeout for database connections.
+    ///
+    /// Default: 600 seconds.
+    pub fn with_pool_idle_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.pool_idle_timeout = Some(timeout);
+        self
+    }
+
+    /// Set the connection timeout for the database pool.
+    ///
+    /// Default: 5 seconds.
+    pub fn with_pool_connect_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.pool_connect_timeout = Some(timeout);
+        self
+    }
+
     /// Build the wallet and all supporting infrastructure.
     ///
     /// Validates required fields, creates storage, runs migrations,
@@ -220,6 +261,26 @@ impl WalletBuilder {
         let key_deriver = Arc::new(CachedKeyDeriver::new(root_key, None));
         let identity_key_hex = key_deriver.identity_key().to_der_hex();
 
+        // Build a closure to apply pool overrides to StorageConfig
+        let pool_max = self.pool_max_connections;
+        let pool_min = self.pool_min_connections;
+        let pool_idle = self.pool_idle_timeout;
+        let pool_connect = self.pool_connect_timeout;
+        let apply_pool_overrides = |config: &mut StorageConfig| {
+            if let Some(max) = pool_max {
+                config.max_connections = max;
+            }
+            if let Some(min) = pool_min {
+                config.min_connections = min;
+            }
+            if let Some(timeout) = pool_idle {
+                config.idle_timeout = timeout;
+            }
+            if let Some(timeout) = pool_connect {
+                config.connect_timeout = timeout;
+            }
+        };
+
         // Create storage provider based on configuration
         let storage_provider: Arc<dyn crate::storage::traits::provider::StorageProvider> =
             match storage_kind {
@@ -229,10 +290,11 @@ impl WalletBuilder {
                     } else {
                         format!("sqlite:{}", path)
                     };
-                    let config = StorageConfig {
+                    let mut config = StorageConfig {
                         url,
                         ..StorageConfig::default()
                     };
+                    apply_pool_overrides(&mut config);
                     #[cfg(feature = "sqlite")]
                     {
                         let storage = crate::storage::sqlx_impl::SqliteStorage::new_sqlite(
@@ -252,10 +314,11 @@ impl WalletBuilder {
                     }
                 }
                 StorageKind::Mysql(url) => {
-                    let config = StorageConfig {
+                    let mut config = StorageConfig {
                         url,
                         ..StorageConfig::default()
                     };
+                    apply_pool_overrides(&mut config);
                     #[cfg(feature = "mysql")]
                     {
                         let mut storage = crate::storage::sqlx_impl::MysqlStorage::new_mysql(
@@ -278,10 +341,11 @@ impl WalletBuilder {
                     }
                 }
                 StorageKind::Postgres(url) => {
-                    let config = StorageConfig {
+                    let mut config = StorageConfig {
                         url,
                         ..StorageConfig::default()
                     };
+                    apply_pool_overrides(&mut config);
                     #[cfg(feature = "postgres")]
                     {
                         let storage = crate::storage::sqlx_impl::PgStorage::new_postgres(

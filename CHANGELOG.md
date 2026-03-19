@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.19] - 2026-03-19
+
+### Added
+
+- **Pool configuration API on `WalletBuilder`** -- New builder methods
+  `with_max_connections(u32)`, `with_min_connections(u32)`,
+  `with_pool_idle_timeout(Duration)`, and `with_pool_connect_timeout(Duration)`
+  allow operators to tune DB pool sizing for multi-replica deployments.
+  Defaults are unchanged (max=50, min=2, idle=600s, connect=5s).
+
 ## [0.1.15] - 2026-03-19
 
 ### Fixed

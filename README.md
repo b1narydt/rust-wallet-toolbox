@@ -73,7 +73,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-bsv-wallet-toolbox = "0.1.11"
+bsv-wallet-toolbox = "0.1.19"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -127,7 +127,7 @@ MySQL and PostgreSQL are opt-in and require disabling default features.
 
 ```toml
 [dependencies]
-bsv-wallet-toolbox = "0.1.11"
+bsv-wallet-toolbox = "0.1.19"
 ```
 
 **MySQL** -- requires a running MySQL server and connection URL:
@@ -176,6 +176,19 @@ let builder = WalletBuilder::new()
 // SQLite file-backed storage
 let builder = WalletBuilder::new()
     .with_sqlite("wallet.db");
+```
+
+For production deployments with multiple replicas (e.g., Railway), tune the connection pool:
+
+```rust,no_run
+# use bsv_wallet_toolbox::WalletBuilder;
+# use std::time::Duration;
+let builder = WalletBuilder::new()
+    .with_mysql("mysql://user:pass@host/db")
+    .with_max_connections(20)     // default: 50
+    .with_min_connections(5)      // default: 2
+    .with_pool_idle_timeout(Duration::from_secs(300))   // default: 600s
+    .with_pool_connect_timeout(Duration::from_secs(10)); // default: 5s
 ```
 
 ### Services
