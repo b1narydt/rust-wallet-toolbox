@@ -44,10 +44,10 @@ impl Default for StorageConfig {
         Self {
             url: String::from("sqlite::memory:"),
             sqlite_read_connections: 4,
-            min_connections: 1,
-            max_connections: 10,
+            min_connections: 2,
+            max_connections: 50,
             idle_timeout: Duration::from_secs(600), // 10 minutes
-            connect_timeout: Duration::from_secs(30),
+            connect_timeout: Duration::from_secs(5),
         }
     }
 }

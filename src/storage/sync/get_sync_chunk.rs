@@ -12,6 +12,27 @@ use crate::storage::sync::sync_map::{SyncChunk, SyncMap};
 use crate::storage::traits::provider::StorageProvider;
 use crate::storage::TrxToken;
 
+/// Per-entity row offsets for sync chunk pagination.
+///
+/// When a sync chunk can't return all changed entities in one call,
+/// the client re-sends with incremented offsets to paginate through
+/// the remaining rows at the same `since` timestamp.
+#[derive(Debug, Default, Clone)]
+pub struct SyncChunkOffsets {
+    pub proven_tx: i64,
+    pub output_basket: i64,
+    pub output_tag: i64,
+    pub tx_label: i64,
+    pub transaction: i64,
+    pub output: i64,
+    pub tx_label_map: i64,
+    pub output_tag_map: i64,
+    pub certificate: i64,
+    pub certificate_field: i64,
+    pub commission: i64,
+    pub proven_tx_req: i64,
+}
+
 /// Arguments for getSyncChunk.
 pub struct GetSyncChunkArgs<'a> {
     /// Identity key of the storage being read from.
@@ -24,6 +45,8 @@ pub struct GetSyncChunkArgs<'a> {
     pub sync_map: &'a SyncMap,
     /// Maximum number of items to return per entity type. Defaults to 1000.
     pub max_items_per_entity: i64,
+    /// Per-entity row offsets for pagination within a sync window.
+    pub offsets: SyncChunkOffsets,
 }
 
 /// Get the next incremental sync chunk of entities that changed since the last sync.
@@ -84,7 +107,7 @@ pub async fn get_sync_chunk(
         None => None,
     };
 
-    let paged = |limit: i64| Some(Paged { limit, offset: 0 });
+    let paged = |limit: i64, offset: i64| Some(Paged { limit, offset });
 
     // ProvenTx
     let proven_txs = {
@@ -93,7 +116,7 @@ pub async fn get_sync_chunk(
                 &FindForUserSincePagedArgs {
                     user_id,
                     since: args.sync_map.proven_tx.max_updated_at,
-                    paged: paged(max),
+                    paged: paged(max, args.offsets.proven_tx),
                 },
                 trx,
             )
@@ -115,7 +138,7 @@ pub async fn get_sync_chunk(
                         ..Default::default()
                     },
                     since: args.sync_map.output_basket.max_updated_at,
-                    paged: paged(max),
+                    paged: paged(max, args.offsets.output_basket),
                 },
                 trx,
             )
@@ -137,7 +160,7 @@ pub async fn get_sync_chunk(
                         ..Default::default()
                     },
                     since: args.sync_map.output_tag.max_updated_at,
-                    paged: paged(max),
+                    paged: paged(max, args.offsets.output_tag),
                 },
                 trx,
             )
@@ -159,7 +182,7 @@ pub async fn get_sync_chunk(
                         ..Default::default()
                     },
                     since: args.sync_map.tx_label.max_updated_at,
-                    paged: paged(max),
+                    paged: paged(max, args.offsets.tx_label),
                 },
                 trx,
             )
@@ -181,7 +204,7 @@ pub async fn get_sync_chunk(
                         ..Default::default()
                     },
                     since: args.sync_map.transaction.max_updated_at,
-                    paged: paged(max),
+                    paged: paged(max, args.offsets.transaction),
                     ..Default::default()
                 },
                 trx,
@@ -204,7 +227,7 @@ pub async fn get_sync_chunk(
                         ..Default::default()
                     },
                     since: args.sync_map.output.max_updated_at,
-                    paged: paged(max),
+                    paged: paged(max, args.offsets.output),
                     ..Default::default()
                 },
                 trx,
@@ -224,7 +247,7 @@ pub async fn get_sync_chunk(
                 &FindForUserSincePagedArgs {
                     user_id,
                     since: args.sync_map.tx_label_map.max_updated_at,
-                    paged: paged(max),
+                    paged: paged(max, args.offsets.tx_label_map),
                 },
                 trx,
             )
@@ -243,7 +266,7 @@ pub async fn get_sync_chunk(
                 &FindForUserSincePagedArgs {
                     user_id,
                     since: args.sync_map.output_tag_map.max_updated_at,
-                    paged: paged(max),
+                    paged: paged(max, args.offsets.output_tag_map),
                 },
                 trx,
             )
@@ -265,7 +288,7 @@ pub async fn get_sync_chunk(
                         ..Default::default()
                     },
                     since: args.sync_map.certificate.max_updated_at,
-                    paged: paged(max),
+                    paged: paged(max, args.offsets.certificate),
                 },
                 trx,
             )
@@ -287,7 +310,7 @@ pub async fn get_sync_chunk(
                         ..Default::default()
                     },
                     since: args.sync_map.certificate_field.max_updated_at,
-                    paged: paged(max),
+                    paged: paged(max, args.offsets.certificate_field),
                 },
                 trx,
             )
@@ -309,7 +332,7 @@ pub async fn get_sync_chunk(
                         ..Default::default()
                     },
                     since: args.sync_map.commission.max_updated_at,
-                    paged: paged(max),
+                    paged: paged(max, args.offsets.commission),
                 },
                 trx,
             )
@@ -328,7 +351,7 @@ pub async fn get_sync_chunk(
                 &FindForUserSincePagedArgs {
                     user_id,
                     since: args.sync_map.proven_tx_req.max_updated_at,
-                    paged: paged(max),
+                    paged: paged(max, args.offsets.proven_tx_req),
                 },
                 trx,
             )
