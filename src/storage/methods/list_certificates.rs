@@ -20,6 +20,39 @@ use crate::storage::find_args::{
 use crate::storage::traits::reader::StorageReader;
 use crate::storage::TrxToken;
 
+/// Encode bytes to base64 string.
+fn base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::new();
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+        if chunk.len() > 2 {
+            result.push(CHARS[(triple & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+    }
+    result
+}
+
+fn cert_type_to_string(ct: &CertificateType) -> String {
+    base64_encode(&ct.0)
+}
+
+fn serial_number_to_string(sn: &SerialNumber) -> String {
+    base64_encode(&sn.0)
+}
+
 /// Decode a hex string to bytes. Returns None on invalid hex.
 fn hex_decode(s: &str) -> Option<Vec<u8>> {
     if s.len() % 2 != 0 {
@@ -49,12 +82,29 @@ pub async fn list_certificates(
     let limit = args.limit.unwrap_or(10) as i64;
     let offset = args.offset.map(|o| o as i64).unwrap_or(0);
 
+    // Build the certificate partial filter, incorporating the optional partial match
+    let mut cert_partial = CertificatePartial {
+        user_id: Some(user_id),
+        is_deleted: Some(false),
+        ..Default::default()
+    };
+    if let Some(ref p) = args.partial {
+        if let Some(ref ct) = p.cert_type {
+            cert_partial.cert_type = Some(cert_type_to_string(ct));
+        }
+        if let Some(ref sn) = p.serial_number {
+            cert_partial.serial_number = Some(serial_number_to_string(sn));
+        }
+        if let Some(ref c) = p.certifier {
+            cert_partial.certifier = Some(c.to_der_hex());
+        }
+        if let Some(ref s) = p.subject {
+            cert_partial.subject = Some(s.to_der_hex());
+        }
+    }
+
     let find_args = FindCertificatesArgs {
-        partial: CertificatePartial {
-            user_id: Some(user_id),
-            is_deleted: Some(false),
-            ..Default::default()
-        },
+        partial: cert_partial,
         paged: Some(Paged { limit, offset }),
         ..Default::default()
     };
