@@ -26,6 +26,10 @@ pub enum StorageProvidedBy {
     Storage,
     /// Storage is provided by the caller
     You,
+    /// Both the caller and storage contributed (e.g., user specifies inputs, storage allocates change)
+    #[serde(rename = "you-and-storage")]
+    #[strum(serialize = "you-and-storage")]
+    YouAndStorage,
 }
 
 #[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgres"))]

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.20] - 2026-03-20
+
+### Fixed
+
+- **`StorageProvidedBy` enum now supports `"you-and-storage"`** -- Added the
+  missing variant to match the TypeScript SDK. Previously, syncing outputs with
+  `providedBy: "you-and-storage"` from a TS storage instance would fail with a
+  deserialization error, breaking cross-platform sync compatibility.
+
 ## [0.1.19] - 2026-03-19
 
 ### Added
