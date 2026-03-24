@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 03-storageclient/03-01-PLAN.md
-last_updated: "2026-03-24T21:42:33.535Z"
+stopped_at: Completed 03-storageclient/03-02-PLAN.md
+last_updated: "2026-03-24T21:46:50.853Z"
 last_activity: 2026-03-24 — Roadmap created, milestone v1.0 initialized
 progress:
   total_phases: 7
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -49,6 +49,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-wire-format P01 | 3 | 2 tasks | 3 files |
 | Phase 02-trait-definition P01 | 9 | 1 tasks | 10 files |
 | Phase 03-storageclient P01 | 200 | 1 tasks | 4 files |
+| Phase 03-storageclient PP02 | 2min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,8 @@ Recent decisions affecting current work:
 - [Phase 03-storageclient]: tokio::sync::Mutex for AuthFetch and settings cache — std::sync::Mutex held across .await deadlocks Tokio
 - [Phase 03-storageclient]: wallet_error_from_object placed in error.rs alongside to_wallet_error_object for symmetric WERR conversion
 - [Phase 03-storageclient]: AtomicBool with Acquire/Release for sync is_available() — avoids blocking lock in sync trait fn
+- [Phase 03-storageclient]: Wire helper structs (FindOrInsertUserWire, FindOrInsertSyncStateWire) for tuple-returning RPCs placed inline in storage_client.rs
+- [Phase 03-storageclient]: internalize_action ignores services param — accepted in sig for trait compliance, never serialized (no TS equivalent)
 
 ### Codebase Context (from pre-roadmap research)
 
@@ -89,6 +92,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-24T21:42:33.532Z
-Stopped at: Completed 03-storageclient/03-01-PLAN.md
+Last session: 2026-03-24T21:46:50.851Z
+Stopped at: Completed 03-storageclient/03-02-PLAN.md
 Resume file: None

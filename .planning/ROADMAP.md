@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Wire Format** - Fix serde_datetime and Vec<u8> serialization to match TS server expectations (completed 2026-03-24)
 - [ ] **Phase 2: Trait Definition** - Define WalletStorageProvider trait and blanket impl for local providers
-- [ ] **Phase 3: StorageClient** - Implement StorageClient struct with rpc_call, all ~25 WalletStorageProvider methods, and updateProvenTxReqWithNewProvenTx
+- [x] **Phase 3: StorageClient** - Implement StorageClient struct with rpc_call, all ~25 WalletStorageProvider methods, and updateProvenTxReqWithNewProvenTx (completed 2026-03-24)
 - [ ] **Phase 4: Manager Rewrite** - Multi-provider WalletStorageManager with ManagedStorage, sync loops, and hierarchical locking
 - [ ] **Phase 5: Manager Orchestration** - setActive conflict resolution, updateBackups fan-out, reprove proof re-validation
 - [ ] **Phase 6: Integration Testing** - Prove cross-language wire compatibility against live TS server
@@ -59,7 +59,7 @@ Plans:
   5. `is_storage_provider()` returns `false` on `StorageClient`
   6. `updateProvenTxReqWithNewProvenTx` is implemented as an extra method on StorageClient (beyond WalletStorageProvider trait), matching TS behavior
   7. Settings are cached after first `makeAvailable()` call; `getSettings()` returns cached value or errors if not yet available
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 03-01-PLAN.md — StorageClient struct, rpc_call, error mapping, settings caching, module wiring
 - [ ] 03-02-PLAN.md — All 23 WalletStorageProvider method implementations as rpc_call delegates
@@ -125,7 +125,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|----------------|--------|-----------|
 | 1. Wire Format | 1/1 | Complete | 2026-03-24 |
 | 2. Trait Definition | 0/1 | Planning complete | - |
-| 3. StorageClient | 1/2 | In Progress|  |
+| 3. StorageClient | 2/2 | Complete   | 2026-03-24 |
 | 4. Manager Rewrite | 0/? | Not started | - |
 | 5. Manager Orchestration | 0/? | Not started | - |
 | 6. Integration Testing | 0/? | Not started | - |
