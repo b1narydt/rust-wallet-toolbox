@@ -215,7 +215,17 @@ Based on the TS interface hierarchy, the `WalletStorageProvider` trait in Rust s
 
 That is exactly 25 methods (24 async + 1 sync discriminant). The non-async `is_available()` and `get_settings()` from WalletStorageReader, plus the two non-async from WalletStorageProvider itself, keep the object-safety tractable.
 
-**Note on `getServices`/`setServices`:** The TS interface includes these. In the Rust codebase there is no `WalletServices` trait equivalent yet exposed via `StorageProvider`. These can be included with a default `unimplemented!()` body or omitted if `StorageProvider` doesn't have them. Safest: include as methods that return `WalletError::NotImplemented` by default.
+**Note on `getServices`/`setServices`:** The TS interface includes these. In the Rust codebase `WalletServices` is a separate trait in `src/services/traits.rs`, not exposed via `StorageProvider`. Include as methods that return `NotImplemented` (only 2 of 25 methods that need this).
+
+**CORRECTION (2026-03-24):** Initial research incorrectly claimed `list_actions`, `list_certificates`, `list_outputs`, `abort_action`, `relinquish_certificate`, `relinquish_output` were missing from the Rust codebase. They are ALL fully implemented:
+- `list_actions` → `src/storage/methods/list_actions.rs` (standalone function taking `&dyn StorageProvider`)
+- `list_certificates` → `src/storage/methods/list_certificates.rs`
+- `list_outputs` → `src/storage/methods/list_outputs.rs`
+- `abort_action` → `src/storage/manager.rs` + `src/signer/methods/abort_action.rs`
+- `relinquish_certificate` → `src/storage/manager.rs` line 418
+- `relinquish_output` → `src/storage/manager.rs` line 343
+
+The blanket impl MUST delegate to these existing implementations, not return NotImplemented. Only 3 methods genuinely have no Rust equivalent: `get_services`, `set_services`, and `set_active` (the auth version that changes user.active_storage — distinct from the bool `StorageProvider::set_active`).
 
 ---
 
