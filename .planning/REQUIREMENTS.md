@@ -9,10 +9,10 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 
 ### Wire Format
 
-- [ ] **WIRE-01**: serde_datetime emits ISO 8601 timestamps with trailing "Z" and 3-digit millisecond precision matching TS server expectations
-- [ ] **WIRE-02**: Vec<u8> fields serialize as JSON number arrays (not base64), matching TS `Array.from(Buffer)` wire format
-- [ ] **WIRE-03**: SyncChunk and SyncMap types serialize to JSON matching TS wire format (camelCase fields, optional arrays as null/absent)
-- [ ] **WIRE-04**: Round-trip serde tests pass with TS-generated fixture JSON for all entity types with timestamps and binary data
+- [x] **WIRE-01**: serde_datetime emits ISO 8601 timestamps with trailing "Z" and 3-digit millisecond precision matching TS server expectations
+- [x] **WIRE-02**: Vec<u8> fields serialize as JSON number arrays (not base64), matching TS `Array.from(Buffer)` wire format
+- [x] **WIRE-03**: SyncChunk and SyncMap types serialize to JSON matching TS wire format (camelCase fields, optional arrays as null/absent)
+- [x] **WIRE-04**: Round-trip serde tests pass with TS-generated fixture JSON for all entity types with timestamps and binary data
 
 ### Trait Definition
 
@@ -77,10 +77,10 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WIRE-01 | Phase 1 | Pending |
-| WIRE-02 | Phase 1 | Pending |
-| WIRE-03 | Phase 1 | Pending |
-| WIRE-04 | Phase 1 | Pending |
+| WIRE-01 | Phase 1 | Complete |
+| WIRE-02 | Phase 1 | Complete |
+| WIRE-03 | Phase 1 | Complete |
+| WIRE-04 | Phase 1 | Complete |
 | TRAIT-01 | Phase 2 | Pending |
 | TRAIT-02 | Phase 2 | Pending |
 | TRAIT-03 | Phase 2 | Pending |
