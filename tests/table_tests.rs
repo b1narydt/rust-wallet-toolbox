@@ -856,3 +856,140 @@ fn sync_chunk_present_fields_included() {
     // other None fields should still be absent
     assert!(json.get("transactions").is_none());
 }
+
+// -- Wire format tests: Task 2 -- TS-fixture round-trip tests --
+
+#[test]
+fn proven_tx_ts_fixture_roundtrip() {
+    // JSON exactly as TS StorageServer produces: created_at snake_case, 3ms+Z, integer arrays
+    let ts_json = r#"{
+        "created_at": "2024-01-15T10:30:00.718Z",
+        "updated_at": "2024-01-15T10:30:01.000Z",
+        "provenTxId": 42,
+        "txid": "abcd1234ef567890abcd1234ef567890abcd1234ef567890abcd1234ef567890ab",
+        "height": 800000,
+        "index": 5,
+        "merklePath": [1, 2, 3],
+        "rawTx": [4, 5],
+        "blockHash": "000000000000000000abcdef1234567890abcdef1234567890abcdef1234567890",
+        "merkleRoot": "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899aa"
+    }"#;
+
+    let proven_tx: ProvenTx = serde_json::from_str(ts_json).unwrap();
+
+    // Field values correct
+    assert_eq!(proven_tx.proven_tx_id, 42);
+    assert_eq!(proven_tx.merkle_path, vec![1u8, 2, 3]);
+    assert_eq!(proven_tx.raw_tx, vec![4u8, 5]);
+
+    // Re-serialize
+    let out = serde_json::to_value(&proven_tx).unwrap();
+
+    // Timestamps must be exactly TS format: 3ms digits + Z
+    assert_eq!(out["created_at"].as_str().unwrap(), "2024-01-15T10:30:00.718Z");
+    assert_eq!(out["updated_at"].as_str().unwrap(), "2024-01-15T10:30:01.000Z");
+
+    // Binary fields are integer arrays
+    let merkle = out["merklePath"].as_array().unwrap();
+    assert_eq!(merkle[0], 1);
+    assert_eq!(merkle[1], 2);
+    assert_eq!(merkle[2], 3);
+}
+
+#[test]
+fn transaction_ts_fixture_roundtrip() {
+    // inputBEEF present as integer array, rawTx null
+    let ts_json = r#"{
+        "created_at": "2024-03-20T08:15:30.250Z",
+        "updated_at": "2024-03-20T08:15:30.250Z",
+        "transactionId": 100,
+        "userId": 1,
+        "provenTxId": null,
+        "status": "completed",
+        "reference": "ref123",
+        "isOutgoing": true,
+        "satoshis": 50000,
+        "description": "Test payment",
+        "version": 1,
+        "lockTime": 0,
+        "txid": "txid123",
+        "inputBEEF": [10, 20, 30],
+        "rawTx": null
+    }"#;
+
+    let tx: Transaction = serde_json::from_str(ts_json).unwrap();
+
+    // Field values correct
+    assert_eq!(tx.input_beef, Some(vec![10u8, 20, 30]));
+    assert!(tx.raw_tx.is_none());
+
+    // Re-serialize
+    let out = serde_json::to_value(&tx).unwrap();
+
+    // Timestamp has Z and 3ms digits
+    assert!(out["created_at"].as_str().unwrap().ends_with("Z"),
+        "created_at must end with Z, got: {}", out["created_at"]);
+
+    // inputBEEF is integer array
+    let beef = out["inputBEEF"].as_array().unwrap();
+    assert_eq!(beef[0], 10);
+    assert_eq!(beef[1], 20);
+    assert_eq!(beef[2], 30);
+
+    // rawTx is null (Option<Vec<u8>> None serializes as null for table structs, matching TS)
+    assert!(out["rawTx"].is_null(), "rawTx should be null when None");
+}
+
+#[test]
+fn sync_chunk_ts_fixture_roundtrip() {
+    use bsv_wallet_toolbox::storage::sync::SyncChunk;
+
+    // Only provenTxs populated, all other entity lists absent from JSON
+    let ts_json = r#"{
+        "fromStorageIdentityKey": "from-key",
+        "toStorageIdentityKey": "to-key",
+        "userIdentityKey": "user-key",
+        "provenTxs": [
+            {
+                "created_at": "2024-01-15T10:30:00.718Z",
+                "updated_at": "2024-01-15T10:30:01.000Z",
+                "provenTxId": 1,
+                "txid": "abcd1234ef567890abcd1234ef567890abcd1234ef567890abcd1234ef567890ab",
+                "height": 800000,
+                "index": 0,
+                "merklePath": [1, 2],
+                "rawTx": [3, 4],
+                "blockHash": "000000000000000000abcdef1234567890abcdef1234567890abcdef1234567890",
+                "merkleRoot": "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899aa"
+            }
+        ]
+    }"#;
+
+    let chunk: SyncChunk = serde_json::from_str(ts_json).unwrap();
+
+    // proven_txs is Some with one element, transactions is None
+    assert!(chunk.proven_txs.is_some());
+    assert_eq!(chunk.proven_txs.as_ref().unwrap().len(), 1);
+    assert!(chunk.transactions.is_none());
+
+    // Re-serialize
+    let out = serde_json::to_value(&chunk).unwrap();
+
+    // provenTxs key is present with array
+    let proven_txs = out.get("provenTxs").expect("provenTxs should be in output");
+    assert!(proven_txs.is_array());
+
+    // transactions key is absent (not null)
+    assert!(
+        out.get("transactions").is_none(),
+        "transactions should be absent from output, not null"
+    );
+
+    // Timestamp inside the nested ProvenTx has Z suffix
+    let nested_ts = proven_txs[0]["created_at"].as_str().unwrap();
+    assert!(
+        nested_ts.ends_with("Z"),
+        "Nested created_at must end with Z, got: {}",
+        nested_ts
+    );
+}
