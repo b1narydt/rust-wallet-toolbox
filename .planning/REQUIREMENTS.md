@@ -28,12 +28,26 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 - [ ] **CLIENT-04**: JSON-RPC error responses map back to typed WalletError variants via WalletErrorObject deserialization
 - [ ] **CLIENT-05**: Constructor accepts WalletInterface impl for BRC-31 auth signing (same chicken-and-egg pattern as TS)
 - [ ] **CLIENT-06**: Wire method names exactly match TS StorageClient (e.g., `findOutputBaskets` not `findOutputBasketsAuth`)
+- [ ] **CLIENT-07**: updateProvenTxReqWithNewProvenTx implemented as extra method on StorageClient (beyond WalletStorageProvider trait), settings cached after makeAvailable
 
-### Manager Integration
+### Manager Rewrite
 
-- [ ] **MGR-01**: WalletStorageManager backup field accepts WalletStorageProvider (not just StorageProvider)
-- [ ] **MGR-02**: CRUD write propagation skipped for remote backup providers (uses sync-chunk replication instead)
-- [ ] **MGR-03**: StorageClient plugs into WalletStorageManager as backup via standard constructor
+- [ ] **MGR-01**: WalletStorageManager constructor accepts identity_key + optional active + Vec of backup WalletStorageProviders (multi-provider)
+- [ ] **MGR-02**: ManagedStorage wrapper per provider caching settings, user, is_available, is_storage_provider
+- [ ] **MGR-03**: makeAvailable() partitions stores into active/backups/conflicting_actives matching TS enabled-active logic
+- [ ] **MGR-04**: Four-level hierarchical lock system (reader < writer < sync < storage_provider) with ordered acquisition
+- [ ] **MGR-05**: syncToWriter() and syncFromReader() chunked sync loops using EntitySyncState + RequestSyncChunkArgs iteration
+- [ ] **MGR-06**: CRUD write propagation replaced with chunk-based sync — writes to active only, backups sync via updateBackups()
+- [ ] **MGR-07**: All manager-level delegation methods with appropriate lock acquisition and auth checks
+- [ ] **MGR-08**: addWalletStorageProvider() runtime addition with re-partition
+
+### Manager Orchestration
+
+- [ ] **ORCH-01**: setActive() full conflict resolution — detect conflicts, merge via syncToWriter, update user.activeStorage, re-partition
+- [ ] **ORCH-02**: updateBackups() fan-out sync to all backup stores with per-backup error handling
+- [ ] **ORCH-03**: reproveHeader() re-validates proofs against orphaned headers using ChainTracker
+- [ ] **ORCH-04**: reproveProven() re-validates individual ProvenTx proofs against current chain
+- [ ] **ORCH-05**: getStores() returns WalletStorageInfo for all providers with full status metadata
 
 ### Integration Testing
 
@@ -42,6 +56,8 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 - [ ] **TEST-03**: findOrInsertUser() creates/retrieves user on live TS server
 - [ ] **TEST-04**: Sync chunk round-trip (getSyncChunk + processSyncChunk) works against live TS server
 - [ ] **TEST-05**: Full payment internalize flow works end-to-end with StorageClient as backup provider
+- [ ] **TEST-06**: syncToWriter() completes a full sync from local to remote StorageClient
+- [ ] **TEST-07**: updateBackups() syncs to StorageClient backup successfully
 
 ### PR Submission
 
@@ -90,22 +106,35 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 | CLIENT-04 | Phase 3 | Pending |
 | CLIENT-05 | Phase 3 | Pending |
 | CLIENT-06 | Phase 3 | Pending |
+| CLIENT-07 | Phase 3 | Pending |
 | MGR-01 | Phase 4 | Pending |
 | MGR-02 | Phase 4 | Pending |
 | MGR-03 | Phase 4 | Pending |
-| TEST-01 | Phase 5 | Pending |
-| TEST-02 | Phase 5 | Pending |
-| TEST-03 | Phase 5 | Pending |
-| TEST-04 | Phase 5 | Pending |
-| TEST-05 | Phase 5 | Pending |
-| PR-01 | Phase 6 | Pending |
-| PR-02 | Phase 6 | Pending |
-| PR-03 | Phase 6 | Pending |
-| PR-04 | Phase 6 | Pending |
+| MGR-04 | Phase 4 | Pending |
+| MGR-05 | Phase 4 | Pending |
+| MGR-06 | Phase 4 | Pending |
+| MGR-07 | Phase 4 | Pending |
+| MGR-08 | Phase 4 | Pending |
+| ORCH-01 | Phase 5 | Pending |
+| ORCH-02 | Phase 5 | Pending |
+| ORCH-03 | Phase 5 | Pending |
+| ORCH-04 | Phase 5 | Pending |
+| ORCH-05 | Phase 5 | Pending |
+| TEST-01 | Phase 6 | Pending |
+| TEST-02 | Phase 6 | Pending |
+| TEST-03 | Phase 6 | Pending |
+| TEST-04 | Phase 6 | Pending |
+| TEST-05 | Phase 6 | Pending |
+| TEST-06 | Phase 6 | Pending |
+| TEST-07 | Phase 6 | Pending |
+| PR-01 | Phase 7 | Pending |
+| PR-02 | Phase 7 | Pending |
+| PR-03 | Phase 7 | Pending |
+| PR-04 | Phase 7 | Pending |
 
 **Coverage:**
-- v1 requirements: 25 total
-- Mapped to phases: 25
+- v1 requirements: 38 total
+- Mapped to phases: 38
 - Unmapped: 0
 
 ---

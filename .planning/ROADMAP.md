@@ -2,7 +2,7 @@
 
 ## Overview
 
-This milestone delivers `StorageClient<W>` — a JSON-RPC client that speaks the TypeScript StorageServer wire protocol and integrates as a backup provider in `WalletStorageManager`. The work proceeds in dependency order: fix the wire format first so every subsequent method is correct from the start, then define the trait, implement the client, integrate it into the manager, and finally validate cross-language compatibility against the live TypeScript server at storage.babbage.systems.
+This milestone delivers full TypeScript WalletStorageProvider parity in Rust — a JSON-RPC `StorageClient` that speaks the TS wire protocol, a fully rewritten `WalletStorageManager` with multi-provider support, chunked sync loops, hierarchical locking, and active-switching orchestration. The work proceeds in dependency order: wire format → trait → client → manager rewrite → manager orchestration → integration testing → PR.
 
 ## Phases
 
@@ -14,10 +14,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Wire Format** - Fix serde_datetime and Vec<u8> serialization to match TS server expectations (completed 2026-03-24)
 - [ ] **Phase 2: Trait Definition** - Define WalletStorageProvider trait and blanket impl for local providers
-- [ ] **Phase 3: StorageClient** - Implement StorageClient struct with rpc_call and all ~25 method stubs
-- [ ] **Phase 4: Manager Integration** - Wire StorageClient into WalletStorageManager as backup provider
-- [ ] **Phase 5: Integration Testing** - Prove cross-language wire compatibility against live TS server
-- [ ] **Phase 6: PR Submission** - Fork repo, clean branch, create professional pull request to b1narydt/rust-wallet-toolbox
+- [ ] **Phase 3: StorageClient** - Implement StorageClient struct with rpc_call, all ~25 WalletStorageProvider methods, and updateProvenTxReqWithNewProvenTx
+- [ ] **Phase 4: Manager Rewrite** - Multi-provider WalletStorageManager with ManagedStorage, sync loops, and hierarchical locking
+- [ ] **Phase 5: Manager Orchestration** - setActive conflict resolution, updateBackups fan-out, reprove proof re-validation
+- [ ] **Phase 6: Integration Testing** - Prove cross-language wire compatibility against live TS server
+- [ ] **Phase 7: PR Submission** - Fork repo, clean branch, create professional pull request to b1narydt/rust-wallet-toolbox
 
 ## Phase Details
 
@@ -47,30 +48,49 @@ Plans:
 - [ ] 02-01-PLAN.md — Define WalletStorageProvider trait, blanket impl over StorageProvider, supporting types (AuthId extension, RequestSyncChunkArgs)
 
 ### Phase 3: StorageClient
-**Goal**: StorageClient<W> compiles, passes JSON-RPC envelope tests, and implements every WalletStorageProvider method with correct wire method names
+**Goal**: StorageClient<W> compiles, passes JSON-RPC envelope tests, and implements every WalletStorageProvider method plus updateProvenTxReqWithNewProvenTx with correct wire method names
 **Depends on**: Phase 2
-**Requirements**: CLIENT-01, CLIENT-02, CLIENT-03, CLIENT-04, CLIENT-05, CLIENT-06
+**Requirements**: CLIENT-01, CLIENT-02, CLIENT-03, CLIENT-04, CLIENT-05, CLIENT-06, CLIENT-07
 **Success Criteria** (what must be TRUE):
   1. `StorageClient::new(wallet, endpoint)` constructs without error and holds `AuthFetch<W>` behind `tokio::sync::Mutex`
   2. `rpc_call` produces a JSON-RPC 2.0 envelope with positional `params` array, auto-incrementing `id`, and correct `method` string
   3. A JSON-RPC error response with a known WERR code maps to the correct `WalletError` variant
   4. All ~25 `WalletStorageProvider` method stubs compile and forward to `rpc_call` with camelCase wire method names that match the TS StorageClient exactly (e.g., `findOutputBaskets` not `findOutputBasketsAuth`)
   5. `is_storage_provider()` returns `false` on `StorageClient`
+  6. `updateProvenTxReqWithNewProvenTx` is implemented as an extra method on StorageClient (beyond WalletStorageProvider trait), matching TS behavior
+  7. Settings are cached after first `makeAvailable()` call; `getSettings()` returns cached value or errors if not yet available
 **Plans**: TBD
 
-### Phase 4: Manager Integration
-**Goal**: WalletStorageManager accepts StorageClient as a backup provider and skips CRUD propagation for remote backups
+### Phase 4: Manager Rewrite
+**Goal**: WalletStorageManager is rewritten to match TS architecture — multi-provider, ManagedStorage wrappers, chunked sync loops, and hierarchical locking
 **Depends on**: Phase 3
-**Requirements**: MGR-01, MGR-02, MGR-03
+**Requirements**: MGR-01, MGR-02, MGR-03, MGR-04, MGR-05, MGR-06, MGR-07, MGR-08
 **Success Criteria** (what must be TRUE):
-  1. `WalletStorageManager` backup field accepts `Arc<dyn WalletStorageProvider>` and the codebase compiles with no type errors
-  2. CRUD write propagation paths in `manager.rs` are guarded by `is_storage_provider()` — a `StorageClient` backup does not receive direct CRUD writes
-  3. A `StorageClient` instance can be passed to `WalletStorageManager` via its standard constructor without any type casting
+  1. `WalletStorageManager::new(identity_key, active, backups)` accepts N backup providers as `Vec<Arc<dyn WalletStorageProvider>>`
+  2. Each provider is wrapped in `ManagedStorage` with cached `settings`, `user`, `is_available`, `is_storage_provider` fields
+  3. `makeAvailable()` partitions stores into active/backups/conflicting_actives matching TS logic (enabled-active = storageIdentityKey matches user.activeStorage AND no conflicts)
+  4. Four-level hierarchical lock system: reader < writer < sync < storage_provider, with ordered acquisition matching TS `runAsReader/Writer/Sync/StorageProvider`
+  5. `syncToWriter()` and `syncFromReader()` implement chunked sync loops using `EntitySyncState` + `RequestSyncChunkArgs` → getSyncChunk/processSyncChunk iteration until `done`
+  6. CRUD write propagation is replaced with chunk-based sync replication — writes go to active only, backups sync via `updateBackups()`
+  7. All manager-level delegation methods exist: `createAction`, `processAction`, `internalizeAction`, `insertCertificate`, `findCertificates`, `findOutputBaskets`, `findOutputs`, `findProvenTxReqs` with appropriate lock acquisition and auth checks
+  8. `addWalletStorageProvider()` adds at runtime, resets `is_available`, re-runs `makeAvailable()` partitioning
 **Plans**: TBD
 
-### Phase 5: Integration Testing
-**Goal**: Cross-language wire compatibility with the live TypeScript storage server at storage.babbage.systems is proven by passing tests
+### Phase 5: Manager Orchestration
+**Goal**: Complete WalletStorageManager orchestration — setActive conflict resolution, updateBackups fan-out, reprove proof re-validation, and runtime introspection
 **Depends on**: Phase 4
+**Requirements**: ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05
+**Success Criteria** (what must be TRUE):
+  1. `setActive(auth, storageIdentityKey)` performs full conflict resolution: detect conflicting actives, merge state via syncToWriter, update user.activeStorage across all stores, re-partition
+  2. `updateBackups()` iterates all backup stores calling syncToWriter, with error handling per-backup (one failure doesn't block others)
+  3. `reproveHeader()` re-validates proofs against orphaned block headers using ChainTracker + getMerklePath, updates affected ProvenTx records
+  4. `reproveProven()` re-validates individual ProvenTx proofs against current chain state
+  5. `getStores()` returns `WalletStorageInfo` for all managed providers including status (isActive, isEnabled, isBackup, isConflicting, endpointUrl)
+**Plans**: TBD
+
+### Phase 6: Integration Testing
+**Goal**: Cross-language wire compatibility with the live TypeScript storage server at storage.babbage.systems is proven by passing tests
+**Depends on**: Phase 5
 **Requirements**: TEST-01, TEST-02, TEST-03, TEST-04, TEST-05
 **Success Criteria** (what must be TRUE):
   1. BRC-31 mutual auth handshake completes successfully against storage.babbage.systems (no auth errors in test output)
@@ -78,11 +98,13 @@ Plans:
   3. `findOrInsertUser()` creates or retrieves a user on the live TS server without error
   4. A getSyncChunk + processSyncChunk round-trip completes against the live TS server with correct entity deserialization
   5. A full payment internalize flow completes end-to-end with `StorageClient` as the backup provider
+  6. `syncToWriter()` loop completes a full sync from local storage to remote StorageClient
+  7. `updateBackups()` successfully syncs to a StorageClient backup
 **Plans**: TBD
 
-### Phase 6: PR Submission
+### Phase 7: PR Submission
 **Goal**: Fork the repo, prepare a clean branch with only implementation changes (no planning docs), and create a professional pull request to b1narydt/rust-wallet-toolbox
-**Depends on**: Phase 5
+**Depends on**: Phase 6
 **Requirements**: PR-01, PR-02, PR-03, PR-04
 **Success Criteria** (what must be TRUE):
   1. Fork exists under user's GitHub account with `feat/storage-client` branch pushed
@@ -94,13 +116,14 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Wire Format | 1/1 | Complete   | 2026-03-24 |
+| 1. Wire Format | 1/1 | Complete | 2026-03-24 |
 | 2. Trait Definition | 0/1 | Planning complete | - |
 | 3. StorageClient | 0/? | Not started | - |
-| 4. Manager Integration | 0/? | Not started | - |
-| 5. Integration Testing | 0/? | Not started | - |
-| 6. PR Submission | 0/? | Not started | - |
+| 4. Manager Rewrite | 0/? | Not started | - |
+| 5. Manager Orchestration | 0/? | Not started | - |
+| 6. Integration Testing | 0/? | Not started | - |
+| 7. PR Submission | 0/? | Not started | - |
