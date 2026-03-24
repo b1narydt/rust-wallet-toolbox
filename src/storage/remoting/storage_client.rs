@@ -248,6 +248,12 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         false
     }
 
+    // StorageClient returns its remote endpoint URL so get_stores() can populate
+    // WalletStorageInfo.endpoint_url for remote providers.
+    fn get_endpoint_url(&self) -> Option<String> {
+        Some(self.endpoint_url.clone())
+    }
+
     fn is_available(&self) -> bool {
         // Acquire pairs with the Release store in make_available.
         self.settings_cached.load(Ordering::Acquire)
@@ -256,7 +262,7 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
     async fn get_settings(&self) -> WalletResult<Settings> {
         let guard = self.settings.lock().await;
         guard.clone().ok_or_else(|| {
-            WalletError::NotActive(
+            WalletError::InvalidOperation(
                 "call makeAvailable at least once before getSettings".to_string(),
             )
         })
@@ -286,12 +292,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
     async fn migrate(
         &self,
         storage_name: &str,
-        storage_identity_key: &str,
+        _storage_identity_key: &str,
     ) -> WalletResult<String> {
-        // Positional order: [storageName, storageIdentityKey]
+        // TS StorageClient only sends storageName — storageIdentityKey is dropped.
         self.rpc_call("migrate", vec![
             Value::String(storage_name.to_string()),
-            Value::String(storage_identity_key.to_string()),
         ]).await
     }
 

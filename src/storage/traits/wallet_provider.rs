@@ -82,6 +82,14 @@ pub trait WalletStorageProvider: Send + Sync {
         true
     }
 
+    /// Returns the remote endpoint URL for this storage provider, if any.
+    ///
+    /// Returns None for local providers (SQLite). StorageClient overrides to
+    /// return Some(url) so get_stores() can populate WalletStorageInfo.endpoint_url.
+    fn get_endpoint_url(&self) -> Option<String> {
+        None
+    }
+
     /// Get wallet services. Not available on storage providers.
     ///
     /// Wire method: `getServices`

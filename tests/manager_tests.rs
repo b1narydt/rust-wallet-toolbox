@@ -18,6 +18,7 @@ mod manager_tests {
     use bsv_wallet_toolbox::storage::traits::provider::StorageProvider;
     use bsv_wallet_toolbox::storage::traits::wallet_provider::WalletStorageProvider;
     use bsv_wallet_toolbox::storage::StorageConfig;
+    use bsv_wallet_toolbox::wallet::types::{ReproveHeaderResult, WalletStorageInfo};
     use bsv_wallet_toolbox::types::Chain;
 
     // -----------------------------------------------------------------------
@@ -314,5 +315,100 @@ mod manager_tests {
 
         // But the manager itself is NOT a storage provider
         assert!(!manager.is_storage_provider());
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 12: reprove_header with no matching records returns empty result
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_reprove_header_empty() {
+        let active = create_provider().await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![],
+        );
+
+        manager.make_available().await.unwrap();
+
+        // No services configured — reprove_header with a non-matching hash should
+        // find zero ProvenTx records and return empty without calling services.
+        let result: ReproveHeaderResult = manager
+            .reprove_header("0000000000000000000000000000000000000000000000000000000000000000")
+            .await
+            .unwrap();
+
+        assert!(result.updated.is_empty());
+        assert!(result.unchanged.is_empty());
+        assert!(result.unavailable.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 13: get_stores returns WalletStorageInfo for all stores
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_get_stores() {
+        let active = create_provider().await.unwrap();
+        let backup = create_provider().await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![backup],
+        );
+
+        manager.make_available().await.unwrap();
+
+        let stores: Vec<WalletStorageInfo> = manager.get_stores().await;
+
+        // Should have 2 entries (active + backup/conflicting)
+        assert_eq!(stores.len(), 2);
+
+        // Exactly one store is active
+        let active_count = stores.iter().filter(|s| s.is_active).count();
+        assert_eq!(active_count, 1, "Exactly one store should be active");
+
+        // All stores have non-empty storage_identity_key
+        for store in &stores {
+            assert!(
+                !store.storage_identity_key.is_empty(),
+                "storage_identity_key should not be empty"
+            );
+        }
+
+        // Local stores have no endpoint_url
+        for store in &stores {
+            assert!(
+                store.endpoint_url.is_none(),
+                "Local SQLite stores should have no endpoint_url"
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 14: get_store_endpoint_url returns None for local storage
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_get_store_endpoint_url_local() {
+        let active = create_provider().await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![],
+        );
+
+        manager.make_available().await.unwrap();
+
+        let active_key = manager.get_active_store().await.unwrap();
+        let url = manager.get_store_endpoint_url(&active_key).await;
+
+        // Local SQLite returns None
+        assert!(url.is_none(), "Local SQLite should return no endpoint URL");
+
+        // Non-existent key also returns None
+        let url2 = manager.get_store_endpoint_url("nonexistent_key").await;
+        assert!(url2.is_none());
     }
 }
