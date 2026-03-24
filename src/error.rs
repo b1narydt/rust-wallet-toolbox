@@ -145,6 +145,40 @@ impl WalletError {
     }
 }
 
+/// Convert a `WalletErrorObject` received over the wire into the appropriate `WalletError` variant.
+///
+/// Maps WERR error code strings (e.g. "WERR_INVALID_PARAMETER") from a JSON-RPC error
+/// response body onto the local `WalletError` enum. Used by `StorageClient::rpc_call`
+/// after deserializing a remote error payload.
+pub fn wallet_error_from_object(obj: WalletErrorObject) -> WalletError {
+    match obj.name.as_str() {
+        "WERR_INVALID_PARAMETER" => WalletError::InvalidParameter {
+            parameter: obj.parameter.unwrap_or_default(),
+            must_be: obj.message,
+        },
+        "WERR_NOT_IMPLEMENTED" => WalletError::NotImplemented(obj.message),
+        "WERR_BAD_REQUEST" => WalletError::BadRequest(obj.message),
+        "WERR_UNAUTHORIZED" => WalletError::Unauthorized(obj.message),
+        "WERR_NOT_ACTIVE" => WalletError::NotActive(obj.message),
+        "WERR_INVALID_OPERATION" => WalletError::InvalidOperation(obj.message),
+        "WERR_MISSING_PARAMETER" => {
+            WalletError::MissingParameter(obj.parameter.unwrap_or_else(|| obj.message.clone()))
+        }
+        "WERR_INSUFFICIENT_FUNDS" => WalletError::InsufficientFunds {
+            message: obj.message,
+            total_satoshis_needed: obj.total_satoshis_needed.unwrap_or(0),
+            more_satoshis_needed: obj.more_satoshis_needed.unwrap_or(0),
+        },
+        "WERR_BROADCAST_UNAVAILABLE" => WalletError::BroadcastUnavailable,
+        "WERR_NETWORK_CHAIN" => WalletError::NetworkChain(obj.message),
+        "WERR_INVALID_PUBLIC_KEY" => WalletError::InvalidPublicKey {
+            message: obj.message,
+            key: obj.parameter.unwrap_or_default(),
+        },
+        _ => WalletError::Internal(obj.message),
+    }
+}
+
 /// JSON wire format for wallet errors, matching the TypeScript `WalletError.toJson()` output.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

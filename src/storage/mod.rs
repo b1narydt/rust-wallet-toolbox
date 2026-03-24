@@ -9,6 +9,7 @@ pub mod beef;
 pub mod find_args;
 pub mod manager;
 pub mod methods;
+pub mod remoting;
 pub mod sqlx_impl;
 pub mod sync;
 pub mod traits;
@@ -16,6 +17,7 @@ pub mod traits;
 // Re-export key types for convenience.
 pub use find_args::*;
 pub use manager::WalletStorageManager;
+pub use remoting::StorageClient;
 pub use sqlx_impl::trx_token::TrxToken;
 pub use traits::{StorageProvider, StorageReader, StorageReaderWriter, WalletStorageProvider};
 
