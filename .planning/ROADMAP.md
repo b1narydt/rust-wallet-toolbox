@@ -30,7 +30,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. `Vec<u8>` fields (raw_tx, merkle_path, input_beef) serialize as JSON integer arrays, not base64 strings
   3. `SyncChunk` and `SyncMap` serialize with camelCase fields and optional arrays as null or absent (not empty arrays)
   4. A round-trip serde test passes using TS-generated fixture JSON for entity types containing timestamps and binary data
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 01-01-PLAN.md — Fix serde_datetime (Z + 3ms), SyncChunk skip_serializing_if, and TS-fixture round-trip tests
 
 ### Phase 2: Trait Definition
 **Goal**: WalletStorageProvider trait exists in the type system with a blanket impl covering all local storage providers
@@ -94,7 +96,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Wire Format | 0/? | Not started | - |
+| 1. Wire Format | 0/1 | Planning complete | - |
 | 2. Trait Definition | 0/? | Not started | - |
 | 3. StorageClient | 0/? | Not started | - |
 | 4. Manager Integration | 0/? | Not started | - |
