@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Completed 03-storageclient/03-02-PLAN.md
-last_updated: "2026-03-24T21:49:43.960Z"
-last_activity: 2026-03-24 — Roadmap created, milestone v1.0 initialized
+status: in-progress
+stopped_at: Completed 04-manager-rewrite/04-01-PLAN.md
+last_updated: "2026-03-24T23:43:00Z"
+last_activity: 2026-03-24 — Completed Phase 04 Plan 01 (WalletStorageManager foundation)
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 4
-  completed_plans: 4
-  percent: 0
+  total_plans: 5
+  completed_plans: 5
+  percent: 25
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 
 ## Current Position
 
-Phase: 1 of 5 (Wire Format)
-Plan: 0 of ? in current phase
-Status: Ready to plan
-Last activity: 2026-03-24 — Roadmap created, milestone v1.0 initialized
+Phase: 4 of 7 (Manager Rewrite)
+Plan: 1 of ? in current phase — Plan 01 complete
+Status: In progress
+Last activity: 2026-03-24 — Completed Phase 04 Plan 01 (WalletStorageManager foundation rewrite)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 25%
 
 ## Performance Metrics
 
@@ -49,7 +49,8 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-wire-format P01 | 3 | 2 tasks | 3 files |
 | Phase 02-trait-definition P01 | 9 | 1 tasks | 10 files |
 | Phase 03-storageclient P01 | 200 | 1 tasks | 4 files |
-| Phase 03-storageclient PP02 | 2min | 1 tasks | 1 files |
+| Phase 03-storageclient P02 | 2min | 1 tasks | 1 files |
+| Phase 04-manager-rewrite P01 | ~4h | 2 tasks | 26 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,10 @@ Recent decisions affecting current work:
 - [Phase 03-storageclient]: AtomicBool with Acquire/Release for sync is_available() — avoids blocking lock in sync trait fn
 - [Phase 03-storageclient]: Wire helper structs (FindOrInsertUserWire, FindOrInsertSyncStateWire) for tuple-returning RPCs placed inline in storage_client.rs
 - [Phase 03-storageclient]: internalize_action ignores services param — accepted in sig for trait compliance, never serialized (no TS equivalent)
+- [Phase 04-manager-rewrite]: WalletStorageManager takes Arc<dyn WalletStorageProvider> (not StorageProvider) — allows StorageClient to be used as a provider
+- [Phase 04-manager-rewrite]: Signer methods accept &WalletStorageManager directly (not &dyn StorageActionProvider) — StorageActionProvider supertrait incompatibility
+- [Phase 04-manager-rewrite]: list_outputs blanket impl calls list_outputs_rw to handle specOp basket names (SPEC_OP_WALLET_BALANCE etc.)
+- [Phase 04-manager-rewrite]: setup.rs calls make_available() on each WalletStorageManager after construction — manager state is independent of provider state
 
 ### Codebase Context (from pre-roadmap research)
 
@@ -92,6 +97,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-24T21:46:50.851Z
-Stopped at: Completed 03-storageclient/03-02-PLAN.md
+Last session: 2026-03-24T23:43:00Z
+Stopped at: Completed 04-manager-rewrite/04-01-PLAN.md
 Resume file: None

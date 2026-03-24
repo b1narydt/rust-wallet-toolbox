@@ -32,10 +32,10 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 
 ### Manager Rewrite
 
-- [ ] **MGR-01**: WalletStorageManager constructor accepts identity_key + optional active + Vec of backup WalletStorageProviders (multi-provider)
-- [ ] **MGR-02**: ManagedStorage wrapper per provider caching settings, user, is_available, is_storage_provider
-- [ ] **MGR-03**: makeAvailable() partitions stores into active/backups/conflicting_actives matching TS enabled-active logic
-- [ ] **MGR-04**: Four-level hierarchical lock system (reader < writer < sync < storage_provider) with ordered acquisition
+- [x] **MGR-01**: WalletStorageManager constructor accepts identity_key + optional active + Vec of backup WalletStorageProviders (multi-provider)
+- [x] **MGR-02**: ManagedStorage wrapper per provider caching settings, user, is_available, is_storage_provider
+- [x] **MGR-03**: makeAvailable() partitions stores into active/backups/conflicting_actives matching TS enabled-active logic
+- [x] **MGR-04**: Four-level hierarchical lock system (reader < writer < sync < storage_provider) with ordered acquisition
 - [ ] **MGR-05**: syncToWriter() and syncFromReader() chunked sync loops using EntitySyncState + RequestSyncChunkArgs iteration
 - [ ] **MGR-06**: CRUD write propagation replaced with chunk-based sync — writes to active only, backups sync via updateBackups()
 - [ ] **MGR-07**: All manager-level delegation methods with appropriate lock acquisition and auth checks
@@ -107,10 +107,10 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 | CLIENT-05 | Phase 3 | Complete |
 | CLIENT-06 | Phase 3 | Complete |
 | CLIENT-07 | Phase 3 | Complete |
-| MGR-01 | Phase 4 | Pending |
-| MGR-02 | Phase 4 | Pending |
-| MGR-03 | Phase 4 | Pending |
-| MGR-04 | Phase 4 | Pending |
+| MGR-01 | Phase 4 | Complete — 04-01 |
+| MGR-02 | Phase 4 | Complete — 04-01 |
+| MGR-03 | Phase 4 | Complete — 04-01 |
+| MGR-04 | Phase 4 | Complete — 04-01 |
 | MGR-05 | Phase 4 | Pending |
 | MGR-06 | Phase 4 | Pending |
 | MGR-07 | Phase 4 | Pending |
