@@ -4,7 +4,7 @@ milestone: v1.0
 milestone_name: milestone
 status: planning
 stopped_at: Completed 01-wire-format/01-01-PLAN.md
-last_updated: "2026-03-24T15:49:43.237Z"
+last_updated: "2026-03-24T15:53:09.354Z"
 last_activity: 2026-03-24 — Roadmap created, milestone v1.0 initialized
 progress:
   total_phases: 6
