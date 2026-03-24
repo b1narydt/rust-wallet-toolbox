@@ -22,13 +22,13 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 
 ### StorageClient Implementation
 
-- [ ] **CLIENT-01**: StorageClient struct with rpc_call helper sends JSON-RPC 2.0 requests (positional params array, auto-incrementing ID)
-- [ ] **CLIENT-02**: AuthFetch<W> held behind tokio::sync::Mutex for Send+Sync safety in async context
+- [x] **CLIENT-01**: StorageClient struct with rpc_call helper sends JSON-RPC 2.0 requests (positional params array, auto-incrementing ID)
+- [x] **CLIENT-02**: AuthFetch<W> held behind tokio::sync::Mutex for Send+Sync safety in async context
 - [ ] **CLIENT-03**: All ~25 WalletStorageProvider methods implemented as pass-throughs to rpc_call, matching TS method signatures exactly
-- [ ] **CLIENT-04**: JSON-RPC error responses map back to typed WalletError variants via WalletErrorObject deserialization
-- [ ] **CLIENT-05**: Constructor accepts WalletInterface impl for BRC-31 auth signing (same chicken-and-egg pattern as TS)
+- [x] **CLIENT-04**: JSON-RPC error responses map back to typed WalletError variants via WalletErrorObject deserialization
+- [x] **CLIENT-05**: Constructor accepts WalletInterface impl for BRC-31 auth signing (same chicken-and-egg pattern as TS)
 - [ ] **CLIENT-06**: Wire method names exactly match TS StorageClient (e.g., `findOutputBaskets` not `findOutputBasketsAuth`)
-- [ ] **CLIENT-07**: updateProvenTxReqWithNewProvenTx implemented as extra method on StorageClient (beyond WalletStorageProvider trait), settings cached after makeAvailable
+- [x] **CLIENT-07**: updateProvenTxReqWithNewProvenTx implemented as extra method on StorageClient (beyond WalletStorageProvider trait), settings cached after makeAvailable
 
 ### Manager Rewrite
 
@@ -100,13 +100,13 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 | TRAIT-01 | Phase 2 | Complete |
 | TRAIT-02 | Phase 2 | Complete |
 | TRAIT-03 | Phase 2 | Complete |
-| CLIENT-01 | Phase 3 | Pending |
-| CLIENT-02 | Phase 3 | Pending |
+| CLIENT-01 | Phase 3 | Complete |
+| CLIENT-02 | Phase 3 | Complete |
 | CLIENT-03 | Phase 3 | Pending |
-| CLIENT-04 | Phase 3 | Pending |
-| CLIENT-05 | Phase 3 | Pending |
+| CLIENT-04 | Phase 3 | Complete |
+| CLIENT-05 | Phase 3 | Complete |
 | CLIENT-06 | Phase 3 | Pending |
-| CLIENT-07 | Phase 3 | Pending |
+| CLIENT-07 | Phase 3 | Complete |
 | MGR-01 | Phase 4 | Pending |
 | MGR-02 | Phase 4 | Pending |
 | MGR-03 | Phase 4 | Pending |
