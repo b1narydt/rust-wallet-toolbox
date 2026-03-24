@@ -59,7 +59,10 @@ Plans:
   5. `is_storage_provider()` returns `false` on `StorageClient`
   6. `updateProvenTxReqWithNewProvenTx` is implemented as an extra method on StorageClient (beyond WalletStorageProvider trait), matching TS behavior
   7. Settings are cached after first `makeAvailable()` call; `getSettings()` returns cached value or errors if not yet available
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 03-01-PLAN.md — StorageClient struct, rpc_call, error mapping, settings caching, module wiring
+- [ ] 03-02-PLAN.md — All 23 WalletStorageProvider method implementations as rpc_call delegates
 
 ### Phase 4: Manager Rewrite
 **Goal**: WalletStorageManager is rewritten to match TS architecture — multi-provider, ManagedStorage wrappers, chunked sync loops, and hierarchical locking
@@ -122,7 +125,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|----------------|--------|-----------|
 | 1. Wire Format | 1/1 | Complete | 2026-03-24 |
 | 2. Trait Definition | 0/1 | Planning complete | - |
-| 3. StorageClient | 0/? | Not started | - |
+| 3. StorageClient | 0/2 | Planning complete | - |
 | 4. Manager Rewrite | 0/? | Not started | - |
 | 5. Manager Orchestration | 0/? | Not started | - |
 | 6. Integration Testing | 0/? | Not started | - |
