@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-03-24T14:10:12.361Z"
+stopped_at: Completed 01-wire-format/01-01-PLAN.md
+last_updated: "2026-03-24T15:49:43.237Z"
 last_activity: 2026-03-24 — Roadmap created, milestone v1.0 initialized
 progress:
-  total_phases: 5
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 6
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
   percent: 0
 ---
 
@@ -46,6 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 | - | - | - | - |
 
 *Updated after each plan completion*
+| Phase 01-wire-format P01 | 3 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -57,6 +58,8 @@ Recent decisions affecting current work:
 - [Pre-phase]: StorageClient does NOT implement StorageProvider — uses narrower WalletStorageProvider trait (matches TS pattern)
 - [Pre-phase]: AuthFetch<W> held behind tokio::sync::Mutex, not std::sync::Mutex (std deadlocks Tokio executor)
 - [Pre-phase]: Test against live TS servers first — production interop is the primary goal
+- [Phase 01-wire-format]: Split serde_datetime FORMAT into PARSE_FORMAT (tolerant %.f) and SERIALIZE_FORMAT (strict %.3f) — deserialization accepts variable-precision TS timestamps, serialization always produces 3ms+Z
+- [Phase 01-wire-format]: skip_serializing_if only on SyncChunk optional entity lists, NOT on table struct Option<T> fields — table fields serialize as null to match TS wire format for table records
 
 ### Codebase Context (from pre-roadmap research)
 
@@ -78,6 +81,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-24T14:10:12.357Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-wire-format/01-CONTEXT.md
+Last session: 2026-03-24T15:49:43.234Z
+Stopped at: Completed 01-wire-format/01-01-PLAN.md
+Resume file: None
