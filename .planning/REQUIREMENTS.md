@@ -16,9 +16,9 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 
 ### Trait Definition
 
-- [ ] **TRAIT-01**: WalletStorageProvider async trait defined with ~25 methods matching TS WalletStorageProvider interface hierarchy
-- [ ] **TRAIT-02**: Blanket impl allows existing StorageProvider types to satisfy WalletStorageProvider
-- [ ] **TRAIT-03**: `is_storage_provider()` method returns false for remote clients, true for local storage via blanket impl
+- [x] **TRAIT-01**: WalletStorageProvider async trait defined with ~25 methods matching TS WalletStorageProvider interface hierarchy
+- [x] **TRAIT-02**: Blanket impl allows existing StorageProvider types to satisfy WalletStorageProvider
+- [x] **TRAIT-03**: `is_storage_provider()` method returns false for remote clients, true for local storage via blanket impl
 
 ### StorageClient Implementation
 
@@ -97,9 +97,9 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 | WIRE-02 | Phase 1 | Complete |
 | WIRE-03 | Phase 1 | Complete |
 | WIRE-04 | Phase 1 | Complete |
-| TRAIT-01 | Phase 2 | Pending |
-| TRAIT-02 | Phase 2 | Pending |
-| TRAIT-03 | Phase 2 | Pending |
+| TRAIT-01 | Phase 2 | Complete |
+| TRAIT-02 | Phase 2 | Complete |
+| TRAIT-03 | Phase 2 | Complete |
 | CLIENT-01 | Phase 3 | Pending |
 | CLIENT-02 | Phase 3 | Pending |
 | CLIENT-03 | Phase 3 | Pending |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 01-wire-format/01-01-PLAN.md
-last_updated: "2026-03-24T15:53:09.354Z"
+stopped_at: Completed 02-trait-definition/02-01-PLAN.md
+last_updated: "2026-03-24T19:43:50.588Z"
 last_activity: 2026-03-24 — Roadmap created, milestone v1.0 initialized
 progress:
-  total_phases: 6
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  total_phases: 7
+  completed_phases: 2
+  total_plans: 2
+  completed_plans: 2
   percent: 0
 ---
 
@@ -47,6 +47,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 01-wire-format P01 | 3 | 2 tasks | 3 files |
+| Phase 02-trait-definition P01 | 9 | 1 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -60,6 +61,9 @@ Recent decisions affecting current work:
 - [Pre-phase]: Test against live TS servers first — production interop is the primary goal
 - [Phase 01-wire-format]: Split serde_datetime FORMAT into PARSE_FORMAT (tolerant %.f) and SERIALIZE_FORMAT (strict %.3f) — deserialization accepts variable-precision TS timestamps, serialization always produces 3ms+Z
 - [Phase 01-wire-format]: skip_serializing_if only on SyncChunk optional entity lists, NOT on table struct Option<T> fields — table fields serialize as null to match TS wire format for table records
+- [Phase 02-trait-definition]: WalletStorageProvider is standalone (not supertrait of StorageProvider) — StorageClient implements it directly without StorageProvider
+- [Phase 02-trait-definition]: get_settings declared async in WalletStorageProvider — blanket impl delegates to StorageProvider::get_settings(self, None).await
+- [Phase 02-trait-definition]: abort_action extracted as standalone function in storage/methods/abort_action.rs for blanket impl use
 
 ### Codebase Context (from pre-roadmap research)
 
@@ -81,6 +85,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-24T15:49:43.234Z
-Stopped at: Completed 01-wire-format/01-01-PLAN.md
+Last session: 2026-03-24T19:43:50.586Z
+Stopped at: Completed 02-trait-definition/02-01-PLAN.md
 Resume file: None
