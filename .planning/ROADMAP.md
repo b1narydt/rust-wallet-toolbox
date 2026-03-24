@@ -42,7 +42,9 @@ Plans:
   1. `WalletStorageProvider` trait compiles with ~25 async methods matching the TS WalletStorageProvider interface hierarchy
   2. Existing `SqlxProvider` satisfies `WalletStorageProvider` via the blanket impl without any modification to its source file
   3. `is_storage_provider()` returns `true` from the blanket impl and can be overridden to return `false` on remote clients
-**Plans**: TBD
+**Plans:** 1 plans
+Plans:
+- [ ] 02-01-PLAN.md — Define WalletStorageProvider trait, blanket impl over StorageProvider, supporting types (AuthId extension, RequestSyncChunkArgs)
 
 ### Phase 3: StorageClient
 **Goal**: StorageClient<W> compiles, passes JSON-RPC envelope tests, and implements every WalletStorageProvider method with correct wire method names
@@ -97,7 +99,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Wire Format | 1/1 | Complete   | 2026-03-24 |
-| 2. Trait Definition | 0/? | Not started | - |
+| 2. Trait Definition | 0/1 | Planning complete | - |
 | 3. StorageClient | 0/? | Not started | - |
 | 4. Manager Integration | 0/? | Not started | - |
 | 5. Integration Testing | 0/? | Not started | - |
