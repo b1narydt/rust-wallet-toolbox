@@ -168,13 +168,12 @@ impl Wallet {
             )
         })?;
 
-        // Create signer
+        // Create signer with a shared storage manager (same providers as args.storage)
         let signer = DefaultWalletSigner::new(
             Arc::new(WalletStorageManager::new(
-                args.storage.active().clone(),
-                args.storage.backup().cloned(),
-                args.chain.clone(),
                 identity_key_hex.clone(),
+                args.storage.active().cloned(),
+                args.storage.backups().to_vec(),
             )),
             services_for_signer,
             args.key_deriver.clone(),
@@ -183,9 +182,16 @@ impl Wallet {
         );
 
         // Settings manager: use provided or create default
-        let settings_manager = args
-            .settings_manager
-            .unwrap_or_else(|| WalletSettingsManager::new(args.storage.active().clone()));
+        let settings_manager = args.settings_manager.unwrap_or_else(|| {
+            // Use the initial active provider for the settings cache.
+            // The wallet always requires at least one provider.
+            let active_provider = args
+                .storage
+                .active()
+                .cloned()
+                .expect("WalletStorageManager must have at least one storage provider");
+            WalletSettingsManager::new(active_provider)
+        });
 
         Ok(Wallet {
             chain: args.chain,
@@ -242,11 +248,15 @@ impl Wallet {
     }
 
     /// Returns the storage identity for this wallet.
+    ///
+    /// Returns the active store's storage_identity_key if available (after
+    /// make_available), otherwise falls back to the wallet's identity key.
     pub fn get_storage_identity(&self) -> StorageIdentity {
-        let key = self
-            .storage
-            .get_storage_identity_key()
-            .unwrap_or_else(|_| self.identity_key.to_der_hex());
+        // Use the manager's cached active store key if available.
+        // This is synchronous -- it reads from the manager's internal state
+        // which is populated after make_available(). Before that, falls back
+        // to the wallet's own identity key as a placeholder.
+        let key = self.storage.auth_id().to_string();
         StorageIdentity {
             storage_identity_key: key,
             storage_name: "default".to_string(),
@@ -281,7 +291,7 @@ impl Wallet {
 
     /// Destroy the wallet: destroys storage and privileged key manager if present.
     pub async fn destroy(&self) -> Result<(), WalletError> {
-        StorageProvider::destroy(&self.storage).await?;
+        self.storage.destroy().await?;
         if let Some(ref pkm) = self.privileged_key_manager {
             pkm.destroy_key().await.map_err(|e| {
                 WalletError::Internal(format!("Failed to destroy privileged key: {}", e))
@@ -1104,7 +1114,7 @@ impl WalletInterface for Wallet {
 
         let auth = self.auth_id();
         self.storage
-            .abort_action(&auth.identity_key, &args)
+            .abort_action(&auth, &args)
             .await
             .map_err(to_sdk_error)
     }
@@ -1124,7 +1134,7 @@ impl WalletInterface for Wallet {
         let auth = self.auth_id();
         let mut result = self
             .storage
-            .list_actions(&auth.identity_key, &args)
+            .list_actions(&auth, &args)
             .await
             .map_err(to_sdk_error)?;
 
@@ -1154,7 +1164,7 @@ impl WalletInterface for Wallet {
         let auth = self.auth_id();
         let mut result = self
             .storage
-            .list_outputs(&auth.identity_key, &args)
+            .list_outputs(&auth, &args)
             .await
             .map_err(to_sdk_error)?;
 
@@ -1182,7 +1192,11 @@ impl WalletInterface for Wallet {
                     None => crate::storage::beef::TrustSelf::No,
                 };
                 let known_txids: HashSet<String> = HashSet::new();
-                let storage_provider = self.storage.active();
+                let storage_provider = self
+                    .storage
+                    .get_active()
+                    .await
+                    .map_err(to_sdk_error)?;
 
                 // Build a single merged BEEF from all txids
                 let mut merged_beef = Beef::new(BEEF_V2);
@@ -1192,7 +1206,6 @@ impl WalletInterface for Wallet {
                         txid,
                         beef_trust_self,
                         &known_txids,
-                        None,
                     )
                     .await
                     .map_err(to_sdk_error)?;
@@ -1260,7 +1273,7 @@ impl WalletInterface for Wallet {
 
         let auth = self.auth_id();
         self.storage
-            .list_certificates(&auth.identity_key, &args)
+            .list_certificates(&auth, &args)
             .await
             .map_err(to_sdk_error)
     }
@@ -1279,8 +1292,9 @@ impl WalletInterface for Wallet {
 
         let auth = self.auth_id();
         self.storage
-            .relinquish_output(&auth.identity_key, &args)
+            .relinquish_output(&auth, &args)
             .await
+            .map(|_| bsv::wallet::interfaces::RelinquishOutputResult { relinquished: true })
             .map_err(to_sdk_error)
     }
 
@@ -1294,8 +1308,9 @@ impl WalletInterface for Wallet {
 
         let auth = self.auth_id();
         self.storage
-            .relinquish_certificate(&auth.identity_key, &args)
+            .relinquish_certificate(&auth, &args)
             .await
+            .map(|_| bsv::wallet::interfaces::RelinquishCertificateResult { relinquished: true })
             .map_err(to_sdk_error)
     }
 

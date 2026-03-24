@@ -9,8 +9,8 @@ use std::io::Cursor;
 
 use crate::error::{WalletError, WalletResult};
 use crate::storage::find_args::*;
-use crate::storage::traits::provider::StorageProvider;
-use crate::storage::TrxToken;
+use crate::storage::traits::wallet_provider::WalletStorageProvider;
+use crate::storage::traits::reader::StorageReader;
 
 use bsv::transaction::beef::{Beef, BEEF_V2};
 use bsv::transaction::beef_tx::BeefTx;
@@ -49,11 +49,44 @@ struct CollectedTx {
 ///
 /// Returns serialized BEEF bytes, or None if the transaction cannot be found.
 pub async fn get_valid_beef_for_txid(
-    storage: &dyn StorageProvider,
+    storage: &(dyn WalletStorageProvider + Send + Sync),
     txid: &str,
     trust_self: TrustSelf,
     known_txids: &HashSet<String>,
-    trx: Option<&TrxToken>,
+) -> WalletResult<Option<Vec<u8>>> {
+    get_valid_beef_for_txid_inner(storage, txid, trust_self, known_txids).await
+}
+
+/// Variant accepting a `StorageReader` for use from within storage methods.
+///
+/// Uses the low-level `StorageReader` trait (with explicit `None` trx args)
+/// instead of `WalletStorageProvider`. This allows it to be called from within
+/// `storage_create_action` where the storage is `&S: StorageReaderWriter`.
+pub async fn get_valid_beef_for_storage_reader<S: StorageReader + ?Sized>(
+    storage: &S,
+    txid: &str,
+    trust_self: TrustSelf,
+    known_txids: &HashSet<String>,
+) -> WalletResult<Option<Vec<u8>>> {
+    let mut collected: Vec<CollectedTx> = Vec::new();
+    let mut visited: HashSet<String> = HashSet::new();
+    collect_tx_recursive_reader(
+        storage,
+        txid,
+        trust_self,
+        known_txids,
+        &mut collected,
+        &mut visited,
+    )
+    .await?;
+    build_beef_from_collected(collected)
+}
+
+async fn get_valid_beef_for_txid_inner(
+    storage: &dyn WalletStorageProvider,
+    txid: &str,
+    trust_self: TrustSelf,
+    known_txids: &HashSet<String>,
 ) -> WalletResult<Option<Vec<u8>>> {
     let mut collected: Vec<CollectedTx> = Vec::new();
     let mut visited: HashSet<String> = HashSet::new();
@@ -65,65 +98,10 @@ pub async fn get_valid_beef_for_txid(
         known_txids,
         &mut collected,
         &mut visited,
-        trx,
     )
     .await?;
 
-    if collected.is_empty() {
-        return Ok(None);
-    }
-
-    // Build Beef from collected transactions
-    let mut beef = Beef::new(BEEF_V2);
-
-    for ctx in &collected {
-        if ctx.txid_only {
-            // Txid-only entry -- no raw tx, no proof
-            beef.txs.push(BeefTx {
-                tx: None,
-                txid: ctx.txid.clone(),
-                bump_index: None,
-                input_txids: Vec::new(),
-            });
-            continue;
-        }
-
-        let bsv_tx = {
-            let mut cursor = Cursor::new(&ctx.raw_tx);
-            BsvTransaction::from_binary(&mut cursor).map_err(|e| {
-                WalletError::Internal(format!("Failed to parse raw_tx for {}: {}", ctx.txid, e))
-            })?
-        };
-
-        let bump_index = if let Some(ref mp_bytes) = ctx.merkle_path {
-            let mp = {
-                let mut cursor = Cursor::new(mp_bytes);
-                MerklePath::from_binary(&mut cursor).map_err(|e| {
-                    WalletError::Internal(format!(
-                        "Failed to parse merkle_path for {}: {}",
-                        ctx.txid, e
-                    ))
-                })?
-            };
-            let idx = beef.bumps.len();
-            beef.bumps.push(mp);
-            Some(idx)
-        } else {
-            None
-        };
-
-        let beef_tx = BeefTx::from_tx(bsv_tx, bump_index).map_err(|e| {
-            WalletError::Internal(format!("Failed to create BeefTx for {}: {}", ctx.txid, e))
-        })?;
-        beef.txs.push(beef_tx);
-    }
-
-    // Serialize BEEF to bytes
-    let mut buf = Vec::new();
-    beef.to_binary(&mut buf)
-        .map_err(|e| WalletError::Internal(format!("Failed to serialize BEEF: {}", e)))?;
-
-    Ok(Some(buf))
+    build_beef_from_collected(collected)
 }
 
 /// Recursively collect transaction data for BEEF construction.
@@ -131,13 +109,12 @@ pub async fn get_valid_beef_for_txid(
 /// Walks the input chain: for each unvisited input txid, checks if it's proven
 /// (has merkle_path), otherwise recurses into its inputs.
 async fn collect_tx_recursive(
-    storage: &dyn StorageProvider,
+    storage: &dyn WalletStorageProvider,
     txid: &str,
     trust_self: TrustSelf,
     known_txids: &HashSet<String>,
     collected: &mut Vec<CollectedTx>,
     visited: &mut HashSet<String>,
-    trx: Option<&TrxToken>,
 ) -> WalletResult<()> {
     if visited.contains(txid) {
         return Ok(());
@@ -154,7 +131,6 @@ async fn collect_tx_recursive(
                 },
                 ..Default::default()
             },
-            trx,
         )
         .await?;
 
@@ -189,7 +165,6 @@ async fn collect_tx_recursive(
                 },
                 ..Default::default()
             },
-            trx,
         )
         .await?;
 
@@ -266,7 +241,6 @@ async fn collect_tx_recursive(
                         known_txids,
                         collected,
                         visited,
-                        trx,
                     ))
                     .await?;
                 }
@@ -276,6 +250,209 @@ async fn collect_tx_recursive(
 
     // Add this transaction (not proven, with raw_tx, no merkle proof)
     // Also merge inputBEEF if available
+    collected.push(CollectedTx {
+        raw_tx,
+        txid: txid.to_string(),
+        merkle_path: None,
+        txid_only: false,
+    });
+
+    Ok(())
+}
+
+/// Build a BEEF from collected transactions and return serialized bytes.
+fn build_beef_from_collected(collected: Vec<CollectedTx>) -> WalletResult<Option<Vec<u8>>> {
+    if collected.is_empty() {
+        return Ok(None);
+    }
+
+    let mut beef = Beef::new(BEEF_V2);
+
+    for ctx in &collected {
+        if ctx.txid_only {
+            beef.txs.push(BeefTx {
+                tx: None,
+                txid: ctx.txid.clone(),
+                bump_index: None,
+                input_txids: Vec::new(),
+            });
+            continue;
+        }
+
+        let bsv_tx = {
+            let mut cursor = Cursor::new(&ctx.raw_tx);
+            BsvTransaction::from_binary(&mut cursor).map_err(|e| {
+                WalletError::Internal(format!("Failed to parse raw_tx for {}: {}", ctx.txid, e))
+            })?
+        };
+
+        let bump_index = if let Some(ref mp_bytes) = ctx.merkle_path {
+            let mp = {
+                let mut cursor = Cursor::new(mp_bytes);
+                MerklePath::from_binary(&mut cursor).map_err(|e| {
+                    WalletError::Internal(format!(
+                        "Failed to parse merkle_path for {}: {}",
+                        ctx.txid, e
+                    ))
+                })?
+            };
+            let idx = beef.bumps.len();
+            beef.bumps.push(mp);
+            Some(idx)
+        } else {
+            None
+        };
+
+        let beef_tx = BeefTx::from_tx(bsv_tx, bump_index).map_err(|e| {
+            WalletError::Internal(format!("Failed to create BeefTx for {}: {}", ctx.txid, e))
+        })?;
+        beef.txs.push(beef_tx);
+    }
+
+    let mut buf = Vec::new();
+    beef.to_binary(&mut buf)
+        .map_err(|e| WalletError::Internal(format!("Failed to serialize BEEF: {}", e)))?;
+
+    Ok(Some(buf))
+}
+
+/// Recursively collect transaction data using the low-level `StorageReader` trait.
+///
+/// Used by `get_valid_beef_for_storage_reader` which is called from within
+/// storage method implementations where `WalletStorageProvider` isn't available.
+async fn collect_tx_recursive_reader<S: StorageReader + ?Sized>(
+    storage: &S,
+    txid: &str,
+    trust_self: TrustSelf,
+    known_txids: &HashSet<String>,
+    collected: &mut Vec<CollectedTx>,
+    visited: &mut HashSet<String>,
+) -> WalletResult<()> {
+    if visited.contains(txid) {
+        return Ok(());
+    }
+    visited.insert(txid.to_string());
+
+    // 1. Check ProvenTx table
+    let proven = storage
+        .find_proven_txs(
+            &FindProvenTxsArgs {
+                partial: ProvenTxPartial {
+                    txid: Some(txid.to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            None,
+        )
+        .await?;
+
+    if let Some(ptx) = proven.into_iter().next() {
+        if trust_self == TrustSelf::Known {
+            collected.push(CollectedTx {
+                raw_tx: Vec::new(),
+                txid: txid.to_string(),
+                merkle_path: None,
+                txid_only: true,
+            });
+        } else {
+            collected.push(CollectedTx {
+                raw_tx: ptx.raw_tx,
+                txid: txid.to_string(),
+                merkle_path: Some(ptx.merkle_path),
+                txid_only: false,
+            });
+        }
+        return Ok(());
+    }
+
+    // 2. Check Transaction table
+    let txs = storage
+        .find_transactions(
+            &FindTransactionsArgs {
+                partial: TransactionPartial {
+                    txid: Some(txid.to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            None,
+        )
+        .await?;
+
+    let tx_record = match txs.into_iter().next() {
+        Some(t) => t,
+        None => {
+            if known_txids.contains(txid) {
+                collected.push(CollectedTx {
+                    raw_tx: Vec::new(),
+                    txid: txid.to_string(),
+                    merkle_path: None,
+                    txid_only: true,
+                });
+            }
+            return Ok(());
+        }
+    };
+
+    if trust_self == TrustSelf::Known {
+        collected.push(CollectedTx {
+            raw_tx: Vec::new(),
+            txid: txid.to_string(),
+            merkle_path: None,
+            txid_only: true,
+        });
+        return Ok(());
+    }
+
+    let raw_tx = match tx_record.raw_tx {
+        Some(ref raw) => raw.clone(),
+        None => {
+            if known_txids.contains(txid) {
+                collected.push(CollectedTx {
+                    raw_tx: Vec::new(),
+                    txid: txid.to_string(),
+                    merkle_path: None,
+                    txid_only: true,
+                });
+            }
+            return Ok(());
+        }
+    };
+
+    let bsv_tx = {
+        let mut cursor = Cursor::new(&raw_tx);
+        BsvTransaction::from_binary(&mut cursor).map_err(|e| {
+            WalletError::Internal(format!("Failed to parse raw_tx for {}: {}", txid, e))
+        })?
+    };
+
+    for input in &bsv_tx.inputs {
+        if let Some(ref source_txid) = input.source_txid {
+            if !visited.contains(source_txid.as_str()) {
+                if known_txids.contains(source_txid.as_str()) {
+                    visited.insert(source_txid.clone());
+                    collected.push(CollectedTx {
+                        raw_tx: Vec::new(),
+                        txid: source_txid.clone(),
+                        merkle_path: None,
+                        txid_only: true,
+                    });
+                } else {
+                    Box::pin(collect_tx_recursive_reader(
+                        storage,
+                        source_txid,
+                        trust_self,
+                        known_txids,
+                        collected,
+                        visited,
+                    ))
+                    .await?;
+                }
+            }
+        }
+    }
+
     collected.push(CollectedTx {
         raw_tx,
         txid: txid.to_string(),

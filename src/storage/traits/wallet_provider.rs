@@ -32,9 +32,11 @@ use crate::storage::action_types::{
 };
 use crate::status::SyncStatus;
 use crate::storage::find_args::{
-    CertificatePartial, FindCertificatesArgs, FindOutputBasketsArgs, FindOutputsArgs,
-    FindProvenTxReqsArgs, FindSyncStatesArgs, FindTransactionsArgs, OutputPartial,
-    SyncStatePartial, TransactionPartial, UserPartial,
+    CertificateFieldPartial, CertificatePartial, FindCertificateFieldsArgs, FindCertificatesArgs,
+    FindOutputBasketsArgs, FindOutputsArgs, FindProvenTxReqsArgs, FindProvenTxsArgs,
+    FindSettingsArgs, FindSyncStatesArgs, FindTransactionsArgs, OutputPartial, ProvenTxPartial,
+    ProvenTxReqPartial, PurgeParams, SettingsPartial, SyncStatePartial, TransactionPartial,
+    UserPartial,
 };
 use crate::storage::sync::get_sync_chunk::{GetSyncChunkArgs, SyncChunkOffsets};
 use crate::storage::sync::request_args::{RequestSyncChunkArgs, SyncChunkOffset};
@@ -44,8 +46,12 @@ use crate::storage::traits::provider::StorageProvider;
 use crate::storage::traits::reader::StorageReader;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
 use crate::storage::{verify_one, verify_one_or_none, TrxToken};
-use crate::tables::{Certificate, Output, OutputBasket, ProvenTxReq, Settings, SyncState, User};
-use crate::wallet::types::AuthId;
+use crate::status::TransactionStatus;
+use crate::tables::{
+    Certificate, CertificateField, MonitorEvent, Output, OutputBasket, ProvenTx, ProvenTxReq,
+    Settings, SyncState, Transaction, User,
+};
+use crate::wallet::types::{AdminStatsResult, AuthId};
 
 /// Narrowed storage interface for the wallet's remote and local storage clients.
 ///
@@ -301,6 +307,205 @@ pub trait WalletStorageProvider: Send + Sync {
         args: &RequestSyncChunkArgs,
         chunk: &SyncChunk,
     ) -> WalletResult<ProcessSyncChunkResult>;
+
+    // -----------------------------------------------------------------------
+    // Low-level CRUD delegation methods
+    // These are not part of the remote wire protocol but are needed by wallet
+    // internals (signer, certificates, beef helper, monitor).
+    // Local providers implement via the blanket impl.
+    // StorageClient returns NotImplemented for these.
+    // -----------------------------------------------------------------------
+
+    /// Find a user by identity key.
+    async fn find_user_by_identity_key(&self, key: &str) -> WalletResult<Option<User>> {
+        let _ = key;
+        Err(WalletError::NotImplemented("find_user_by_identity_key".into()))
+    }
+
+    /// Find certificates matching the given filter (no transaction context).
+    async fn find_certificates_storage(
+        &self,
+        args: &FindCertificatesArgs,
+    ) -> WalletResult<Vec<Certificate>> {
+        let _ = args;
+        Err(WalletError::NotImplemented("find_certificates_storage".into()))
+    }
+
+    /// Find certificate fields matching the given filter.
+    async fn find_certificate_fields(
+        &self,
+        args: &FindCertificateFieldsArgs,
+    ) -> WalletResult<Vec<CertificateField>> {
+        let _ = args;
+        Err(WalletError::NotImplemented("find_certificate_fields".into()))
+    }
+
+    /// Find outputs matching the given filter (no transaction context).
+    async fn find_outputs_storage(&self, args: &FindOutputsArgs) -> WalletResult<Vec<Output>> {
+        let _ = args;
+        Err(WalletError::NotImplemented("find_outputs_storage".into()))
+    }
+
+    /// Find outputs (alias for find_outputs_storage, used by signer pipeline).
+    async fn find_outputs(&self, args: &FindOutputsArgs) -> WalletResult<Vec<Output>> {
+        self.find_outputs_storage(args).await
+    }
+
+    /// Update an output by ID. Returns the number of rows affected.
+    async fn update_output(&self, id: i64, update: &OutputPartial) -> WalletResult<i64> {
+        let _ = (id, update);
+        Err(WalletError::NotImplemented("update_output".into()))
+    }
+
+    /// Insert a certificate and return the new certificate_id.
+    async fn insert_certificate_storage(&self, cert: &Certificate) -> WalletResult<i64> {
+        let _ = cert;
+        Err(WalletError::NotImplemented("insert_certificate_storage".into()))
+    }
+
+    /// Insert a certificate field.
+    async fn insert_certificate_field_storage(
+        &self,
+        field: &CertificateField,
+    ) -> WalletResult<()> {
+        let _ = field;
+        Err(WalletError::NotImplemented("insert_certificate_field_storage".into()))
+    }
+
+    /// Find settings records.
+    async fn find_settings_storage(
+        &self,
+        args: &FindSettingsArgs,
+    ) -> WalletResult<Vec<Settings>> {
+        let _ = args;
+        Err(WalletError::NotImplemented("find_settings_storage".into()))
+    }
+
+    /// Update settings record.
+    async fn update_settings_storage(&self, update: &SettingsPartial) -> WalletResult<i64> {
+        let _ = update;
+        Err(WalletError::NotImplemented("update_settings_storage".into()))
+    }
+
+    // -----------------------------------------------------------------------
+    // Internal delegation methods (monitor/signer use these via manager)
+    // Not part of the remote wire protocol — local providers implement them,
+    // StorageClient returns NotImplemented.
+    // -----------------------------------------------------------------------
+
+    /// Find proven transactions matching the given filter.
+    async fn find_proven_txs(&self, args: &FindProvenTxsArgs) -> WalletResult<Vec<ProvenTx>> {
+        Err(WalletError::NotImplemented("find_proven_txs".into()))
+    }
+
+    /// Find transactions matching the given filter.
+    async fn find_transactions(
+        &self,
+        args: &FindTransactionsArgs,
+    ) -> WalletResult<Vec<Transaction>> {
+        Err(WalletError::NotImplemented("find_transactions".into()))
+    }
+
+    /// Update a proven transaction request by ID.
+    async fn update_proven_tx_req(
+        &self,
+        id: i64,
+        update: &ProvenTxReqPartial,
+    ) -> WalletResult<i64> {
+        let _ = (id, update);
+        Err(WalletError::NotImplemented("update_proven_tx_req".into()))
+    }
+
+    /// Update a proven transaction by ID.
+    async fn update_proven_tx(&self, id: i64, update: &ProvenTxPartial) -> WalletResult<i64> {
+        let _ = (id, update);
+        Err(WalletError::NotImplemented("update_proven_tx".into()))
+    }
+
+    /// Update a transaction by ID.
+    async fn update_transaction(&self, id: i64, update: &TransactionPartial) -> WalletResult<i64> {
+        let _ = (id, update);
+        Err(WalletError::NotImplemented("update_transaction".into()))
+    }
+
+    /// Update a transaction's status by txid.
+    async fn update_transaction_status(
+        &self,
+        txid: &str,
+        new_status: TransactionStatus,
+    ) -> WalletResult<()> {
+        let _ = (txid, new_status);
+        Err(WalletError::NotImplemented("update_transaction_status".into()))
+    }
+
+    /// Composite: insert ProvenTx and update ProvenTxReq.
+    async fn update_proven_tx_req_with_new_proven_tx(
+        &self,
+        req_id: i64,
+        proven_tx: &ProvenTx,
+    ) -> WalletResult<i64> {
+        let _ = (req_id, proven_tx);
+        Err(WalletError::NotImplemented(
+            "update_proven_tx_req_with_new_proven_tx".into(),
+        ))
+    }
+
+    /// Find output baskets matching the given filter (no auth, no trx).
+    async fn find_output_baskets(
+        &self,
+        args: &FindOutputBasketsArgs,
+    ) -> WalletResult<Vec<OutputBasket>> {
+        let _ = args;
+        Err(WalletError::NotImplemented("find_output_baskets".into()))
+    }
+
+    /// Insert an output basket directly (no auth check).
+    async fn insert_output_basket(&self, basket: &OutputBasket) -> WalletResult<i64> {
+        let _ = basket;
+        Err(WalletError::NotImplemented("insert_output_basket".into()))
+    }
+
+    /// Insert a transaction directly (no auth check).
+    async fn insert_transaction(&self, tx: &Transaction) -> WalletResult<i64> {
+        let _ = tx;
+        Err(WalletError::NotImplemented("insert_transaction".into()))
+    }
+
+    /// Insert an output directly (no auth check).
+    async fn insert_output(&self, output: &Output) -> WalletResult<i64> {
+        let _ = output;
+        Err(WalletError::NotImplemented("insert_output".into()))
+    }
+
+    /// Insert a monitor event record.
+    async fn insert_monitor_event(&self, event: &MonitorEvent) -> WalletResult<i64> {
+        let _ = event;
+        Err(WalletError::NotImplemented("insert_monitor_event".into()))
+    }
+
+    /// Returns aggregate deployment statistics.
+    async fn admin_stats(&self, auth_id: &str) -> WalletResult<AdminStatsResult> {
+        let _ = auth_id;
+        Err(WalletError::NotImplemented("admin_stats".into()))
+    }
+
+    /// Delete old records based on purge params.
+    async fn purge_data(&self, params: &PurgeParams) -> WalletResult<String> {
+        let _ = params;
+        Err(WalletError::NotImplemented("purge_data".into()))
+    }
+
+    /// Review and correct stale transaction statuses.
+    async fn review_status(&self, aged_limit: chrono::NaiveDateTime) -> WalletResult<String> {
+        let _ = aged_limit;
+        Err(WalletError::NotImplemented("review_status".into()))
+    }
+
+    /// Returns the storage identity key.
+    async fn get_storage_identity_key(&self) -> WalletResult<String> {
+        let settings = self.get_settings().await?;
+        Ok(settings.storage_identity_key)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -445,8 +650,9 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         args: &ListOutputsArgs,
     ) -> WalletResult<ListOutputsResult> {
         let (user, _) = StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
-        crate::storage::methods::list_outputs::list_outputs(
-            self as &dyn StorageReader,
+        // Use list_outputs_rw so that specOp basket names (e.g. wallet balance) are handled.
+        crate::storage::methods::list_outputs::list_outputs_rw(
+            self as &dyn StorageReaderWriter,
             &auth.identity_key,
             user.user_id,
             args,
@@ -692,6 +898,143 @@ impl<T: StorageProvider> WalletStorageProvider for T {
             None,
         )
         .await
+    }
+
+    // Low-level CRUD delegation -- blanket impl
+
+    async fn find_user_by_identity_key(&self, key: &str) -> WalletResult<Option<User>> {
+        StorageReader::find_user_by_identity_key(self, key, None).await
+    }
+
+    async fn find_certificates_storage(
+        &self,
+        args: &FindCertificatesArgs,
+    ) -> WalletResult<Vec<Certificate>> {
+        StorageReader::find_certificates(self, args, None).await
+    }
+
+    async fn find_certificate_fields(
+        &self,
+        args: &FindCertificateFieldsArgs,
+    ) -> WalletResult<Vec<CertificateField>> {
+        StorageReader::find_certificate_fields(self, args, None).await
+    }
+
+    async fn find_outputs_storage(&self, args: &FindOutputsArgs) -> WalletResult<Vec<Output>> {
+        StorageReader::find_outputs(self, args, None).await
+    }
+
+    async fn update_output(&self, id: i64, update: &OutputPartial) -> WalletResult<i64> {
+        StorageReaderWriter::update_output(self, id, update, None).await
+    }
+
+    async fn insert_certificate_storage(&self, cert: &Certificate) -> WalletResult<i64> {
+        StorageReaderWriter::insert_certificate(self, cert, None).await
+    }
+
+    async fn insert_certificate_field_storage(
+        &self,
+        field: &CertificateField,
+    ) -> WalletResult<()> {
+        StorageReaderWriter::insert_certificate_field(self, field, None).await
+    }
+
+    async fn find_settings_storage(
+        &self,
+        args: &FindSettingsArgs,
+    ) -> WalletResult<Vec<Settings>> {
+        StorageReader::find_settings(self, args, None).await
+    }
+
+    async fn update_settings_storage(&self, update: &SettingsPartial) -> WalletResult<i64> {
+        StorageReaderWriter::update_settings(self, update, None).await
+    }
+
+    // Internal delegation methods -- blanket impl delegates to StorageReader/Writer
+
+    async fn find_proven_txs(&self, args: &FindProvenTxsArgs) -> WalletResult<Vec<ProvenTx>> {
+        StorageReader::find_proven_txs(self, args, None).await
+    }
+
+    async fn find_transactions(
+        &self,
+        args: &FindTransactionsArgs,
+    ) -> WalletResult<Vec<Transaction>> {
+        StorageReader::find_transactions(self, args, None).await
+    }
+
+    async fn update_proven_tx_req(
+        &self,
+        id: i64,
+        update: &ProvenTxReqPartial,
+    ) -> WalletResult<i64> {
+        StorageReaderWriter::update_proven_tx_req(self, id, update, None).await
+    }
+
+    async fn update_proven_tx(&self, id: i64, update: &ProvenTxPartial) -> WalletResult<i64> {
+        StorageReaderWriter::update_proven_tx(self, id, update, None).await
+    }
+
+    async fn update_transaction(&self, id: i64, update: &TransactionPartial) -> WalletResult<i64> {
+        StorageReaderWriter::update_transaction(self, id, update, None).await
+    }
+
+    async fn update_transaction_status(
+        &self,
+        txid: &str,
+        new_status: TransactionStatus,
+    ) -> WalletResult<()> {
+        StorageReaderWriter::update_transaction_status(self, txid, new_status, None).await
+    }
+
+    async fn update_proven_tx_req_with_new_proven_tx(
+        &self,
+        req_id: i64,
+        proven_tx: &ProvenTx,
+    ) -> WalletResult<i64> {
+        StorageReaderWriter::update_proven_tx_req_with_new_proven_tx(
+            self, req_id, proven_tx, None,
+        )
+        .await
+    }
+
+    async fn find_output_baskets(
+        &self,
+        args: &FindOutputBasketsArgs,
+    ) -> WalletResult<Vec<OutputBasket>> {
+        StorageReader::find_output_baskets(self, args, None).await
+    }
+
+    async fn insert_output_basket(&self, basket: &OutputBasket) -> WalletResult<i64> {
+        StorageReaderWriter::insert_output_basket(self, basket, None).await
+    }
+
+    async fn insert_transaction(&self, tx: &Transaction) -> WalletResult<i64> {
+        StorageReaderWriter::insert_transaction(self, tx, None).await
+    }
+
+    async fn insert_output(&self, output: &Output) -> WalletResult<i64> {
+        StorageReaderWriter::insert_output(self, output, None).await
+    }
+
+    async fn insert_monitor_event(&self, event: &MonitorEvent) -> WalletResult<i64> {
+        StorageReaderWriter::insert_monitor_event(self, event, None).await
+    }
+
+    async fn admin_stats(&self, auth_id: &str) -> WalletResult<AdminStatsResult> {
+        StorageReaderWriter::admin_stats(self, auth_id).await
+    }
+
+    async fn purge_data(&self, params: &PurgeParams) -> WalletResult<String> {
+        StorageReaderWriter::purge_data(self, params, None).await
+    }
+
+    async fn review_status(&self, aged_limit: chrono::NaiveDateTime) -> WalletResult<String> {
+        StorageReaderWriter::review_status(self, aged_limit, None).await
+    }
+
+    async fn get_storage_identity_key(&self) -> WalletResult<String> {
+        StorageProvider::get_storage_identity_key(self)
     }
 }
 

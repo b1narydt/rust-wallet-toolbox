@@ -89,7 +89,6 @@ impl WalletMonitorTask for TaskCheckNoSends {
                         paged: Some(Paged { limit, offset }),
                         statuses: Some(vec![ProvenTxReqStatus::Nosend]),
                     },
-                    None,
                 )
                 .await?;
 

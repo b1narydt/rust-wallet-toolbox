@@ -54,8 +54,7 @@ pub async fn create_test_wallet() -> SetupWallet {
     // Ensure user record exists in storage so queries don't fail with "User not found"
     setup
         .storage
-        .active()
-        .find_or_insert_user(&setup.identity_key, None)
+        .find_or_insert_user(&setup.identity_key)
         .await
         .expect("ensure user exists");
     setup
@@ -74,8 +73,7 @@ pub async fn create_test_wallet_with_key(root_key: PrivateKey) -> SetupWallet {
         .expect("Failed to create test wallet with key");
     setup
         .storage
-        .active()
-        .find_or_insert_user(&setup.identity_key, None)
+        .find_or_insert_user(&setup.identity_key)
         .await
         .expect("ensure user exists");
     setup
@@ -246,12 +244,11 @@ pub async fn seed_outputs(
     count: usize,
     satoshis: u64,
 ) -> Vec<i64> {
-    let provider = storage.active();
     let now = Utc::now().naive_utc();
 
     // Ensure user exists
-    let (user, _) = provider
-        .find_or_insert_user(user_identity_key, None)
+    let (user, _) = storage
+        .find_or_insert_user(user_identity_key)
         .await
         .expect("find_or_insert_user");
     let user_id = user.user_id;
@@ -259,7 +256,7 @@ pub async fn seed_outputs(
     // Create or find "default" basket
     let basket_id = {
         use bsv_wallet_toolbox::storage::find_args::{FindOutputBasketsArgs, OutputBasketPartial};
-        let existing = provider
+        let existing = storage
             .find_output_baskets(
                 &FindOutputBasketsArgs {
                     partial: OutputBasketPartial {
@@ -269,14 +266,13 @@ pub async fn seed_outputs(
                     },
                     ..Default::default()
                 },
-                None,
             )
             .await
             .expect("find baskets");
         if let Some(b) = existing.first() {
             b.basket_id
         } else {
-            provider
+            storage
                 .insert_output_basket(
                     &OutputBasket {
                         created_at: now,
@@ -288,7 +284,6 @@ pub async fn seed_outputs(
                         minimum_desired_utxo_value: 1000,
                         is_deleted: false,
                     },
-                    None,
                 )
                 .await
                 .expect("insert basket")
@@ -297,7 +292,7 @@ pub async fn seed_outputs(
 
     // Create a parent transaction (completed status so outputs are visible)
     let txid_hex = format!("{:064x}", rand::random::<u64>());
-    let tx_id = provider
+    let tx_id = storage
         .insert_transaction(
             &Transaction {
                 created_at: now,
@@ -316,7 +311,6 @@ pub async fn seed_outputs(
                 input_beef: None,
                 raw_tx: None,
             },
-            None,
         )
         .await
         .expect("insert transaction");
@@ -324,7 +318,7 @@ pub async fn seed_outputs(
     // Create outputs
     let mut output_ids = Vec::with_capacity(count);
     for i in 0..count {
-        let oid = provider
+        let oid = storage
             .insert_output(
                 &Output {
                     created_at: now,
@@ -353,7 +347,6 @@ pub async fn seed_outputs(
                     script_offset: None,
                     locking_script: None,
                 },
-                None,
             )
             .await
             .expect("insert output");
@@ -370,16 +363,15 @@ pub async fn seed_transaction(
     user_identity_key: &str,
     status: TransactionStatus,
 ) -> i64 {
-    let provider = storage.active();
     let now = Utc::now().naive_utc();
 
-    let (user, _) = provider
-        .find_or_insert_user(user_identity_key, None)
+    let (user, _) = storage
+        .find_or_insert_user(user_identity_key)
         .await
         .expect("find_or_insert_user");
 
     let txid_hex = format!("{:064x}", rand::random::<u64>());
-    provider
+    storage
         .insert_transaction(
             &Transaction {
                 created_at: now,
@@ -398,7 +390,6 @@ pub async fn seed_transaction(
                 input_beef: None,
                 raw_tx: None,
             },
-            None,
         )
         .await
         .expect("insert transaction")

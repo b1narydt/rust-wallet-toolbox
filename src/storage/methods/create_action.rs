@@ -15,7 +15,7 @@ use crate::storage::action_types::{
     StorageCreateActionResult, StorageCreateTransactionSdkInput, StorageCreateTransactionSdkOutput,
     StorageFeeModel,
 };
-use crate::storage::beef::{get_valid_beef_for_txid, TrustSelf};
+use crate::storage::beef::{get_valid_beef_for_storage_reader, TrustSelf};
 use crate::storage::find_args::{
     FindOutputBasketsArgs, FindOutputsArgs, FindTransactionsArgs, OutputBasketPartial,
     OutputPartial, TransactionPartial,
@@ -146,12 +146,11 @@ pub async fn merge_input_beef(
         if input.provided_by == StorageProvidedBy::Storage {
             let txid = &input.source_txid;
             if !txid.is_empty() && beef.find_txid(txid).is_none() {
-                if let Ok(Some(tx_beef_bytes)) = get_valid_beef_for_txid(
+                if let Ok(Some(tx_beef_bytes)) = get_valid_beef_for_storage_reader(
                     storage,
                     txid,
                     TrustSelf::No,
                     &known_txids,
-                    None,
                 )
                 .await
                 {

@@ -574,12 +574,23 @@ mod sqlite_impl {
             let settings = if let Some(s) = results.into_iter().next() {
                 s
             } else {
+                // Generate a storage identity key if not set (e.g. in-memory SQLite instances).
+                // Uses a random 33-byte sequence encoded as hex to match compressed pubkey format.
+                let identity_key = if self.storage_identity_key.is_empty() {
+                    use rand::RngCore;
+                    let mut bytes = [0u8; 33];
+                    rand::thread_rng().fill_bytes(&mut bytes);
+                    bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+                } else {
+                    self.storage_identity_key.clone()
+                };
+
                 // Create default settings
                 let now = chrono::Utc::now().naive_utc();
                 let new_settings = Settings {
                     created_at: now,
                     updated_at: now,
-                    storage_identity_key: self.storage_identity_key.clone(),
+                    storage_identity_key: identity_key,
                     storage_name: String::from("default"),
                     chain: self.chain.clone(),
                     dbtype: String::from("SQLite"),
@@ -996,11 +1007,19 @@ macro_rules! impl_storage_rw_and_provider {
                     let settings = if let Some(s) = results.into_iter().next() {
                         s
                     } else {
+                        let identity_key = if self.storage_identity_key.is_empty() {
+                            use rand::RngCore;
+                            let mut bytes = [0u8; 33];
+                            rand::thread_rng().fill_bytes(&mut bytes);
+                            bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+                        } else {
+                            self.storage_identity_key.clone()
+                        };
                         let now = chrono::Utc::now().naive_utc();
                         let new_settings = Settings {
                             created_at: now,
                             updated_at: now,
-                            storage_identity_key: self.storage_identity_key.clone(),
+                            storage_identity_key: identity_key,
                             storage_name: String::from("default"),
                             chain: self.chain.clone(),
                             dbtype: String::from($dbtype_str),

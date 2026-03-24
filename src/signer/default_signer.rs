@@ -91,16 +91,17 @@ impl DefaultWalletSigner {
         reference: &str,
     ) -> WalletResult<PendingSignAction> {
         let auth = self.auth();
-        let active = self.storage.active();
 
         // --- Step 1: Find the user ---
-        let user = active
-            .find_user_by_identity_key(&auth, None)
+        let user = self
+            .storage
+            .find_user_by_identity_key(&auth)
             .await?
             .ok_or_else(|| WalletError::Unauthorized("User not found".to_string()))?;
 
         // --- Step 2: Find the transaction by reference ---
-        let txs = active
+        let txs = self
+            .storage
             .find_transactions(
                 &FindTransactionsArgs {
                     partial: TransactionPartial {
@@ -111,7 +112,6 @@ impl DefaultWalletSigner {
                     no_raw_tx: false,
                     ..Default::default()
                 },
-                None,
             )
             .await?;
 
@@ -151,8 +151,9 @@ impl DefaultWalletSigner {
         })?;
 
         // --- Step 6: Find all Output records spent by this transaction ---
-        let spent_outputs = active
-            .find_outputs(
+        let spent_outputs = self
+            .storage
+            .find_outputs_storage(
                 &FindOutputsArgs {
                     partial: OutputPartial {
                         spent_by: Some(tx_record.transaction_id),
@@ -161,7 +162,6 @@ impl DefaultWalletSigner {
                     no_script: false,
                     ..Default::default()
                 },
-                None,
             )
             .await?;
 
