@@ -709,3 +709,150 @@ fn vec_u8_some_serializes_as_array() {
     assert_eq!(raw_tx.len(), 3);
     assert_eq!(raw_tx[0], 1);
 }
+
+// -- Wire format tests: Task 1 --
+
+#[test]
+fn timestamp_serializes_with_z_and_3ms() {
+    // 718 ms: serialize a NaiveDateTime with millis, assert output is exactly "2024-01-15T10:30:00.718Z"
+    use chrono::NaiveDateTime;
+    let dt = NaiveDateTime::parse_from_str("2024-01-15T10:30:00.718", "%Y-%m-%dT%H:%M:%S%.f").unwrap();
+    let user = User {
+        created_at: dt,
+        updated_at: dt,
+        ..sample_user()
+    };
+    let json = serde_json::to_value(&user).unwrap();
+    let created = json["created_at"].as_str().unwrap();
+    assert_eq!(created, "2024-01-15T10:30:00.718Z");
+}
+
+#[test]
+fn timestamp_zero_millis_serializes_as_000z() {
+    // Zero millis: sample_datetime() has zero millis, assert output ends with ".000Z"
+    let user = sample_user();
+    let json = serde_json::to_value(&user).unwrap();
+    let created = json["created_at"].as_str().unwrap();
+    assert!(
+        created.ends_with(".000Z"),
+        "Expected timestamp to end with .000Z, got: {}",
+        created
+    );
+}
+
+#[test]
+fn option_timestamp_serializes_with_z() {
+    // Option<NaiveDateTime> Some value should have Z and 3-digit ms
+    use bsv_wallet_toolbox::storage::sync::SyncMap;
+    let mut sync_map = SyncMap::new();
+    sync_map.proven_tx.max_updated_at = Some(
+        chrono::NaiveDateTime::parse_from_str("2024-06-01T12:00:00.500", "%Y-%m-%dT%H:%M:%S%.f")
+            .unwrap(),
+    );
+    let json = serde_json::to_value(&sync_map).unwrap();
+    let max_updated = json["provenTx"]["maxUpdatedAt"].as_str().unwrap();
+    assert!(
+        max_updated.ends_with("Z"),
+        "Expected maxUpdatedAt to end with Z, got: {}",
+        max_updated
+    );
+    assert!(
+        max_updated.contains(".500Z"),
+        "Expected 3-digit ms .500Z in maxUpdatedAt, got: {}",
+        max_updated
+    );
+}
+
+#[test]
+fn timestamp_deserializes_ts_format_with_z() {
+    // Deserialize "2024-01-15T10:30:00.718Z" -- assert parsed correctly
+    use bsv_wallet_toolbox::storage::sync::SyncMap;
+    let json_str = r#"{"provenTx":{"entityName":"provenTx","idMap":{},"maxUpdatedAt":"2024-01-15T10:30:00.718Z","count":0},"outputBasket":{"entityName":"outputBasket","idMap":{},"maxUpdatedAt":null,"count":0},"transaction":{"entityName":"transaction","idMap":{},"maxUpdatedAt":null,"count":0},"output":{"entityName":"output","idMap":{},"maxUpdatedAt":null,"count":0},"txLabel":{"entityName":"txLabel","idMap":{},"maxUpdatedAt":null,"count":0},"txLabelMap":{"entityName":"txLabelMap","idMap":{},"maxUpdatedAt":null,"count":0},"outputTag":{"entityName":"outputTag","idMap":{},"maxUpdatedAt":null,"count":0},"outputTagMap":{"entityName":"outputTagMap","idMap":{},"maxUpdatedAt":null,"count":0},"certificate":{"entityName":"certificate","idMap":{},"maxUpdatedAt":null,"count":0},"certificateField":{"entityName":"certificateField","idMap":{},"maxUpdatedAt":null,"count":0},"commission":{"entityName":"commission","idMap":{},"maxUpdatedAt":null,"count":0},"provenTxReq":{"entityName":"provenTxReq","idMap":{},"maxUpdatedAt":null,"count":0}}"#;
+    let sync_map: SyncMap = serde_json::from_str(json_str).unwrap();
+    let max_updated = sync_map.proven_tx.max_updated_at.unwrap();
+    assert_eq!(max_updated.and_utc().timestamp_millis() % 1000, 718);
+}
+
+#[test]
+fn timestamp_deserializes_variable_precision() {
+    // Deserialize "2024-01-15T10:30:00.7" (1 digit) -- should still parse, no regression
+    let json_str = r#"{"created_at":"2024-01-15T10:30:00.7","updated_at":"2024-01-15T10:30:00.7","userId":1,"identityKey":"02abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab","activeStorage":"03storagekey"}"#;
+    let _user: User = serde_json::from_str(json_str).unwrap();
+    // If we get here without panicking, variable precision parsing works
+}
+
+#[test]
+fn sync_chunk_none_fields_absent_not_null() {
+    use bsv_wallet_toolbox::storage::sync::SyncChunk;
+    let chunk = SyncChunk {
+        from_storage_identity_key: "from".to_string(),
+        to_storage_identity_key: "to".to_string(),
+        user_identity_key: "user".to_string(),
+        user: None,
+        proven_txs: None,
+        output_baskets: None,
+        transactions: None,
+        outputs: None,
+        tx_labels: None,
+        tx_label_maps: None,
+        output_tags: None,
+        output_tag_maps: None,
+        certificates: None,
+        certificate_fields: None,
+        commissions: None,
+        proven_tx_reqs: None,
+    };
+    let json = serde_json::to_value(&chunk).unwrap();
+    // None entity lists must be absent from JSON, NOT present as null
+    assert!(
+        json.get("user").is_none(),
+        "Expected 'user' key to be absent from JSON, got: {:?}",
+        json.get("user")
+    );
+    assert!(
+        json.get("provenTxs").is_none(),
+        "Expected 'provenTxs' key to be absent from JSON"
+    );
+    assert!(
+        json.get("transactions").is_none(),
+        "Expected 'transactions' key to be absent from JSON"
+    );
+    assert!(
+        json.get("outputs").is_none(),
+        "Expected 'outputs' key to be absent from JSON"
+    );
+    assert!(
+        json.get("certificates").is_none(),
+        "Expected 'certificates' key to be absent from JSON"
+    );
+}
+
+#[test]
+fn sync_chunk_present_fields_included() {
+    use bsv_wallet_toolbox::storage::sync::SyncChunk;
+    let chunk = SyncChunk {
+        from_storage_identity_key: "from".to_string(),
+        to_storage_identity_key: "to".to_string(),
+        user_identity_key: "user".to_string(),
+        user: None,
+        proven_txs: Some(vec![sample_proven_tx()]),
+        output_baskets: None,
+        transactions: None,
+        outputs: None,
+        tx_labels: None,
+        tx_label_maps: None,
+        output_tags: None,
+        output_tag_maps: None,
+        certificates: None,
+        certificate_fields: None,
+        commissions: None,
+        proven_tx_reqs: None,
+    };
+    let json = serde_json::to_value(&chunk).unwrap();
+    // provenTxs should be present with array value
+    let proven_txs = json.get("provenTxs").expect("Expected 'provenTxs' key to be present");
+    assert!(proven_txs.is_array(), "Expected 'provenTxs' to be an array");
+    assert_eq!(proven_txs.as_array().unwrap().len(), 1);
+    // other None fields should still be absent
+    assert!(json.get("transactions").is_none());
+}

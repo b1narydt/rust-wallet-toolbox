@@ -25,30 +25,43 @@ pub struct SyncChunk {
     /// Identity key of the user being synced.
     pub user_identity_key: String,
     /// User record, if changed.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<User>,
     /// Changed proven transaction records.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub proven_txs: Option<Vec<ProvenTx>>,
     /// Changed output basket records.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output_baskets: Option<Vec<OutputBasket>>,
     /// Changed transaction records.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub transactions: Option<Vec<Transaction>>,
     /// Changed output records.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub outputs: Option<Vec<Output>>,
     /// Changed transaction label records.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tx_labels: Option<Vec<TxLabel>>,
     /// Changed transaction label mapping records.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tx_label_maps: Option<Vec<TxLabelMap>>,
     /// Changed output tag records.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output_tags: Option<Vec<OutputTag>>,
     /// Changed output tag mapping records.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output_tag_maps: Option<Vec<OutputTagMap>>,
     /// Changed certificate records.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub certificates: Option<Vec<Certificate>>,
     /// Changed certificate field records.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub certificate_fields: Option<Vec<CertificateField>>,
     /// Changed commission records.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub commissions: Option<Vec<Commission>>,
     /// Changed proven transaction request records.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub proven_tx_reqs: Option<Vec<ProvenTxReq>>,
 }
 
