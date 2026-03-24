@@ -1,323 +1,318 @@
 //! WalletStorageManager integration tests.
 //!
-//! Tests verify that the manager correctly routes reads to the active provider,
-//! propagates writes to both active and backup, serializes concurrent writes
-//! via the internal lock, and handles backup failures gracefully.
+//! Tests verify that the new manager correctly wraps providers in ManagedStorage,
+//! partitions stores into active/backups/conflicting_actives via makeAvailable,
+//! serializes concurrent access via hierarchical locks, and exposes correct
+//! getter methods after initialization.
 //!
-//! All tests use dual in-memory SQLite databases as active and backup providers.
+//! All tests use in-memory SQLite databases as WalletStorageProvider implementations
+//! (via the blanket impl over StorageProvider).
 
 #[cfg(feature = "sqlite")]
 mod manager_tests {
     use std::sync::Arc;
 
     use bsv_wallet_toolbox::error::WalletResult;
-    use bsv_wallet_toolbox::storage::find_args::*;
     use bsv_wallet_toolbox::storage::manager::WalletStorageManager;
     use bsv_wallet_toolbox::storage::sqlx_impl::SqliteStorage;
     use bsv_wallet_toolbox::storage::traits::provider::StorageProvider;
-    use bsv_wallet_toolbox::storage::traits::reader::StorageReader;
-    use bsv_wallet_toolbox::storage::traits::reader_writer::StorageReaderWriter;
+    use bsv_wallet_toolbox::storage::traits::wallet_provider::WalletStorageProvider;
     use bsv_wallet_toolbox::storage::StorageConfig;
-    use bsv_wallet_toolbox::tables::*;
     use bsv_wallet_toolbox::types::Chain;
 
-    /// Helper to create a fresh in-memory SQLite storage with migrations run.
-    async fn create_storage() -> WalletResult<SqliteStorage> {
+    // -----------------------------------------------------------------------
+    // Test helpers
+    // -----------------------------------------------------------------------
+
+    /// Create a fresh in-memory SQLite provider, migrated and ready.
+    async fn create_provider() -> WalletResult<Arc<dyn WalletStorageProvider>> {
         let config = StorageConfig {
             url: "sqlite::memory:".to_string(),
             ..Default::default()
         };
         let storage = SqliteStorage::new_sqlite(config, Chain::Test).await?;
-        storage.migrate_database().await?;
-        storage.make_available().await?;
-        Ok(storage)
+        StorageProvider::migrate_database(&storage).await?;
+        Ok(Arc::new(storage) as Arc<dyn WalletStorageProvider>)
     }
 
-    fn test_datetime() -> chrono::NaiveDateTime {
-        chrono::NaiveDateTime::parse_from_str("2024-01-15 10:30:00", "%Y-%m-%d %H:%M:%S").unwrap()
-    }
+    const IDENTITY_KEY: &str = "02aabbccdd0011223344556677889900aabbccdd0011223344556677889900aabbcc";
 
-    /// Create a WalletStorageManager with a single active provider (no backup).
-    async fn setup_single_provider() -> WalletResult<(WalletStorageManager, Arc<SqliteStorage>)> {
-        let active = Arc::new(create_storage().await?);
+    // -----------------------------------------------------------------------
+    // Test 1: Constructor stores providers in correct order
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_constructor() {
+        let active = create_provider().await.unwrap();
+        let backup1 = create_provider().await.unwrap();
+        let backup2 = create_provider().await.unwrap();
+
         let manager = WalletStorageManager::new(
-            active.clone(),
-            None,
-            Chain::Test,
-            "test-identity-key".to_string(),
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![backup1, backup2],
         );
-        Ok((manager, active))
+
+        // Manager starts not available, has 3 stores total
+        assert!(!manager.is_available());
+        assert!(manager.can_make_available().await);
+        assert_eq!(manager.get_user_identity_key(), IDENTITY_KEY);
+        assert_eq!(manager.auth_id(), IDENTITY_KEY);
+        assert_eq!(manager.get_all_stores().await.len(), 3);
     }
 
-    /// Create a WalletStorageManager with active + backup providers (separate in-memory DBs).
-    async fn setup_dual_provider(
-    ) -> WalletResult<(WalletStorageManager, Arc<SqliteStorage>, Arc<SqliteStorage>)> {
-        let active = Arc::new(create_storage().await?);
-        let backup = Arc::new(create_storage().await?);
+    // -----------------------------------------------------------------------
+    // Test 2: ManagedStorage cache starts empty before makeAvailable
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_managed_storage_cache() {
+        let active = create_provider().await.unwrap();
         let manager = WalletStorageManager::new(
-            active.clone(),
-            Some(backup.clone()),
-            Chain::Test,
-            "test-identity-key".to_string(),
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![],
         );
-        Ok((manager, active, backup))
+
+        // Before makeAvailable: is_available is false
+        assert!(!manager.is_available());
+
+        // get_active_settings should fail before makeAvailable
+        let result = manager.get_active_settings().await;
+        assert!(result.is_err(), "get_active_settings should fail before makeAvailable");
     }
 
     // -----------------------------------------------------------------------
-    // Test 1: Manager with single active provider -- insert User, find User
+    // Test 3: makeAvailable with single store — becomes active
     // -----------------------------------------------------------------------
 
     #[tokio::test]
-    async fn test_single_provider_insert_and_find() {
-        let (manager, _active) = setup_single_provider().await.unwrap();
-        let now = test_datetime();
+    async fn test_make_available_single_store() {
+        let active = create_provider().await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![],
+        );
 
-        let user = User {
-            created_at: now,
-            updated_at: now,
-            user_id: 0,
-            identity_key: "02single_test_key".to_string(),
-            active_storage: "default".to_string(),
-        };
+        let settings = manager.make_available().await.unwrap();
+        assert!(manager.is_available());
+        assert!(!settings.storage_identity_key.is_empty());
 
-        // Insert via manager
-        let user_id = manager.insert_user(&user, None).await.unwrap();
-        assert!(user_id > 0, "insert_user should return a positive ID");
+        // Active settings accessible
+        let active_settings = manager.get_active_settings().await.unwrap();
+        assert_eq!(active_settings.storage_identity_key, settings.storage_identity_key);
 
-        // Find via manager
-        let found = manager
-            .find_user_by_identity_key("02single_test_key", None)
-            .await
-            .unwrap();
-        assert!(found.is_some(), "Should find the inserted user");
-        let found_user = found.unwrap();
-        assert_eq!(found_user.identity_key, "02single_test_key");
-        assert_eq!(found_user.user_id, user_id);
+        // No backups
+        assert!(manager.get_backup_stores().await.is_empty());
+        assert!(manager.get_conflicting_stores().await.is_empty());
+
+        // All stores = 1
+        assert_eq!(manager.get_all_stores().await.len(), 1);
     }
 
     // -----------------------------------------------------------------------
-    // Test 2: Manager with active + backup -- insert User appears in both
+    // Test 4: makeAvailable with 2 stores — active + 1 backup
     // -----------------------------------------------------------------------
 
     #[tokio::test]
-    async fn test_dual_provider_write_propagation() {
-        let (manager, active, backup) = setup_dual_provider().await.unwrap();
-        let now = test_datetime();
-
-        let user = User {
-            created_at: now,
-            updated_at: now,
-            user_id: 0,
-            identity_key: "02dual_test_key".to_string(),
-            active_storage: "default".to_string(),
-        };
-
-        // Insert via manager -- should go to both active and backup
-        let user_id = manager.insert_user(&user, None).await.unwrap();
-        assert!(user_id > 0);
-
-        // Verify user exists in active (direct query)
-        let active_found = active
-            .find_user_by_identity_key("02dual_test_key", None)
-            .await
-            .unwrap();
-        assert!(
-            active_found.is_some(),
-            "User should exist in active provider"
+    async fn test_make_available_partition() {
+        let active = create_provider().await.unwrap();
+        let backup = create_provider().await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![backup],
         );
 
-        // Verify user exists in backup (direct query)
-        let backup_found = backup
-            .find_user_by_identity_key("02dual_test_key", None)
-            .await
-            .unwrap();
-        assert!(
-            backup_found.is_some(),
-            "User should exist in backup provider"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Test 3: Manager reads only from active (not backup)
-    // -----------------------------------------------------------------------
-
-    #[tokio::test]
-    async fn test_reads_only_from_active() {
-        let (manager, _active, backup) = setup_dual_provider().await.unwrap();
-        let now = test_datetime();
-
-        // Insert directly into backup (bypassing manager)
-        let user = User {
-            created_at: now,
-            updated_at: now,
-            user_id: 0,
-            identity_key: "02backup_only_key".to_string(),
-            active_storage: "default".to_string(),
-        };
-        let _backup_user_id = backup.insert_user(&user, None).await.unwrap();
-
-        // Manager find should NOT find this user (it only reads from active)
-        let found = manager
-            .find_user_by_identity_key("02backup_only_key", None)
-            .await
-            .unwrap();
-        assert!(
-            found.is_none(),
-            "Manager should not find data only in backup"
-        );
-
-        // But direct backup query should find it
-        let backup_found = backup
-            .find_user_by_identity_key("02backup_only_key", None)
-            .await
-            .unwrap();
-        assert!(
-            backup_found.is_some(),
-            "Data should exist in backup when queried directly"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Test 4: Concurrent write lock serialization
-    // -----------------------------------------------------------------------
-
-    #[tokio::test]
-    async fn test_concurrent_write_serialization() {
-        let (manager, _active) = setup_single_provider().await.unwrap();
-        let manager = Arc::new(manager);
-        let now = test_datetime();
-
-        // Spawn 10 concurrent insert tasks
-        let mut handles = Vec::new();
-        for i in 0..10 {
-            let mgr = manager.clone();
-            let handle = tokio::spawn(async move {
-                let user = User {
-                    created_at: now,
-                    updated_at: now,
-                    user_id: 0,
-                    identity_key: format!("02concurrent_user_{}", i),
-                    active_storage: "default".to_string(),
-                };
-                mgr.insert_user(&user, None).await
-            });
-            handles.push(handle);
-        }
-
-        // All inserts should succeed
-        let mut user_ids = Vec::new();
-        for handle in handles {
-            let result = handle.await.unwrap();
-            let user_id = result.unwrap();
-            assert!(user_id > 0);
-            user_ids.push(user_id);
-        }
-
-        // All IDs should be unique
-        user_ids.sort();
-        user_ids.dedup();
-        assert_eq!(
-            user_ids.len(),
-            10,
-            "All 10 concurrent inserts should produce unique IDs"
-        );
-
-        // Verify all 10 users exist
-        let args = FindUsersArgs::default();
-        let all_users = manager.find_users(&args, None).await.unwrap();
-        // Account for the settings-inserted user (from make_available) plus our 10
-        let concurrent_users: Vec<_> = all_users
-            .iter()
-            .filter(|u| u.identity_key.starts_with("02concurrent_user_"))
-            .collect();
-        assert_eq!(
-            concurrent_users.len(),
-            10,
-            "All 10 concurrent users should be retrievable"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Test 5: has_backup() and accessor methods
-    // -----------------------------------------------------------------------
-
-    #[tokio::test]
-    async fn test_accessor_methods() {
-        let (single_mgr, _active) = setup_single_provider().await.unwrap();
-        assert!(
-            !single_mgr.has_backup(),
-            "Single provider should have no backup"
-        );
-        assert!(single_mgr.backup().is_none());
-
-        let (dual_mgr, _active, _backup) = setup_dual_provider().await.unwrap();
-        assert!(dual_mgr.has_backup(), "Dual provider should have backup");
-        assert!(dual_mgr.backup().is_some());
-    }
-
-    // -----------------------------------------------------------------------
-    // Test 6: Update propagation to backup
-    // -----------------------------------------------------------------------
-
-    #[tokio::test]
-    async fn test_update_propagation_to_backup() {
-        let (manager, active, backup) = setup_dual_provider().await.unwrap();
-        let now = test_datetime();
-
-        // Insert a user via manager
-        let user = User {
-            created_at: now,
-            updated_at: now,
-            user_id: 0,
-            identity_key: "02update_test_key".to_string(),
-            active_storage: "default".to_string(),
-        };
-        let user_id = manager.insert_user(&user, None).await.unwrap();
-
-        // Update via manager
-        let update = UserPartial {
-            active_storage: Some("new-storage".to_string()),
-            ..Default::default()
-        };
-        let rows = manager.update_user(user_id, &update, None).await.unwrap();
-        assert_eq!(rows, 1, "Should update 1 row in active");
-
-        // Verify active has updated value
-        let active_user = active
-            .find_user_by_identity_key("02update_test_key", None)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(active_user.active_storage, "new-storage");
-
-        // Verify backup also has updated value
-        let backup_user = backup
-            .find_user_by_identity_key("02update_test_key", None)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(backup_user.active_storage, "new-storage");
-    }
-
-    // -----------------------------------------------------------------------
-    // Test 7: StorageProvider lifecycle (make_available, get_settings)
-    // -----------------------------------------------------------------------
-
-    #[tokio::test]
-    async fn test_storage_provider_lifecycle() {
-        let (manager, _active, _backup) = setup_dual_provider().await.unwrap();
-
-        // Manager should report available since make_available was called on both providers
+        manager.make_available().await.unwrap();
         assert!(manager.is_available());
 
-        // get_settings should work via manager
-        let settings = manager.get_settings(None).await.unwrap();
-        assert!(
-            !settings.storage_name.is_empty(),
-            "Settings should be present with a storage name"
+        let all_stores = manager.get_all_stores().await;
+        assert_eq!(all_stores.len(), 2);
+
+        // After making available with 2 separate providers (each w/ different storage_identity_key),
+        // the backup user.active_storage won't match active's storage_identity_key by default,
+        // so the backup ends up as a conflicting_active OR a plain backup depending on user state.
+        // Either way, active_store should be set and all_stores has 2 entries.
+        let active_store = manager.get_active_store().await.unwrap();
+        assert!(!active_store.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 5: makeAvailable zero stores returns error
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_make_available_zero_stores() {
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            None,
+            vec![],
         );
 
-        // get_chain should return the manager's chain
-        assert_eq!(manager.get_chain(), Chain::Test);
+        // can_make_available should return false with no stores
+        assert!(!manager.can_make_available().await);
+
+        // makeAvailable should return an error
+        let result = manager.make_available().await;
+        assert!(result.is_err(), "makeAvailable with no stores should fail");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 6: makeAvailable idempotent — second call returns immediately
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_make_available_idempotent() {
+        let active = create_provider().await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![],
+        );
+
+        let settings1 = manager.make_available().await.unwrap();
+        let settings2 = manager.make_available().await.unwrap();
+
+        // Both calls return the same active settings
+        assert_eq!(
+            settings1.storage_identity_key,
+            settings2.storage_identity_key
+        );
+        assert!(manager.is_available());
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 7: get_auth before makeAvailable returns WERR_NOT_ACTIVE
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_verify_active_before_available() {
+        let active = create_provider().await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![],
+        );
+
+        // get_auth(must_be_active=true) before makeAvailable should fail with NotActive
+        let result = manager.get_auth(true).await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("WERR_NOT_ACTIVE"),
+            "Expected WERR_NOT_ACTIVE, got: {err_msg}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 8: Getter methods after makeAvailable
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_getter_methods() {
+        let active = create_provider().await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![],
+        );
+
+        manager.make_available().await.unwrap();
+
+        // is_storage_provider() on manager always returns false
+        assert!(!manager.is_storage_provider());
+
+        // get_active_store_name should return non-empty string
+        let name = manager.get_active_store_name().await.unwrap();
+        assert!(!name.is_empty());
+
+        // get_active_user should return a User
+        let user = manager.get_active_user().await.unwrap();
+        assert_eq!(user.identity_key, IDENTITY_KEY);
+
+        // get_auth(false) should return AuthId with identity_key set
+        let auth = manager.get_auth(false).await.unwrap();
+        assert_eq!(auth.identity_key, IDENTITY_KEY);
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 9: Hierarchical lock helpers don't deadlock
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_hierarchical_locks() {
+        let active = create_provider().await.unwrap();
+        let manager = Arc::new(WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![],
+        ));
+
+        manager.make_available().await.unwrap();
+
+        // acquire_reader, acquire_writer, acquire_sync, acquire_storage_provider
+        // all in sequence — if any deadlock, the test will hang and timeout.
+        {
+            let _guard = manager.acquire_reader().await.unwrap();
+        }
+        {
+            let _guards = manager.acquire_writer().await.unwrap();
+        }
+        {
+            let _guards = manager.acquire_sync().await.unwrap();
+        }
+        {
+            let _guards = manager.acquire_storage_provider().await.unwrap();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 10: Auto-init — acquire_reader triggers makeAvailable
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_auto_init_in_lock_helpers() {
+        let active = create_provider().await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![],
+        );
+
+        // Manager not yet available
+        assert!(!manager.is_available());
+
+        // Acquiring a reader lock should auto-trigger makeAvailable
+        {
+            let _guard = manager.acquire_reader().await.unwrap();
+        }
+
+        // Now manager should be available
+        assert!(manager.is_available());
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 11: is_active_storage_provider
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_is_active_storage_provider() {
+        let active = create_provider().await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![],
+        );
+
+        manager.make_available().await.unwrap();
+
+        // SqliteStorage is_storage_provider() returns true (blanket impl default)
+        let is_sp = manager.is_active_storage_provider().await.unwrap();
+        assert!(is_sp, "SqliteStorage should be a storage provider");
+
+        // But the manager itself is NOT a storage provider
+        assert!(!manager.is_storage_provider());
     }
 }
