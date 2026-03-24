@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use bsv::services::overlay_tools::LookupResolver;
 use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::services::traits::WalletServices;
 use crate::storage::manager::WalletStorageManager;
@@ -53,11 +53,21 @@ pub struct WalletArgs {
 /// Identifies the caller for authorized wallet operations.
 ///
 /// The `identity_key` is a compressed public key hex string representing
-/// the caller's identity.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// the caller's identity. The optional `user_id` and `is_active` fields
+/// match the TypeScript `AuthId` interface for Phase 3 JSON serialization.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuthId {
     /// Compressed public key hex (66 chars) of the caller.
     pub identity_key: String,
+    /// Database user_id for the caller, if already resolved.
+    /// Maps to TypeScript `AuthId.userId?`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<i64>,
+    /// Whether this user has active storage access.
+    /// Maps to TypeScript `AuthId.isActive?`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_active: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------

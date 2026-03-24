@@ -3,6 +3,7 @@
 //! Contains the core business logic functions for storage operations,
 //! ported from wallet-toolbox/src/storage/methods/.
 
+pub mod abort_action;
 pub mod create_action;
 pub mod generate_change;
 pub mod internalize_action;

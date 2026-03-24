@@ -215,6 +215,8 @@ impl Wallet {
     fn auth_id(&self) -> AuthId {
         AuthId {
             identity_key: self.identity_key.to_der_hex(),
+            user_id: None,
+            is_active: None,
         }
     }
 
@@ -864,7 +866,7 @@ impl WalletInterface for Wallet {
         self.validate_originator(originator).map_err(to_sdk_error)?;
         let network = match self.chain {
             Chain::Main => Network::Mainnet,
-            Chain::Test => Network::Testnet,
+            Chain::Test | Chain::Teratest | Chain::Mock => Network::Testnet,
         };
         Ok(GetNetworkResult { network })
     }

@@ -17,7 +17,7 @@ pub mod traits;
 pub use find_args::*;
 pub use manager::WalletStorageManager;
 pub use sqlx_impl::trx_token::TrxToken;
-pub use traits::{StorageProvider, StorageReader, StorageReaderWriter};
+pub use traits::{StorageProvider, StorageReader, StorageReaderWriter, WalletStorageProvider};
 
 use crate::error::{WalletError, WalletResult};
 use std::time::Duration;

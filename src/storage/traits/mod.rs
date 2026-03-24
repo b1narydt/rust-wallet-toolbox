@@ -8,7 +8,9 @@
 pub mod provider;
 pub mod reader;
 pub mod reader_writer;
+pub mod wallet_provider;
 
 pub use provider::StorageProvider;
 pub use reader::StorageReader;
 pub use reader_writer::StorageReaderWriter;
+pub use wallet_provider::WalletStorageProvider;
