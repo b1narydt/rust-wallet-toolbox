@@ -17,6 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: StorageClient** - Implement StorageClient struct with rpc_call and all ~25 method stubs
 - [ ] **Phase 4: Manager Integration** - Wire StorageClient into WalletStorageManager as backup provider
 - [ ] **Phase 5: Integration Testing** - Prove cross-language wire compatibility against live TS server
+- [ ] **Phase 6: PR Submission** - Fork repo, clean branch, create professional pull request to b1narydt/rust-wallet-toolbox
 
 ## Phase Details
 
@@ -75,10 +76,21 @@ Decimal phases appear between their surrounding integers in numeric order.
   5. A full payment internalize flow completes end-to-end with `StorageClient` as the backup provider
 **Plans**: TBD
 
+### Phase 6: PR Submission
+**Goal**: Fork the repo, prepare a clean branch with only implementation changes (no planning docs), and create a professional pull request to b1narydt/rust-wallet-toolbox
+**Depends on**: Phase 5
+**Requirements**: PR-01, PR-02, PR-03, PR-04
+**Success Criteria** (what must be TRUE):
+  1. Fork exists under user's GitHub account with `feat/storage-client` branch pushed
+  2. Branch contains only implementation files (no `.planning/` directory) with clean commit history
+  3. PR is created against b1narydt/rust-wallet-toolbox main branch with professional description covering what was added, how it was tested, and TS parity evidence
+  4. All existing repo tests still pass alongside new StorageClient tests
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -87,3 +99,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 3. StorageClient | 0/? | Not started | - |
 | 4. Manager Integration | 0/? | Not started | - |
 | 5. Integration Testing | 0/? | Not started | - |
+| 6. PR Submission | 0/? | Not started | - |

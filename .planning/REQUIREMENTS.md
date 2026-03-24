@@ -43,6 +43,13 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 - [ ] **TEST-04**: Sync chunk round-trip (getSyncChunk + processSyncChunk) works against live TS server
 - [ ] **TEST-05**: Full payment internalize flow works end-to-end with StorageClient as backup provider
 
+### PR Submission
+
+- [ ] **PR-01**: Fork created under user's GitHub account with feat/storage-client branch
+- [ ] **PR-02**: Branch contains only implementation files, no .planning/ docs or AI artifacts
+- [ ] **PR-03**: PR created with professional description, test evidence, and TS parity documentation
+- [ ] **PR-04**: All existing repo tests pass alongside new StorageClient code
+
 ## Future Requirements
 
 ### Rust Storage Server Interop
@@ -91,10 +98,14 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 | TEST-03 | Phase 5 | Pending |
 | TEST-04 | Phase 5 | Pending |
 | TEST-05 | Phase 5 | Pending |
+| PR-01 | Phase 6 | Pending |
+| PR-02 | Phase 6 | Pending |
+| PR-03 | Phase 6 | Pending |
+| PR-04 | Phase 6 | Pending |
 
 **Coverage:**
-- v1 requirements: 21 total
-- Mapped to phases: 21
+- v1 requirements: 25 total
+- Mapped to phases: 25
 - Unmapped: 0
 
 ---
