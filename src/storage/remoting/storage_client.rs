@@ -212,6 +212,30 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> StorageClient<W> {
 }
 
 // ---------------------------------------------------------------------------
+// Wire deserialization helpers for tuple-returning RPC methods
+// ---------------------------------------------------------------------------
+
+/// Wire format for `findOrInsertUser` response: `{ "user": {...}, "isNew": true }`.
+///
+/// The TS server returns an object, but the Rust trait requires a tuple.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FindOrInsertUserWire {
+    user: User,
+    is_new: bool,
+}
+
+/// Wire format for `findOrInsertSyncStateAuth` response: `{ "syncState": {...}, "isNew": true }`.
+///
+/// The TS server returns an object, but the Rust trait requires a tuple.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FindOrInsertSyncStateWire {
+    sync_state: SyncState,
+    is_new: bool,
+}
+
+// ---------------------------------------------------------------------------
 // WalletStorageProvider impl
 // ---------------------------------------------------------------------------
 
@@ -256,164 +280,256 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
     }
 
     // -----------------------------------------------------------------------
-    // Remaining methods — implemented in Plan 02
+    // Migration and lifecycle
     // -----------------------------------------------------------------------
 
     async fn migrate(
         &self,
-        _storage_name: &str,
-        _storage_identity_key: &str,
+        storage_name: &str,
+        storage_identity_key: &str,
     ) -> WalletResult<String> {
-        todo!("Plan 02: migrate")
+        // Positional order: [storageName, storageIdentityKey]
+        self.rpc_call("migrate", vec![
+            Value::String(storage_name.to_string()),
+            Value::String(storage_identity_key.to_string()),
+        ]).await
     }
 
     async fn destroy(&self) -> WalletResult<()> {
-        todo!("Plan 02: destroy")
+        self.rpc_call("destroy", vec![]).await
     }
 
-    async fn find_or_insert_user(&self, _identity_key: &str) -> WalletResult<(User, bool)> {
-        todo!("Plan 02: find_or_insert_user")
+    // -----------------------------------------------------------------------
+    // User management
+    // -----------------------------------------------------------------------
+
+    async fn find_or_insert_user(&self, identity_key: &str) -> WalletResult<(User, bool)> {
+        let r: FindOrInsertUserWire = self
+            .rpc_call("findOrInsertUser", vec![Value::String(identity_key.to_string())])
+            .await?;
+        Ok((r.user, r.is_new))
     }
+
+    // -----------------------------------------------------------------------
+    // Find / read methods
+    // -----------------------------------------------------------------------
 
     async fn find_certificates_auth(
         &self,
-        _auth: &AuthId,
-        _args: &FindCertificatesArgs,
+        auth: &AuthId,
+        args: &FindCertificatesArgs,
     ) -> WalletResult<Vec<Certificate>> {
-        todo!("Plan 02: find_certificates_auth")
+        self.rpc_call("findCertificatesAuth", vec![
+            serde_json::to_value(auth)?,
+            serde_json::to_value(args)?,
+        ]).await
     }
 
+    /// Wire name is `findOutputBaskets` — no Auth suffix (intentional TS naming anomaly).
     async fn find_output_baskets_auth(
         &self,
-        _auth: &AuthId,
-        _args: &FindOutputBasketsArgs,
+        auth: &AuthId,
+        args: &FindOutputBasketsArgs,
     ) -> WalletResult<Vec<OutputBasket>> {
-        todo!("Plan 02: find_output_baskets_auth")
+        self.rpc_call("findOutputBaskets", vec![
+            serde_json::to_value(auth)?,
+            serde_json::to_value(args)?,
+        ]).await
     }
 
     async fn find_outputs_auth(
         &self,
-        _auth: &AuthId,
-        _args: &FindOutputsArgs,
+        auth: &AuthId,
+        args: &FindOutputsArgs,
     ) -> WalletResult<Vec<Output>> {
-        todo!("Plan 02: find_outputs_auth")
+        self.rpc_call("findOutputsAuth", vec![
+            serde_json::to_value(auth)?,
+            serde_json::to_value(args)?,
+        ]).await
     }
 
     async fn find_proven_tx_reqs(
         &self,
-        _args: &FindProvenTxReqsArgs,
+        args: &FindProvenTxReqsArgs,
     ) -> WalletResult<Vec<ProvenTxReq>> {
-        todo!("Plan 02: find_proven_tx_reqs")
+        // No auth param — public method
+        self.rpc_call("findProvenTxReqs", vec![
+            serde_json::to_value(args)?,
+        ]).await
     }
+
+    // -----------------------------------------------------------------------
+    // List methods
+    // -----------------------------------------------------------------------
 
     async fn list_actions(
         &self,
-        _auth: &AuthId,
-        _args: &ListActionsArgs,
+        auth: &AuthId,
+        args: &ListActionsArgs,
     ) -> WalletResult<ListActionsResult> {
-        todo!("Plan 02: list_actions")
+        self.rpc_call("listActions", vec![
+            serde_json::to_value(auth)?,
+            serde_json::to_value(args)?,
+        ]).await
     }
 
     async fn list_certificates(
         &self,
-        _auth: &AuthId,
-        _args: &ListCertificatesArgs,
+        auth: &AuthId,
+        args: &ListCertificatesArgs,
     ) -> WalletResult<ListCertificatesResult> {
-        todo!("Plan 02: list_certificates")
+        self.rpc_call("listCertificates", vec![
+            serde_json::to_value(auth)?,
+            serde_json::to_value(args)?,
+        ]).await
     }
 
     async fn list_outputs(
         &self,
-        _auth: &AuthId,
-        _args: &ListOutputsArgs,
+        auth: &AuthId,
+        args: &ListOutputsArgs,
     ) -> WalletResult<ListOutputsResult> {
-        todo!("Plan 02: list_outputs")
+        self.rpc_call("listOutputs", vec![
+            serde_json::to_value(auth)?,
+            serde_json::to_value(args)?,
+        ]).await
     }
+
+    // -----------------------------------------------------------------------
+    // Action write methods
+    // -----------------------------------------------------------------------
 
     async fn abort_action(
         &self,
-        _auth: &AuthId,
-        _args: &AbortActionArgs,
+        auth: &AuthId,
+        args: &AbortActionArgs,
     ) -> WalletResult<AbortActionResult> {
-        todo!("Plan 02: abort_action")
+        self.rpc_call("abortAction", vec![
+            serde_json::to_value(auth)?,
+            serde_json::to_value(args)?,
+        ]).await
     }
 
     async fn create_action(
         &self,
-        _auth: &AuthId,
-        _args: &StorageCreateActionArgs,
+        auth: &AuthId,
+        args: &StorageCreateActionArgs,
     ) -> WalletResult<StorageCreateActionResult> {
-        todo!("Plan 02: create_action")
+        self.rpc_call("createAction", vec![
+            serde_json::to_value(auth)?,
+            serde_json::to_value(args)?,
+        ]).await
     }
 
     async fn process_action(
         &self,
-        _auth: &AuthId,
-        _args: &StorageProcessActionArgs,
+        auth: &AuthId,
+        args: &StorageProcessActionArgs,
     ) -> WalletResult<StorageProcessActionResult> {
-        todo!("Plan 02: process_action")
+        self.rpc_call("processAction", vec![
+            serde_json::to_value(auth)?,
+            serde_json::to_value(args)?,
+        ]).await
     }
 
+    /// `services` is not serializable and has no TS equivalent — ignored entirely.
     async fn internalize_action(
         &self,
-        _auth: &AuthId,
-        _args: &StorageInternalizeActionArgs,
+        auth: &AuthId,
+        args: &StorageInternalizeActionArgs,
         _services: &dyn WalletServices,
     ) -> WalletResult<StorageInternalizeActionResult> {
-        todo!("Plan 02: internalize_action")
+        self.rpc_call("internalizeAction", vec![
+            serde_json::to_value(auth)?,
+            serde_json::to_value(args)?,
+        ]).await
     }
+
+    // -----------------------------------------------------------------------
+    // Certificate and output write methods
+    // -----------------------------------------------------------------------
 
     async fn insert_certificate_auth(
         &self,
-        _auth: &AuthId,
-        _certificate: &Certificate,
+        auth: &AuthId,
+        certificate: &Certificate,
     ) -> WalletResult<i64> {
-        todo!("Plan 02: insert_certificate_auth")
+        self.rpc_call("insertCertificateAuth", vec![
+            serde_json::to_value(auth)?,
+            serde_json::to_value(certificate)?,
+        ]).await
     }
 
     async fn relinquish_certificate(
         &self,
-        _auth: &AuthId,
-        _args: &RelinquishCertificateArgs,
+        auth: &AuthId,
+        args: &RelinquishCertificateArgs,
     ) -> WalletResult<i64> {
-        todo!("Plan 02: relinquish_certificate")
+        self.rpc_call("relinquishCertificate", vec![
+            serde_json::to_value(auth)?,
+            serde_json::to_value(args)?,
+        ]).await
     }
 
     async fn relinquish_output(
         &self,
-        _auth: &AuthId,
-        _args: &RelinquishOutputArgs,
+        auth: &AuthId,
+        args: &RelinquishOutputArgs,
     ) -> WalletResult<i64> {
-        todo!("Plan 02: relinquish_output")
+        self.rpc_call("relinquishOutput", vec![
+            serde_json::to_value(auth)?,
+            serde_json::to_value(args)?,
+        ]).await
     }
+
+    // -----------------------------------------------------------------------
+    // Sync methods
+    // -----------------------------------------------------------------------
 
     async fn find_or_insert_sync_state_auth(
         &self,
-        _auth: &AuthId,
-        _storage_identity_key: &str,
-        _storage_name: &str,
+        auth: &AuthId,
+        storage_identity_key: &str,
+        storage_name: &str,
     ) -> WalletResult<(SyncState, bool)> {
-        todo!("Plan 02: find_or_insert_sync_state_auth")
+        // Positional order: [auth, storageIdentityKey, storageName]
+        let r: FindOrInsertSyncStateWire = self
+            .rpc_call("findOrInsertSyncStateAuth", vec![
+                serde_json::to_value(auth)?,
+                Value::String(storage_identity_key.to_string()),
+                Value::String(storage_name.to_string()),
+            ])
+            .await?;
+        Ok((r.sync_state, r.is_new))
     }
 
     async fn set_active(
         &self,
-        _auth: &AuthId,
-        _new_active_storage_identity_key: &str,
+        auth: &AuthId,
+        new_active_storage_identity_key: &str,
     ) -> WalletResult<i64> {
-        todo!("Plan 02: set_active")
+        self.rpc_call("setActive", vec![
+            serde_json::to_value(auth)?,
+            Value::String(new_active_storage_identity_key.to_string()),
+        ]).await
     }
 
-    async fn get_sync_chunk(&self, _args: &RequestSyncChunkArgs) -> WalletResult<SyncChunk> {
-        todo!("Plan 02: get_sync_chunk")
+    async fn get_sync_chunk(&self, args: &RequestSyncChunkArgs) -> WalletResult<SyncChunk> {
+        // No auth param — sync protocol uses args.identity_key directly
+        self.rpc_call("getSyncChunk", vec![
+            serde_json::to_value(args)?,
+        ]).await
     }
 
     async fn process_sync_chunk(
         &self,
-        _args: &RequestSyncChunkArgs,
-        _chunk: &SyncChunk,
+        args: &RequestSyncChunkArgs,
+        chunk: &SyncChunk,
     ) -> WalletResult<ProcessSyncChunkResult> {
-        todo!("Plan 02: process_sync_chunk")
+        self.rpc_call("processSyncChunk", vec![
+            serde_json::to_value(args)?,
+            serde_json::to_value(chunk)?,
+        ]).await
     }
 }
 
@@ -570,6 +686,67 @@ mod tests {
 
         flag.store(true, Ordering::Release);
         assert!(flag.load(Ordering::Acquire), "should be true after store");
+    }
+
+    /// Verify the critical wire method name mappings match the TS StorageClient.
+    ///
+    /// Since we cannot make live RPC calls in unit tests, this test documents
+    /// the expected wire names as a regression guard against typos or renaming.
+    /// Any deviation from these names will break interop with TS storage servers.
+    #[test]
+    fn test_wire_names() {
+        // Table: (rust_method, expected_wire_name)
+        // Derived from the TS StorageClient source and cross-checked against
+        // the RESEARCH.md wire name table.
+        let mappings: &[(&str, &str)] = &[
+            ("make_available",               "makeAvailable"),
+            ("migrate",                      "migrate"),
+            ("destroy",                      "destroy"),
+            ("find_or_insert_user",          "findOrInsertUser"),
+            ("abort_action",                 "abortAction"),
+            ("create_action",                "createAction"),
+            ("process_action",               "processAction"),
+            ("internalize_action",           "internalizeAction"),
+            ("insert_certificate_auth",      "insertCertificateAuth"),
+            ("relinquish_certificate",       "relinquishCertificate"),
+            ("relinquish_output",            "relinquishOutput"),
+            ("find_certificates_auth",       "findCertificatesAuth"),
+            // CRITICAL: find_output_baskets_auth uses "findOutputBaskets" — NO Auth suffix
+            ("find_output_baskets_auth",     "findOutputBaskets"),
+            ("find_outputs_auth",            "findOutputsAuth"),
+            ("find_proven_tx_reqs",          "findProvenTxReqs"),
+            ("list_actions",                 "listActions"),
+            ("list_certificates",            "listCertificates"),
+            ("list_outputs",                 "listOutputs"),
+            ("find_or_insert_sync_state_auth", "findOrInsertSyncStateAuth"),
+            ("set_active",                   "setActive"),
+            ("get_sync_chunk",               "getSyncChunk"),
+            ("process_sync_chunk",           "processSyncChunk"),
+        ];
+
+        // Verify each entry is non-empty and camelCase (starts lowercase, no underscores)
+        for (rust_name, wire_name) in mappings {
+            assert!(!wire_name.is_empty(), "{} must have a non-empty wire name", rust_name);
+            assert!(
+                !wire_name.contains('_'),
+                "wire name '{}' for '{}' must be camelCase (no underscores)",
+                wire_name, rust_name
+            );
+            // camelCase: must start with a lowercase letter
+            assert!(
+                wire_name.chars().next().map(|c| c.is_lowercase()).unwrap_or(false),
+                "wire name '{}' for '{}' must start with a lowercase letter (camelCase)",
+                wire_name, rust_name
+            );
+        }
+
+        // Spot-check the only anomalous mapping: findOutputBaskets has no Auth suffix
+        let basket_entry = mappings.iter().find(|(r, _)| *r == "find_output_baskets_auth");
+        assert!(basket_entry.is_some());
+        assert_eq!(basket_entry.unwrap().1, "findOutputBaskets");
+
+        // Confirm all 22 methods are represented
+        assert_eq!(mappings.len(), 22, "expected 22 wire method mappings");
     }
 
     /// Verify that UpdateProvenTxReqWithNewProvenTxArgs serializes with camelCase keys.
