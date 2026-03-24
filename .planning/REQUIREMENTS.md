@@ -70,33 +70,33 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WIRE-01 | — | Pending |
-| WIRE-02 | — | Pending |
-| WIRE-03 | — | Pending |
-| WIRE-04 | — | Pending |
-| TRAIT-01 | — | Pending |
-| TRAIT-02 | — | Pending |
-| TRAIT-03 | — | Pending |
-| CLIENT-01 | — | Pending |
-| CLIENT-02 | — | Pending |
-| CLIENT-03 | — | Pending |
-| CLIENT-04 | — | Pending |
-| CLIENT-05 | — | Pending |
-| CLIENT-06 | — | Pending |
-| MGR-01 | — | Pending |
-| MGR-02 | — | Pending |
-| MGR-03 | — | Pending |
-| TEST-01 | — | Pending |
-| TEST-02 | — | Pending |
-| TEST-03 | — | Pending |
-| TEST-04 | — | Pending |
-| TEST-05 | — | Pending |
+| WIRE-01 | Phase 1 | Pending |
+| WIRE-02 | Phase 1 | Pending |
+| WIRE-03 | Phase 1 | Pending |
+| WIRE-04 | Phase 1 | Pending |
+| TRAIT-01 | Phase 2 | Pending |
+| TRAIT-02 | Phase 2 | Pending |
+| TRAIT-03 | Phase 2 | Pending |
+| CLIENT-01 | Phase 3 | Pending |
+| CLIENT-02 | Phase 3 | Pending |
+| CLIENT-03 | Phase 3 | Pending |
+| CLIENT-04 | Phase 3 | Pending |
+| CLIENT-05 | Phase 3 | Pending |
+| CLIENT-06 | Phase 3 | Pending |
+| MGR-01 | Phase 4 | Pending |
+| MGR-02 | Phase 4 | Pending |
+| MGR-03 | Phase 4 | Pending |
+| TEST-01 | Phase 5 | Pending |
+| TEST-02 | Phase 5 | Pending |
+| TEST-03 | Phase 5 | Pending |
+| TEST-04 | Phase 5 | Pending |
+| TEST-05 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 21 total
-- Mapped to phases: 0
-- Unmapped: 21
+- Mapped to phases: 21
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-24*
-*Last updated: 2026-03-24 after initial definition*
+*Last updated: 2026-03-24 after roadmap creation — all requirements mapped*
