@@ -1434,16 +1434,23 @@ impl WalletStorageManager {
     /// `user.active_storage`. This prevents the reader's active_storage from clobbering
     /// the writer's during sync (Pitfall 5 from the research).
     ///
-    /// Also validates that the reader's identity key matches this manager's identity key;
-    /// otherwise returns `WERR_UNAUTHORIZED`.
+    /// `reader_identity_key` must match this manager's identity key; otherwise returns
+    /// `WERR_UNAUTHORIZED`. This mirrors the TS WalletStorageManager.syncFromReader check.
     pub async fn sync_from_reader(
         &self,
+        reader_identity_key: &str,
         writer: &dyn WalletStorageProvider,
         reader: &dyn WalletStorageProvider,
         writer_settings: &Settings,
         reader_settings: &Settings,
         prog_log: Option<&(dyn Fn(&str) -> String + Send + Sync)>,
     ) -> WalletResult<(i64, i64, String)> {
+        if reader_identity_key != self.identity_key {
+            return Err(WalletError::Unauthorized(
+                "sync_from_reader: reader identity key does not match manager identity key"
+                    .to_string(),
+            ));
+        }
         let auth = self.get_auth(false).await?;
         let mut total_inserts: i64 = 0;
         let mut total_updates: i64 = 0;

@@ -521,6 +521,7 @@ mod manager_tests {
 
         let result = manager
             .sync_from_reader(
+                IDENTITY_KEY,
                 writer_provider.as_ref(),
                 reader_provider.as_ref(),
                 &writer_settings,
@@ -533,6 +534,42 @@ mod manager_tests {
             result.is_ok(),
             "sync_from_reader should succeed when identity keys match: {:?}",
             result.err()
+        );
+    }
+
+    // Test: sync_from_reader rejects mismatched identity_key with WERR_UNAUTHORIZED
+    #[tokio::test]
+    async fn test_sync_from_reader_unauthorized() {
+        let reader_provider = create_provider().await.unwrap();
+        let writer_provider = create_provider().await.unwrap();
+        let reader_settings = reader_provider.make_available().await.unwrap();
+        let writer_settings = writer_provider.make_available().await.unwrap();
+        let _ = reader_provider.find_or_insert_user(IDENTITY_KEY).await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(writer_provider.clone()),
+            vec![],
+        );
+        manager.make_available().await.unwrap();
+
+        let wrong_key = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let result = manager
+            .sync_from_reader(
+                wrong_key,
+                writer_provider.as_ref(),
+                reader_provider.as_ref(),
+                &writer_settings,
+                &reader_settings,
+                None,
+            )
+            .await;
+
+        assert!(result.is_err(), "sync_from_reader should reject mismatched identity key");
+        let err = result.unwrap_err();
+        let err_str = err.to_string();
+        assert!(
+            err_str.contains("WERR_UNAUTHORIZED"),
+            "Expected WERR_UNAUTHORIZED, got: {err_str}"
         );
     }
 
