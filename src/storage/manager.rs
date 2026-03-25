@@ -62,11 +62,17 @@ pub fn make_request_sync_chunk_args(
     writer_storage_identity_key: &str,
 ) -> WalletResult<RequestSyncChunkArgs> {
     // Parse the stored JSON sync_map to extract per-entity offsets.
-    let sync_map: SyncMap = serde_json::from_str(&sync_state.sync_map).map_err(|e| {
-        WalletError::Internal(format!(
-            "make_request_sync_chunk_args: failed to parse sync_map JSON: {e}"
-        ))
-    })?;
+    // A newly-inserted SyncState has sync_map = "{}" which cannot deserialize
+    // into SyncMap (all fields required). Fall back to a fresh SyncMap in that case.
+    let sync_map: SyncMap = if sync_state.sync_map.is_empty() || sync_state.sync_map == "{}" {
+        SyncMap::new()
+    } else {
+        serde_json::from_str(&sync_state.sync_map).map_err(|e| {
+            WalletError::Internal(format!(
+                "make_request_sync_chunk_args: failed to parse sync_map JSON: {e}"
+            ))
+        })?
+    };
 
     // Build offsets from each EntitySyncMap's count field.
     // The `count` tracks cumulative items received in the current sync window
@@ -874,7 +880,22 @@ impl WalletStorageManager {
 
     pub async fn find_or_insert_user(&self, identity_key: &str) -> WalletResult<(User, bool)> {
         let active = self.get_active().await?;
-        active.find_or_insert_user(identity_key).await
+        let result = active.find_or_insert_user(identity_key).await?;
+
+        // Consistency guard: if the manager already has a cached user_id for this identity,
+        // verify it matches the returned record. A mismatch indicates a storage corruption
+        // or identity key collision that must not silently proceed.
+        if let Ok(cached_auth) = self.get_auth(false).await {
+            if let Some(cached_id) = cached_auth.user_id {
+                if result.0.user_id != cached_id {
+                    return Err(WalletError::Internal(
+                        "find_or_insert_user: returned user_id does not match cached user_id — identity consistency violation".to_string(),
+                    ));
+                }
+            }
+        }
+
+        Ok(result)
     }
 
     pub async fn get_sync_chunk(
