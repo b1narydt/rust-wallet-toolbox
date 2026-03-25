@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: StorageClient** - Implement StorageClient struct with rpc_call, all ~25 WalletStorageProvider methods, and updateProvenTxReqWithNewProvenTx (completed 2026-03-24)
 - [x] **Phase 4: Manager Rewrite** - Multi-provider WalletStorageManager with ManagedStorage, sync loops, and hierarchical locking (completed 2026-03-25)
 - [x] **Phase 5: Manager Orchestration** - setActive conflict resolution, updateBackups fan-out, reprove proof re-validation (completed 2026-03-25)
-- [ ] **Phase 6: Integration Testing** - Prove cross-language wire compatibility against live TS server
+- [x] **Phase 6: Integration Testing** - Prove cross-language wire compatibility against live TS server (completed 2026-03-25)
 - [ ] **Phase 7: PR Submission** - Fork repo, clean branch, create professional pull request to b1narydt/rust-wallet-toolbox
 
 ## Phase Details
@@ -110,9 +110,9 @@ Plans:
   5. A full payment internalize flow completes end-to-end with `StorageClient` as the backup provider
   6. `syncToWriter()` loop completes a full sync from local storage to remote StorageClient
   7. `updateBackups()` successfully syncs to a StorageClient backup
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
-- [ ] 06-01-PLAN.md — Direct StorageClient tests (auth, makeAvailable, findOrInsertUser, sync chunk), full wallet with StorageClient backup, syncToWriter + updateBackups to remote
+- [x] 06-01-PLAN.md — Direct StorageClient tests (auth, makeAvailable, findOrInsertUser, sync chunk), full wallet with StorageClient backup, syncToWriter + updateBackups to remote
 
 ### Phase 7: PR Submission
 **Goal**: Fork the repo, prepare a clean branch with only implementation changes (no planning docs), and create a professional pull request to b1narydt/rust-wallet-toolbox
@@ -137,5 +137,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 3. StorageClient | 2/2 | Complete   | 2026-03-24 |
 | 4. Manager Rewrite | 4/4 | Complete   | 2026-03-25 |
 | 5. Manager Orchestration | 1/1 | Complete   | 2026-03-25 |
-| 6. Integration Testing | 0/1 | Not started | - |
+| 6. Integration Testing | 1/1 | Complete | 2026-03-25 |
 | 7. PR Submission | 0/? | Not started | - |
