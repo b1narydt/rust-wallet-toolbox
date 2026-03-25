@@ -102,6 +102,10 @@ Recent decisions affecting current work:
 - AuthFetch in bsv-sdk 0.1.75 is generic over `W: WalletInterface + Clone + 'static`, takes `&mut self`
 - TS StorageClient has ~25 methods, all one-liner pass-throughs to rpcCall
 
+### Roadmap Evolution
+
+- Phase 06.1 inserted after Phase 06: Integration Test Parity — fill all gaps from TS parity audit (URGENT)
+
 ### Blockers/Concerns
 
 - [Phase 5]: ORCH-02 through ORCH-05 were already implemented in Phase 4 — Phase 5 scope should be reduced to ORCH-01 (setActive orchestration) only
