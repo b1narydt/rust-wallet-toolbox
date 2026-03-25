@@ -13,7 +13,7 @@ This milestone delivers full TypeScript WalletStorageProvider parity in Rust —
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Wire Format** - Fix serde_datetime and Vec<u8> serialization to match TS server expectations (completed 2026-03-24)
-- [ ] **Phase 2: Trait Definition** - Define WalletStorageProvider trait and blanket impl for local providers
+- [x] **Phase 2: Trait Definition** - Define WalletStorageProvider trait and blanket impl for local providers (completed 2026-03-24)
 - [x] **Phase 3: StorageClient** - Implement StorageClient struct with rpc_call, all ~25 WalletStorageProvider methods, and updateProvenTxReqWithNewProvenTx (completed 2026-03-24)
 - [x] **Phase 4: Manager Rewrite** - Multi-provider WalletStorageManager with ManagedStorage, sync loops, and hierarchical locking (completed 2026-03-25)
 - [ ] **Phase 5: Manager Orchestration** - setActive conflict resolution, updateBackups fan-out, reprove proof re-validation
@@ -43,9 +43,9 @@ Plans:
   1. `WalletStorageProvider` trait compiles with ~25 async methods matching the TS WalletStorageProvider interface hierarchy
   2. Existing `SqlxProvider` satisfies `WalletStorageProvider` via the blanket impl without any modification to its source file
   3. `is_storage_provider()` returns `true` from the blanket impl and can be overridden to return `false` on remote clients
-**Plans:** 1 plans
+**Plans:** 1/1 plans complete
 Plans:
-- [ ] 02-01-PLAN.md — Define WalletStorageProvider trait, blanket impl over StorageProvider, supporting types (AuthId extension, RequestSyncChunkArgs)
+- [x] 02-01-PLAN.md — Define WalletStorageProvider trait, blanket impl over StorageProvider, supporting types (AuthId extension, RequestSyncChunkArgs)
 
 ### Phase 3: StorageClient
 **Goal**: StorageClient<W> compiles, passes JSON-RPC envelope tests, and implements every WalletStorageProvider method plus updateProvenTxReqWithNewProvenTx with correct wire method names
@@ -85,16 +85,17 @@ Plans:
 - [ ] 04-04-PLAN.md — Gap closure: WERR_UNAUTHORIZED guard in sync_from_reader (identity key mismatch check)
 
 ### Phase 5: Manager Orchestration
-**Goal**: Complete WalletStorageManager orchestration — setActive conflict resolution, updateBackups fan-out, reprove proof re-validation, and runtime introspection
+**Goal**: Complete WalletStorageManager orchestration — setActive conflict resolution is the remaining work; updateBackups, reprove, and getStores were implemented ahead of schedule in Phase 4
 **Depends on**: Phase 4
 **Requirements**: ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05
 **Success Criteria** (what must be TRUE):
   1. `setActive(auth, storageIdentityKey)` performs full conflict resolution: detect conflicting actives, merge state via syncToWriter, update user.activeStorage across all stores, re-partition
-  2. `updateBackups()` iterates all backup stores calling syncToWriter, with error handling per-backup (one failure doesn't block others)
-  3. `reproveHeader()` re-validates proofs against orphaned block headers using ChainTracker + getMerklePath, updates affected ProvenTx records
-  4. `reproveProven()` re-validates individual ProvenTx proofs against current chain state
-  5. `getStores()` returns `WalletStorageInfo` for all managed providers including status (isActive, isEnabled, isBackup, isConflicting, endpointUrl)
+  2. `updateBackups()` iterates all backup stores calling syncToWriter, with error handling per-backup (one failure doesn't block others) — **already implemented in Phase 4 (manager.rs:1522)**
+  3. `reproveHeader()` re-validates proofs against orphaned block headers using ChainTracker + getMerklePath, updates affected ProvenTx records — **already implemented in Phase 4 (manager.rs:1297)**
+  4. `reproveProven()` re-validates individual ProvenTx proofs against current chain state — **already implemented in Phase 4 (manager.rs:1213)**
+  5. `getStores()` returns `WalletStorageInfo` for all managed providers including status (isActive, isEnabled, isBackup, isConflicting, endpointUrl) — **already implemented in Phase 4 (manager.rs:1116)**
 **Plans**: TBD
+**Note**: Only ORCH-01 (setActive) requires new implementation. ORCH-02-05 were built during Phase 4 execution and need only verification.
 
 ### Phase 6: Integration Testing
 **Goal**: Cross-language wire compatibility with the live TypeScript storage server at storage.babbage.systems is proven by passing tests
@@ -129,7 +130,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Wire Format | 1/1 | Complete | 2026-03-24 |
-| 2. Trait Definition | 0/1 | Planning complete | - |
+| 2. Trait Definition | 1/1 | Complete | 2026-03-24 |
 | 3. StorageClient | 2/2 | Complete   | 2026-03-24 |
 | 4. Manager Rewrite | 4/4 | Complete   | 2026-03-25 |
 | 5. Manager Orchestration | 0/? | Not started | - |

@@ -5,13 +5,13 @@ milestone_name: milestone
 status: executing
 stopped_at: Completed 04-manager-rewrite/04-04-PLAN.md
 last_updated: "2026-03-25T01:04:29.768Z"
-last_activity: 2026-03-24 — Completed Phase 04 Plan 01 (WalletStorageManager foundation rewrite)
+last_activity: 2026-03-25 — Completed Phase 04 (all 4 plans including gap closure 04-04)
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 8
   completed_plans: 8
-  percent: 25
+  percent: 57
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Wire-compatible remote storage that lets a Rust wallet sync with TypeScript storage servers
-**Current focus:** Phase 1 — Wire Format
+**Current focus:** Phase 5 — Manager Orchestration
 
 ## Current Position
 
-Phase: 4 of 7 (Manager Rewrite)
-Plan: 1 of ? in current phase — Plan 01 complete
-Status: In progress
-Last activity: 2026-03-24 — Completed Phase 04 Plan 01 (WalletStorageManager foundation rewrite)
+Phase: 5 of 7 (Manager Orchestration)
+Plan: 0 of ? in current phase — not yet planned
+Status: Ready to plan
+Last activity: 2026-03-25 — Completed Phase 04 (all 4 plans including gap closure 04-04)
 
-Progress: [██░░░░░░░░] 25%
+Progress: [██████░░░░] 57%
 
 ## Performance Metrics
 
@@ -89,7 +89,7 @@ Recent decisions affecting current work:
 
 ### Codebase Context (from pre-roadmap research)
 
-- `src/storage/remoting/` directory needs to be created
+- `src/storage/remoting/` directory exists with storage_client.rs (777 lines)
 - `SyncChunk`, `ProcessSyncChunkResult`, `SyncMap` already defined in `src/storage/sync/`
 - `Settings` table struct has Serialize/Deserialize with serde_datetime handling
 - `AuthId` struct exists at `src/wallet/types.rs`
@@ -98,8 +98,8 @@ Recent decisions affecting current work:
 
 ### Blockers/Concerns
 
-- [Phase 3]: `reset_session()` path uncertain — AuthFetch peers field may not be pub; may need to recreate entire AuthFetch instance. Verify bsv-sdk-0.1.75 source before implementing.
-- [Phase 2]: Blanket impl feasibility — if any WalletStorageProvider method signature differs from StorageProvider, per-type impls will be needed. Audit overlap before writing.
+- [Phase 5]: ORCH-02 through ORCH-05 were already implemented in Phase 4 — Phase 5 scope should be reduced to ORCH-01 (setActive orchestration) only
+- [Phase 5]: manager-level set_active() needs conflict resolution logic not present at provider level
 
 ### Pending Todos
 

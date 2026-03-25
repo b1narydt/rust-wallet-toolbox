@@ -1,31 +1,14 @@
 # Deferred Items — Phase 04 Manager Rewrite
 
-## Plan 03 Execution — 2026-03-25
+## Resolved
 
-### Pre-existing Test Failures (out of scope for Plan 03)
+### ProcessSyncChunkResult.done bug (RESOLVED by Plan 04-02)
 
-The following tests exist in `tests/manager_tests.rs` from pre-Plan-03 working tree modifications.
-They reference Plan 02 methods (`sync_to_writer`, `sync_from_reader`) that have a bug
-where `ProcessSyncChunkResult.done` is never set to `true`, causing `sync_to_writer` to
-loop infinitely.
+**Originally reported by Plan 03 agent** (which ran in parallel with Plan 02).
 
-**Affected tests:**
-- `test_sync_to_writer` — hangs (infinite loop, `done` never set)
-- `test_sync_from_reader_matching_identity` — hangs (same root cause)
-- `test_sync_prog_log` — hangs (same root cause)
+Plan 04-02 fixed this in commit `de08be4`:
+- Added chunk-empty detection in blanket `process_sync_chunk` at `wallet_provider.rs:929`: `result.done = chunk_is_empty`
+- Added SyncState.when high-watermark persistence to prevent re-fetching
+- All sync tests pass: `test_sync_to_writer`, `test_sync_from_reader_matching_identity`, `test_sync_prog_log`
 
-**Root cause:** `process_sync_chunk()` in `src/storage/sync/process_sync_chunk.rs` does not
-set `ProcessSyncChunkResult.done = true` when the chunk contains no data (i.e., sync is
-complete). The `get_sync_chunk` implementation needs to signal completion by setting
-`done = true` when no more data is available.
-
-**Fix needed in Plan 02:** Add logic to set `done = true` in `ProcessSyncChunkResult`
-when `get_sync_chunk` returns an empty chunk (no entities and no `user` change).
-The blanket `process_sync_chunk` in `wallet_provider.rs` should propagate this flag from
-the chunk metadata or detect it from the empty result.
-
-**Files to fix:**
-- `src/storage/sync/process_sync_chunk.rs` — set `result.done = true` when no entities processed
-- `src/storage/traits/wallet_provider.rs` — ensure done flag propagates through blanket impl
-
-**Not fixed in Plan 03** — out of scope per SCOPE BOUNDARY rule.
+No remaining deferred items for Phase 04.
