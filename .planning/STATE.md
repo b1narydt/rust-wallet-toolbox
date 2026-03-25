@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-manager-rewrite/04-02-PLAN.md
-last_updated: "2026-03-25T00:41:42.395Z"
+stopped_at: Completed 04-manager-rewrite/04-04-PLAN.md
+last_updated: "2026-03-25T01:01:17.779Z"
 last_activity: 2026-03-24 — Completed Phase 04 Plan 01 (WalletStorageManager foundation rewrite)
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 8
+  completed_plans: 8
   percent: 25
 ---
 
@@ -53,6 +53,7 @@ Progress: [██░░░░░░░░] 25%
 | Phase 04-manager-rewrite P01 | ~4h | 2 tasks | 26 files |
 | Phase 04-manager-rewrite P03 | 20min | 2 tasks | 5 files |
 | Phase 04-manager-rewrite P02 | 52min | 2 tasks | 5 files |
+| Phase 04-manager-rewrite P04 | 5min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,7 @@ Recent decisions affecting current work:
 - [Phase 04-manager-rewrite]: done=true detected at WalletStorageProvider blanket impl level, not free process_sync_chunk function — blanket impl has DB access for SyncState updates
 - [Phase 04-manager-rewrite]: SyncState.when advanced to now() after each chunk to prevent re-fetching same data on subsequent sync iterations
 - [Phase 04-manager-rewrite]: Empty/initial sync_map JSON falls back to SyncMap::new() in make_request_sync_chunk_args to handle first-sync case
+- [Phase 04-manager-rewrite]: sync_from_reader takes explicit reader_identity_key param (no accessor on WalletStorageProvider) — guard placed first to short-circuit before any DB work
 
 ### Codebase Context (from pre-roadmap research)
 
@@ -105,6 +107,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T00:41:42.393Z
-Stopped at: Completed 04-manager-rewrite/04-02-PLAN.md
+Last session: 2026-03-25T01:01:17.777Z
+Stopped at: Completed 04-manager-rewrite/04-04-PLAN.md
 Resume file: None
