@@ -150,5 +150,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 6.1 → 7
 | 4. Manager Rewrite | 4/4 | Complete   | 2026-03-25 |
 | 5. Manager Orchestration | 1/1 | Complete   | 2026-03-25 |
 | 6. Integration Testing | 1/1 | Complete | 2026-03-25 |
-| 6.1. Integration Test Parity | 0/2 | Planning complete | - |
+| 6.1. Integration Test Parity | 1/2 | In Progress|  |
 | 7. PR Submission | 0/? | Not started | - |

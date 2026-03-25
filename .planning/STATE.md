@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Phase 06 complete — ready for verification
-last_updated: "2026-03-25T16:09:01.576Z"
+stopped_at: Completed 06.1-01-PLAN.md — 6 parity tests passing
+last_updated: "2026-03-25T16:58:21.818Z"
 last_activity: 2026-03-25 — Completed Phase 06 (all 6 integration tests pass against live TS server)
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 6
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 12
+  completed_plans: 11
   percent: 85
 ---
 
@@ -56,6 +56,7 @@ Progress: [████████░░] 85%
 | Phase 04-manager-rewrite P04 | 5min | 1 tasks | 2 files |
 | Phase 05-manager-orchestration P01 | 8min | 2 tasks | 3 files |
 | Phase 06-integrationtesting P01 | 8min | 3 tasks | 3 files |
+| Phase 06.1-integration-test-parity P01 | 50min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -92,6 +93,7 @@ Recent decisions affecting current work:
 - [Phase 05-manager-orchestration]: find_or_insert_sync_state_auth generates random ref_num via rand+base64 matching TS randomBytesBase64(12) to satisfy UNIQUE constraint on sync_states.refNum
 - [Phase 06-integrationtesting]: WalletArc<W> manually implements Clone (not derived) so Arc<W> clone works even when W: !Clone — enables StorageClient<WalletArc<ProtoWallet>> without requiring ProtoWallet: Clone
 - [Phase 06-integrationtesting]: TEST-06 verified via update_backups() rather than direct sync_to_writer() call — update_backups internally calls sync_to_writer for each backup, simpler and correct path through manager layer
+- [Phase 06.1-integration-test-parity]: user.active_storage DB assertion omitted from PARITY-03: sync_to_writer preserves writer active_storage by design; manager in-memory tracking is authoritative after setActive
 
 ### Codebase Context (from pre-roadmap research)
 
@@ -117,6 +119,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T18:00:00.000Z
-Stopped at: Phase 06 complete — ready for verification
+Last session: 2026-03-25T16:58:21.815Z
+Stopped at: Completed 06.1-01-PLAN.md — 6 parity tests passing
 Resume file: None
