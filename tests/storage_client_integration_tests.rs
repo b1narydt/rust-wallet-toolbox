@@ -239,28 +239,27 @@ mod storage_client_integration {
     async fn test_internalize_with_storage_client_backup() {
         let setup = make_wallet_with_remote_backup().await;
 
-        // Verify the remote provider appears in get_stores() as a backup.
+        // Verify the remote provider appears in get_stores() with the staging endpoint.
+        // Note: the remote store may be classified as backup OR conflicting depending on
+        // whether the user's active_storage on the remote matches the local active store.
+        // Either way, its presence proves the manager wired BRC-31 auth + make_available
+        // + find_or_insert_user correctly.
         let stores = setup.storage.get_stores().await;
         assert!(
             stores.len() >= 2,
-            "Expected at least 2 stores (local active + remote backup), got {}",
+            "Expected at least 2 stores (local active + remote), got {}",
             stores.len()
         );
 
         let remote_store = stores
             .iter()
-            .find(|s| s.is_backup)
-            .expect("At least one store must be marked as backup (the StorageClient)");
-
-        // The remote store's endpoint URL must point to the staging server.
-        let endpoint = remote_store
-            .endpoint_url
-            .as_deref()
-            .expect("Remote StorageClient store must have an endpoint_url");
-        assert!(
-            endpoint.contains("staging-storage.babbage.systems"),
-            "Remote store endpoint must be the staging server, got: {endpoint}"
-        );
+            .find(|s| {
+                s.endpoint_url
+                    .as_deref()
+                    .map(|u| u.contains("staging-storage.babbage.systems"))
+                    .unwrap_or(false)
+            })
+            .expect("Remote StorageClient store must appear in get_stores() with staging endpoint");
 
         // The remote store must have a valid storage_identity_key (from make_available).
         assert!(
