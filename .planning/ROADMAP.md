@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Trait Definition** - Define WalletStorageProvider trait and blanket impl for local providers (completed 2026-03-24)
 - [x] **Phase 3: StorageClient** - Implement StorageClient struct with rpc_call, all ~25 WalletStorageProvider methods, and updateProvenTxReqWithNewProvenTx (completed 2026-03-24)
 - [x] **Phase 4: Manager Rewrite** - Multi-provider WalletStorageManager with ManagedStorage, sync loops, and hierarchical locking (completed 2026-03-25)
-- [ ] **Phase 5: Manager Orchestration** - setActive conflict resolution, updateBackups fan-out, reprove proof re-validation
+- [x] **Phase 5: Manager Orchestration** - setActive conflict resolution, updateBackups fan-out, reprove proof re-validation (completed 2026-03-25)
 - [ ] **Phase 6: Integration Testing** - Prove cross-language wire compatibility against live TS server
 - [ ] **Phase 7: PR Submission** - Fork repo, clean branch, create professional pull request to b1narydt/rust-wallet-toolbox
 
@@ -133,6 +133,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 2. Trait Definition | 1/1 | Complete | 2026-03-24 |
 | 3. StorageClient | 2/2 | Complete   | 2026-03-24 |
 | 4. Manager Rewrite | 4/4 | Complete   | 2026-03-25 |
-| 5. Manager Orchestration | 0/? | Not started | - |
+| 5. Manager Orchestration | 1/1 | Complete   | 2026-03-25 |
 | 6. Integration Testing | 0/? | Not started | - |
 | 7. PR Submission | 0/? | Not started | - |

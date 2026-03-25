@@ -43,11 +43,11 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 
 ### Manager Orchestration
 
-- [ ] **ORCH-01**: setActive() full conflict resolution — detect conflicts, merge via syncToWriter, update user.activeStorage, re-partition
-- [ ] **ORCH-02**: updateBackups() fan-out sync to all backup stores with per-backup error handling
-- [ ] **ORCH-03**: reproveHeader() re-validates proofs against orphaned headers using ChainTracker
-- [ ] **ORCH-04**: reproveProven() re-validates individual ProvenTx proofs against current chain
-- [ ] **ORCH-05**: getStores() returns WalletStorageInfo for all providers with full status metadata
+- [x] **ORCH-01**: setActive() full conflict resolution — detect conflicts, merge via syncToWriter, update user.activeStorage, re-partition
+- [x] **ORCH-02**: updateBackups() fan-out sync to all backup stores with per-backup error handling
+- [x] **ORCH-03**: reproveHeader() re-validates proofs against orphaned headers using ChainTracker
+- [x] **ORCH-04**: reproveProven() re-validates individual ProvenTx proofs against current chain
+- [x] **ORCH-05**: getStores() returns WalletStorageInfo for all providers with full status metadata
 
 ### Integration Testing
 
@@ -115,11 +115,11 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 | MGR-06 | Phase 4 | Complete |
 | MGR-07 | Phase 4 | Complete |
 | MGR-08 | Phase 4 | Complete |
-| ORCH-01 | Phase 5 | Pending |
-| ORCH-02 | Phase 5 | Pending |
-| ORCH-03 | Phase 5 | Pending |
-| ORCH-04 | Phase 5 | Pending |
-| ORCH-05 | Phase 5 | Pending |
+| ORCH-01 | Phase 5 | Complete |
+| ORCH-02 | Phase 5 | Complete |
+| ORCH-03 | Phase 5 | Complete |
+| ORCH-04 | Phase 5 | Complete |
+| ORCH-05 | Phase 5 | Complete |
 | TEST-01 | Phase 6 | Pending |
 | TEST-02 | Phase 6 | Pending |
 | TEST-03 | Phase 6 | Pending |

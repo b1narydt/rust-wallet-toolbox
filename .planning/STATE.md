@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 04-manager-rewrite/04-04-PLAN.md
-last_updated: "2026-03-25T01:04:29.768Z"
+status: planning
+stopped_at: Completed 05-manager-orchestration/05-01-PLAN.md
+last_updated: "2026-03-25T11:37:11.464Z"
 last_activity: 2026-03-25 — Completed Phase 04 (all 4 plans including gap closure 04-04)
 progress:
   total_phases: 7
-  completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
+  completed_phases: 5
+  total_plans: 9
+  completed_plans: 9
   percent: 57
 ---
 
@@ -54,6 +54,7 @@ Progress: [██████░░░░] 57%
 | Phase 04-manager-rewrite P03 | 20min | 2 tasks | 5 files |
 | Phase 04-manager-rewrite P02 | 52min | 2 tasks | 5 files |
 | Phase 04-manager-rewrite P04 | 5min | 1 tasks | 2 files |
+| Phase 05-manager-orchestration P01 | 8min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,8 @@ Recent decisions affecting current work:
 - [Phase 04-manager-rewrite]: SyncState.when advanced to now() after each chunk to prevent re-fetching same data on subsequent sync iterations
 - [Phase 04-manager-rewrite]: Empty/initial sync_map JSON falls back to SyncMap::new() in make_request_sync_chunk_args to handle first-sync case
 - [Phase 04-manager-rewrite]: sync_from_reader takes explicit reader_identity_key param (no accessor on WalletStorageProvider) — guard placed first to short-circuit before any DB work
+- [Phase 05-manager-orchestration]: set_active uses do_make_available() not make_available() at re-partition step: acquire_sync holds reader_lock, calling make_available() would deadlock
+- [Phase 05-manager-orchestration]: find_or_insert_sync_state_auth generates random ref_num via rand+base64 matching TS randomBytesBase64(12) to satisfy UNIQUE constraint on sync_states.refNum
 
 ### Codebase Context (from pre-roadmap research)
 
@@ -107,6 +110,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T01:01:17.777Z
-Stopped at: Completed 04-manager-rewrite/04-04-PLAN.md
+Last session: 2026-03-25T11:37:11.461Z
+Stopped at: Completed 05-manager-orchestration/05-01-PLAN.md
 Resume file: None
