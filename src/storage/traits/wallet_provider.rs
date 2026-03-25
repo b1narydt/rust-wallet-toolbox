@@ -17,6 +17,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use base64::Engine as _;
 use bsv::wallet::interfaces::{
     AbortActionArgs, AbortActionResult, ListActionsArgs, ListActionsResult, ListCertificatesArgs,
     ListCertificatesResult, ListOutputsArgs, ListOutputsResult, RelinquishCertificateArgs,
@@ -838,7 +839,14 @@ impl<T: StorageProvider> WalletStorageProvider for T {
             return Ok((state, false));
         }
 
-        // Insert a new sync state
+        // Insert a new sync state.
+        // Generate a unique ref_num (matches TS `randomBytesBase64(12)`).
+        let ref_num = {
+            use rand::RngCore;
+            let mut bytes = [0u8; 12];
+            rand::thread_rng().fill_bytes(&mut bytes);
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        };
         let now = chrono::Utc::now().naive_utc();
         let new_state = SyncState {
             created_at: now,
@@ -849,7 +857,7 @@ impl<T: StorageProvider> WalletStorageProvider for T {
             storage_name: storage_name.to_string(),
             status: SyncStatus::Unknown,
             init: false,
-            ref_num: String::new(),
+            ref_num,
             sync_map: "{}".to_string(),
             when: None,
             satoshis: None,
