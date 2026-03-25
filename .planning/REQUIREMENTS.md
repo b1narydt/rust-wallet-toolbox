@@ -51,13 +51,13 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 
 ### Integration Testing
 
-- [ ] **TEST-01**: BRC-31 auth handshake succeeds against live storage.babbage.systems TS server
-- [ ] **TEST-02**: makeAvailable() retrieves Settings from live TS server
-- [ ] **TEST-03**: findOrInsertUser() creates/retrieves user on live TS server
-- [ ] **TEST-04**: Sync chunk round-trip (getSyncChunk + processSyncChunk) works against live TS server
-- [ ] **TEST-05**: Full payment internalize flow works end-to-end with StorageClient as backup provider
-- [ ] **TEST-06**: syncToWriter() completes a full sync from local to remote StorageClient
-- [ ] **TEST-07**: updateBackups() syncs to StorageClient backup successfully
+- [x] **TEST-01**: BRC-31 auth handshake succeeds against live storage.babbage.systems TS server
+- [x] **TEST-02**: makeAvailable() retrieves Settings from live TS server
+- [x] **TEST-03**: findOrInsertUser() creates/retrieves user on live TS server
+- [x] **TEST-04**: Sync chunk round-trip (getSyncChunk + processSyncChunk) works against live TS server
+- [x] **TEST-05**: Full payment internalize flow works end-to-end with StorageClient as backup provider
+- [x] **TEST-06**: syncToWriter() completes a full sync from local to remote StorageClient
+- [x] **TEST-07**: updateBackups() syncs to StorageClient backup successfully
 
 ### PR Submission
 
@@ -120,13 +120,13 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 | ORCH-03 | Phase 5 | Complete |
 | ORCH-04 | Phase 5 | Complete |
 | ORCH-05 | Phase 5 | Complete |
-| TEST-01 | Phase 6 | Pending |
-| TEST-02 | Phase 6 | Pending |
-| TEST-03 | Phase 6 | Pending |
-| TEST-04 | Phase 6 | Pending |
-| TEST-05 | Phase 6 | Pending |
-| TEST-06 | Phase 6 | Pending |
-| TEST-07 | Phase 6 | Pending |
+| TEST-01 | Phase 6 | Complete |
+| TEST-02 | Phase 6 | Complete |
+| TEST-03 | Phase 6 | Complete |
+| TEST-04 | Phase 6 | Complete |
+| TEST-05 | Phase 6 | Complete |
+| TEST-06 | Phase 6 | Complete |
+| TEST-07 | Phase 6 | Complete |
 | PR-01 | Phase 7 | Pending |
 | PR-02 | Phase 7 | Pending |
 | PR-03 | Phase 7 | Pending |
