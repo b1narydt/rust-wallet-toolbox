@@ -321,4 +321,118 @@ mod storage_client_integration {
         let (_total_inserts, _total_updates, _log) = result;
         // Success: the full updateBackups fan-out loop completed without error.
     }
+
+    // -----------------------------------------------------------------------
+    // PARITY-06: syncToWriter with non-empty local wallet — proves inserts > 0
+    // -----------------------------------------------------------------------
+
+    /// Proves PARITY-06: when local storage has real seeded data, sync_to_writer
+    /// processes non-empty SyncChunks and inserts > 0 records on the remote.
+    ///
+    /// Difference from TEST-06: we seed 3 outputs into the local store BEFORE
+    /// calling update_backups, so the sync loop must send actual entities over
+    /// the wire rather than an empty SyncChunk.
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn test_sync_to_writer_non_empty_remote() {
+        let setup = make_wallet_with_remote_backup().await;
+
+        // Derive the identity key from the test root key so seed_outputs can
+        // create user + outputs under the correct user record.
+        let ik = identity_key_hex(&test_root_key());
+
+        // Seed 3 outputs into the local active store. This ensures the sync
+        // loop will encounter non-empty SyncChunks when it reads from local.
+        common::seed_outputs(&setup.storage, &ik, 3, 1000).await;
+
+        // update_backups calls sync_to_writer for each backup store.
+        // With seeded data, the remote must receive at least the seeded entities.
+        let (inserts, _updates, _log) = setup
+            .storage
+            .update_backups(None)
+            .await
+            .expect("update_backups with seeded data must complete without errors");
+
+        assert!(
+            inserts > 0,
+            "seeded local data must sync to remote: inserts={inserts} (expected > 0)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // PARITY-07: funded-key wallet authenticates via BRC-31 to staging server
+    // -----------------------------------------------------------------------
+
+    /// Proves PARITY-07: a wallet built with a funded/different key (BSV_FUNDED_KEY)
+    /// can authenticate via BRC-31, wire a StorageClient backup, and interact with
+    /// the staging server independently from the BSV_TEST_ROOT_KEY wallet.
+    ///
+    /// Skips automatically if BSV_FUNDED_KEY is not set in the environment.
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn test_funded_key_live() {
+        let funded_hex = match std::env::var("BSV_FUNDED_KEY") {
+            Ok(h) => h,
+            Err(_) => {
+                eprintln!("BSV_FUNDED_KEY not set, skipping funded-key test");
+                return;
+            }
+        };
+        let funded_key =
+            PrivateKey::from_hex(&funded_hex).expect("BSV_FUNDED_KEY must be valid secp256k1 hex");
+
+        // Build a wallet with the funded key (in-memory SQLite, mock services).
+        let setup = WalletBuilder::new()
+            .chain(Chain::Test)
+            .root_key(funded_key.clone())
+            .with_sqlite_memory()
+            .with_services(Arc::new(common::MockWalletServices))
+            .build()
+            .await
+            .expect("build funded-key wallet");
+
+        // Wire a StorageClient using the funded key. add_wallet_storage_provider
+        // calls make_available internally, so this proves BRC-31 auth works with
+        // a different key than BSV_TEST_ROOT_KEY.
+        let proto = WalletArc::new(ProtoWallet::new(funded_key));
+        let client =
+            Arc::new(StorageClient::new(proto, STAGING_ENDPOINT)) as Arc<dyn WalletStorageProvider>;
+        setup
+            .storage
+            .add_wallet_storage_provider(client)
+            .await
+            .expect("add funded-key StorageClient backup — BRC-31 auth must succeed");
+
+        // Verify the funded wallet has local + remote stores available.
+        let stores = setup.storage.get_stores().await;
+        assert!(
+            stores.len() >= 2,
+            "funded wallet must have local + remote stores, got {}",
+            stores.len()
+        );
+
+        // The remote store must carry the staging server's storage_identity_key.
+        let remote_store = stores
+            .iter()
+            .find(|s| {
+                s.endpoint_url
+                    .as_deref()
+                    .map(|u| u.contains("staging-storage.babbage.systems"))
+                    .unwrap_or(false)
+            })
+            .expect("funded-key remote StorageClient must appear in get_stores()");
+
+        assert!(
+            !remote_store.storage_identity_key.is_empty(),
+            "funded-key remote store must have a non-empty storage_identity_key"
+        );
+
+        // Attempt a full sync loop to confirm the funded key can push data
+        // through the manager layer without auth or wire errors.
+        setup
+            .storage
+            .update_backups(None)
+            .await
+            .expect("update_backups with funded key must succeed");
+    }
 }
