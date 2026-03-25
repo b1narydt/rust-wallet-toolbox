@@ -101,7 +101,7 @@ Plans:
 ### Phase 6: Integration Testing
 **Goal**: Cross-language wire compatibility with the live TypeScript storage server at storage.babbage.systems is proven by passing tests
 **Depends on**: Phase 5
-**Requirements**: TEST-01, TEST-02, TEST-03, TEST-04, TEST-05
+**Requirements**: TEST-01, TEST-02, TEST-03, TEST-04, TEST-05, TEST-06, TEST-07
 **Success Criteria** (what must be TRUE):
   1. BRC-31 mutual auth handshake completes successfully against storage.babbage.systems (no auth errors in test output)
   2. `makeAvailable()` returns a valid `Settings` struct from the live TS server
@@ -112,7 +112,7 @@ Plans:
   7. `updateBackups()` successfully syncs to a StorageClient backup
 **Plans:** 1 plan
 Plans:
-- [ ] 06-01-PLAN.md — Direct StorageClient tests (auth, makeAvailable, findOrInsertUser, sync chunk) + full wallet with StorageClient backup
+- [ ] 06-01-PLAN.md — Direct StorageClient tests (auth, makeAvailable, findOrInsertUser, sync chunk), full wallet with StorageClient backup, syncToWriter + updateBackups to remote
 
 ### Phase 7: PR Submission
 **Goal**: Fork the repo, prepare a clean branch with only implementation changes (no planning docs), and create a professional pull request to b1narydt/rust-wallet-toolbox
