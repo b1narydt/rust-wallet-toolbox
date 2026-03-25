@@ -898,14 +898,89 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         args: &RequestSyncChunkArgs,
         chunk: &SyncChunk,
     ) -> WalletResult<ProcessSyncChunkResult> {
+        // Determine if chunk is empty (nothing to process).
+        // An empty chunk signals that the reader has no more data — sync is done.
+        let chunk_is_empty = chunk.user.is_none()
+            && chunk.proven_txs.as_ref().map_or(true, |v| v.is_empty())
+            && chunk.output_baskets.as_ref().map_or(true, |v| v.is_empty())
+            && chunk.transactions.as_ref().map_or(true, |v| v.is_empty())
+            && chunk.outputs.as_ref().map_or(true, |v| v.is_empty())
+            && chunk.tx_labels.as_ref().map_or(true, |v| v.is_empty())
+            && chunk.tx_label_maps.as_ref().map_or(true, |v| v.is_empty())
+            && chunk.output_tags.as_ref().map_or(true, |v| v.is_empty())
+            && chunk.output_tag_maps.as_ref().map_or(true, |v| v.is_empty())
+            && chunk.certificates.as_ref().map_or(true, |v| v.is_empty())
+            && chunk.certificate_fields.as_ref().map_or(true, |v| v.is_empty())
+            && chunk.commissions.as_ref().map_or(true, |v| v.is_empty())
+            && chunk.proven_tx_reqs.as_ref().map_or(true, |v| v.is_empty());
+
         let (mut sync_map, _) = build_sync_map_and_offsets(args);
-        crate::storage::sync::process_sync_chunk::process_sync_chunk(
+        let mut result = crate::storage::sync::process_sync_chunk::process_sync_chunk(
             self,
             chunk.clone(),
             &mut sync_map,
             None,
         )
-        .await
+        .await?;
+
+        // Determine `done`:
+        // - If the chunk was empty, there is nothing left to sync.
+        // - TS parity: processSyncChunk sets done=true when chunk was empty.
+        result.done = chunk_is_empty;
+
+        // Persist updated SyncState so the next iteration knows where to resume.
+        // Find the existing SyncState for this storage pair and update its sync_map + when.
+        if !chunk_is_empty {
+            // Only update if we actually processed something.
+            let (user, _) =
+                StorageReaderWriter::find_or_insert_user(self, &chunk.user_identity_key, None)
+                    .await?;
+            let existing = verify_one_or_none(
+                StorageReader::find_sync_states(
+                    self,
+                    &FindSyncStatesArgs {
+                        partial: SyncStatePartial {
+                            user_id: Some(user.user_id),
+                            storage_identity_key: Some(
+                                args.from_storage_identity_key.clone(),
+                            ),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .await?,
+            )?;
+
+            if let Some(state) = existing {
+                // Serialize updated sync_map to JSON for storage.
+                let new_sync_map_json = serde_json::to_string(&sync_map)
+                    .map_err(|e| WalletError::Internal(format!("failed to serialize sync_map: {e}")))?;
+
+                // Advance the `when` high-watermark.
+                // Use the maximum updated_at seen in this chunk if available,
+                // otherwise use the current time. This ensures the next iteration
+                // passes a non-None `since` to get_sync_chunk, preventing re-fetching
+                // the same data on subsequent calls.
+                let new_when = result.max_updated_at
+                    .or_else(|| Some(chrono::Utc::now().naive_utc()));
+
+                StorageReaderWriter::update_sync_state(
+                    self,
+                    state.sync_state_id,
+                    &SyncStatePartial {
+                        sync_map: Some(new_sync_map_json),
+                        when: new_when,
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .await?;
+            }
+        }
+
+        Ok(result)
     }
 
     // Low-level CRUD delegation -- blanket impl

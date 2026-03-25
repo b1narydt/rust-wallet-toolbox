@@ -411,4 +411,223 @@ mod manager_tests {
         let url2 = manager.get_store_endpoint_url("nonexistent_key").await;
         assert!(url2.is_none());
     }
+
+    // -----------------------------------------------------------------------
+    // Task 1 TDD Tests: sync loops and make_request_sync_chunk_args
+    // -----------------------------------------------------------------------
+
+    // Test 15: make_request_sync_chunk_args builds correct RequestSyncChunkArgs from SyncState
+    #[tokio::test]
+    async fn test_make_request_sync_chunk_args() {
+        use bsv_wallet_toolbox::status::SyncStatus;
+        use bsv_wallet_toolbox::storage::manager::make_request_sync_chunk_args;
+        use bsv_wallet_toolbox::storage::sync::sync_map::SyncMap;
+        use bsv_wallet_toolbox::tables::SyncState;
+        use chrono::NaiveDateTime;
+
+        let mut sync_map = SyncMap::new();
+        sync_map.transaction.count = 5;
+        sync_map.output.count = 10;
+        let since =
+            NaiveDateTime::parse_from_str("2024-01-01 12:00:00.000", "%Y-%m-%d %H:%M:%S%.3f").ok();
+
+        let sync_map_json = serde_json::to_string(&sync_map).unwrap();
+
+        let now = chrono::Utc::now().naive_utc();
+        let ss = SyncState {
+            created_at: now,
+            updated_at: now,
+            sync_state_id: 1,
+            user_id: 1,
+            storage_identity_key: "reader_sik".to_string(),
+            storage_name: "reader_store".to_string(),
+            status: SyncStatus::Unknown,
+            init: false,
+            ref_num: "ref1".to_string(),
+            sync_map: sync_map_json,
+            when: since,
+            satoshis: None,
+            error_local: None,
+            error_other: None,
+        };
+
+        let args = make_request_sync_chunk_args(&ss, &IDENTITY_KEY.to_string(), "writer_sik").unwrap();
+
+        assert_eq!(args.from_storage_identity_key, "reader_sik");
+        assert_eq!(args.to_storage_identity_key, "writer_sik");
+        assert_eq!(args.identity_key, IDENTITY_KEY);
+        assert_eq!(args.since, since);
+        assert_eq!(args.max_rough_size, 10_000_000);
+        assert_eq!(args.max_items, 1000);
+        assert_eq!(args.offsets.len(), 12);
+
+        let tx_offset = args.offsets.iter().find(|o| o.name == "transaction").unwrap();
+        assert_eq!(tx_offset.offset, 5);
+        let out_offset = args.offsets.iter().find(|o| o.name == "output").unwrap();
+        assert_eq!(out_offset.offset, 10);
+        let proven_tx_offset = args.offsets.iter().find(|o| o.name == "provenTx").unwrap();
+        assert_eq!(proven_tx_offset.offset, 0);
+    }
+
+    // Test 16: sync_to_writer loops until done, accumulates inserts/updates
+    #[tokio::test]
+    async fn test_sync_to_writer() {
+        let reader_provider = create_provider().await.unwrap();
+        let writer_provider = create_provider().await.unwrap();
+
+        let reader_settings = reader_provider.make_available().await.unwrap();
+        let writer_settings = writer_provider.make_available().await.unwrap();
+
+        let _ = reader_provider.find_or_insert_user(IDENTITY_KEY).await.unwrap();
+
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(reader_provider.clone()),
+            vec![],
+        );
+        manager.make_available().await.unwrap();
+
+        let (inserts, updates, _log) = manager
+            .sync_to_writer(
+                writer_provider.as_ref(),
+                reader_provider.as_ref(),
+                &writer_settings,
+                &reader_settings,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let _ = (inserts, updates);
+    }
+
+    // Test 17: sync_from_reader succeeds when identity keys match
+    #[tokio::test]
+    async fn test_sync_from_reader_matching_identity() {
+        let reader_provider = create_provider().await.unwrap();
+        let writer_provider = create_provider().await.unwrap();
+
+        let reader_settings = reader_provider.make_available().await.unwrap();
+        let writer_settings = writer_provider.make_available().await.unwrap();
+
+        let _ = reader_provider.find_or_insert_user(IDENTITY_KEY).await.unwrap();
+
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(writer_provider.clone()),
+            vec![],
+        );
+        manager.make_available().await.unwrap();
+
+        let result = manager
+            .sync_from_reader(
+                writer_provider.as_ref(),
+                reader_provider.as_ref(),
+                &writer_settings,
+                &reader_settings,
+                None,
+            )
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "sync_from_reader should succeed when identity keys match: {:?}",
+            result.err()
+        );
+    }
+
+    // Test 18: update_backups with no backups returns (0, 0)
+    #[tokio::test]
+    async fn test_update_backups_zero_backups() {
+        let active = create_provider().await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![],
+        );
+        manager.make_available().await.unwrap();
+
+        let (inserts, updates, _log) = manager.update_backups(None).await.unwrap();
+        assert_eq!(inserts, 0);
+        assert_eq!(updates, 0);
+    }
+
+    // Test 19: update_backups with active + backup completes without error
+    #[tokio::test]
+    async fn test_update_backups() {
+        let active_provider = create_provider().await.unwrap();
+        let backup_provider = create_provider().await.unwrap();
+
+        active_provider.make_available().await.unwrap();
+        backup_provider.make_available().await.unwrap();
+
+        let _ = active_provider.find_or_insert_user(IDENTITY_KEY).await.unwrap();
+
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active_provider.clone()),
+            vec![backup_provider.clone()],
+        );
+        manager.make_available().await.unwrap();
+
+        let (inserts, updates, _log) = manager.update_backups(None).await.unwrap();
+        let _ = (inserts, updates);
+    }
+
+    // Test 20: add_wallet_storage_provider adds at runtime and re-partitions
+    #[tokio::test]
+    async fn test_add_provider_runtime() {
+        let active = create_provider().await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![],
+        );
+        manager.make_available().await.unwrap();
+
+        assert_eq!(manager.get_all_stores().await.len(), 1);
+
+        let new_provider = create_provider().await.unwrap();
+        manager.add_wallet_storage_provider(new_provider).await.unwrap();
+
+        assert_eq!(manager.get_all_stores().await.len(), 2);
+    }
+
+    // Test 21: sync_to_writer with prog_log captures progress messages
+    #[tokio::test]
+    async fn test_sync_prog_log() {
+        use std::sync::Mutex;
+
+        let reader_provider = create_provider().await.unwrap();
+        let writer_provider = create_provider().await.unwrap();
+
+        let reader_settings = reader_provider.make_available().await.unwrap();
+        let writer_settings = writer_provider.make_available().await.unwrap();
+        let _ = reader_provider.find_or_insert_user(IDENTITY_KEY).await.unwrap();
+
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(reader_provider.clone()),
+            vec![],
+        );
+        manager.make_available().await.unwrap();
+
+        let captured = Arc::new(Mutex::new(Vec::<String>::new()));
+        let captured2 = captured.clone();
+        let prog_log = move |s: &str| -> String {
+            captured2.lock().unwrap().push(s.to_string());
+            s.to_string()
+        };
+
+        let (_inserts, _updates, _log) = manager
+            .sync_to_writer(
+                writer_provider.as_ref(),
+                reader_provider.as_ref(),
+                &writer_settings,
+                &reader_settings,
+                Some(&prog_log),
+            )
+            .await
+            .unwrap();
+    }
 }

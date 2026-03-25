@@ -9,12 +9,14 @@
 //! (e.g., `status` filter on transactions, `include_basket`/`include_tags` on outputs).
 
 use chrono::NaiveDateTime;
+use serde::Serialize;
 
 use crate::status::{ProvenTxReqStatus, SyncStatus, TransactionStatus};
 use crate::types::{Chain, StorageProvidedBy};
 
 /// Pagination parameters.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Paged {
     /// Maximum number of records to return.
     pub limit: i64,
@@ -53,7 +55,8 @@ pub struct FindUsersArgs {
 // ---------------------------------------------------------------------------
 
 /// Partial filter for the `certificates` table.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CertificatePartial {
     /// Filter by certificate primary key.
     pub certificate_id: Option<i64>,
@@ -78,7 +81,8 @@ pub struct CertificatePartial {
 }
 
 /// Arguments for querying certificates.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FindCertificatesArgs {
     /// Column equality filters.
     pub partial: CertificatePartial,
@@ -179,7 +183,8 @@ pub struct FindMonitorEventsArgs {
 // ---------------------------------------------------------------------------
 
 /// Partial filter for the `output_baskets` table.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OutputBasketPartial {
     /// Filter by basket primary key.
     pub basket_id: Option<i64>,
@@ -196,7 +201,8 @@ pub struct OutputBasketPartial {
 }
 
 /// Arguments for querying output baskets.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FindOutputBasketsArgs {
     /// Column equality filters.
     pub partial: OutputBasketPartial,
@@ -265,7 +271,8 @@ pub struct FindOutputTagMapsArgs {
 // ---------------------------------------------------------------------------
 
 /// Partial filter for the `outputs` table.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OutputPartial {
     /// Filter by output primary key.
     pub output_id: Option<i64>,
@@ -298,7 +305,8 @@ pub struct OutputPartial {
 }
 
 /// Arguments for querying outputs.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FindOutputsArgs {
     /// Column equality filters.
     pub partial: OutputPartial,
@@ -349,7 +357,8 @@ pub struct FindProvenTxsArgs {
 // ---------------------------------------------------------------------------
 
 /// Partial filter for the `proven_tx_reqs` table.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProvenTxReqPartial {
     /// Filter by proven tx req primary key.
     pub proven_tx_req_id: Option<i64>,
@@ -366,7 +375,8 @@ pub struct ProvenTxReqPartial {
 }
 
 /// Arguments for querying proven transaction requests.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FindProvenTxReqsArgs {
     /// Column equality filters.
     pub partial: ProvenTxReqPartial,
@@ -429,6 +439,8 @@ pub struct SyncStatePartial {
     pub init: Option<bool>,
     /// Updated sync map JSON (used by update_sync_state).
     pub sync_map: Option<String>,
+    /// Timestamp of last successful sync (advances the high-watermark for the next sync).
+    pub when: Option<chrono::NaiveDateTime>,
 }
 
 /// Arguments for querying sync states.

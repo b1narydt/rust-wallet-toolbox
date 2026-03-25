@@ -603,6 +603,12 @@ mod sqlite_impl {
                 sets.push("syncMap = ?");
                 binds.push(BindVal::String(v.clone()));
             }
+            if let Some(v) = &update.when {
+                // "when" is a reserved word in SQLite — must be quoted.
+                sets.push(r#""when" = ?"#);
+                // SQLite stores datetimes as text; use the same format as other timestamps.
+                binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+            }
             sets.push("updated_at = datetime('now')");
             let sql = format!(
                 "UPDATE sync_states SET {} WHERE syncStateId = ?",
@@ -936,6 +942,8 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.status { idx += 1; sets.push(format!("status = {}", ph(idx))); binds.push(BindVal::String(v.to_string())); }
                     if let Some(v) = &update.init { idx += 1; sets.push(format!("init = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
                     if let Some(v) = &update.sync_map { idx += 1; sets.push(format!("syncMap = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    // "when" is a reserved word — quote it using the db-appropriate quoting fn.
+                    if let Some(v) = &update.when { idx += 1; sets.push(format!("{} = {}", $qc_fn("when"), ph(idx))); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string())); }
                     sets.push(format!("updated_at = {}", $now_expr));
                     idx += 1; let sql = format!("UPDATE sync_states SET {} WHERE syncStateId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
