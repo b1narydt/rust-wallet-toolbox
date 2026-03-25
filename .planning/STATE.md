@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 06.1-01-PLAN.md — 6 parity tests passing
-last_updated: "2026-03-25T16:58:21.818Z"
+stopped_at: Completed 06.1-02 Task 1 — awaiting human-verify checkpoint for live test execution
+last_updated: "2026-03-25T17:01:38.134Z"
 last_activity: 2026-03-25 — Completed Phase 06 (all 6 integration tests pass against live TS server)
 progress:
   total_phases: 8
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
   percent: 85
 ---
 
@@ -94,6 +94,8 @@ Recent decisions affecting current work:
 - [Phase 06-integrationtesting]: WalletArc<W> manually implements Clone (not derived) so Arc<W> clone works even when W: !Clone — enables StorageClient<WalletArc<ProtoWallet>> without requiring ProtoWallet: Clone
 - [Phase 06-integrationtesting]: TEST-06 verified via update_backups() rather than direct sync_to_writer() call — update_backups internally calls sync_to_writer for each backup, simpler and correct path through manager layer
 - [Phase 06.1-integration-test-parity]: user.active_storage DB assertion omitted from PARITY-03: sync_to_writer preserves writer active_storage by design; manager in-memory tracking is authoritative after setActive
+- [Phase 06.1-integration-test-parity]: test_funded_key_live uses early return (not panic) when BSV_FUNDED_KEY is absent — test reports passed rather than errored
+- [Phase 06.1-integration-test-parity]: PARITY-07 skips create_action/BEEF — funded key UTXO state on staging unknown; auth+get_stores+update_backups is sufficient proof
 
 ### Codebase Context (from pre-roadmap research)
 
@@ -119,6 +121,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T16:58:21.815Z
-Stopped at: Completed 06.1-01-PLAN.md — 6 parity tests passing
+Last session: 2026-03-25T17:01:32.483Z
+Stopped at: Completed 06.1-02 Task 1 — awaiting human-verify checkpoint for live test execution
 Resume file: None

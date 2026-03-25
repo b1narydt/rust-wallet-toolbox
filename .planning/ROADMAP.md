@@ -120,7 +120,7 @@ Plans:
 **Goal:** Fill all sync and orchestration test gaps from TS parity audit -- populated sync, incremental sync, setActive twice (with timestamp/backup_stores assertions), two-wallet isolation, bidirectional sync, setActive-with-backup-first, and funded-key live tests
 **Requirements**: PARITY-01, PARITY-02, PARITY-03, PARITY-04, PARITY-05, PARITY-06, PARITY-07, PARITY-08
 **Depends on:** Phase 6
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 06.1-01-PLAN.md — Local sync parity tests: populated sync, incremental sync, setActive twice (timestamps + backup_stores), two-wallet isolation, bidirectional sync, setActive-with-backup-first
