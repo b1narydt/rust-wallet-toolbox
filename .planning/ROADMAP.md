@@ -18,6 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Manager Rewrite** - Multi-provider WalletStorageManager with ManagedStorage, sync loops, and hierarchical locking (completed 2026-03-25)
 - [x] **Phase 5: Manager Orchestration** - setActive conflict resolution, updateBackups fan-out, reprove proof re-validation (completed 2026-03-25)
 - [x] **Phase 6: Integration Testing** - Prove cross-language wire compatibility against live TS server (completed 2026-03-25)
+- [ ] **Phase 6.1: Integration Test Parity** - Fill sync/orchestration test gaps: populated sync, incremental sync, setActive twice, two-wallet isolation, bidirectional sync, funded-key live tests (INSERTED)
 - [ ] **Phase 7: PR Submission** - Fork repo, clean branch, create professional pull request to b1narydt/rust-wallet-toolbox
 
 ## Phase Details
@@ -114,6 +115,17 @@ Plans:
 Plans:
 - [x] 06-01-PLAN.md — Direct StorageClient tests (auth, makeAvailable, findOrInsertUser, sync chunk), full wallet with StorageClient backup, syncToWriter + updateBackups to remote
 
+### Phase 06.1: Integration Test Parity (INSERTED)
+
+**Goal:** Fill all sync and orchestration test gaps from TS parity audit -- populated sync, incremental sync, setActive twice, two-wallet isolation, bidirectional sync, and funded-key live tests
+**Requirements**: PARITY-01, PARITY-02, PARITY-03, PARITY-04, PARITY-05, PARITY-06, PARITY-07
+**Depends on:** Phase 6
+**Plans:** 2 plans
+
+Plans:
+- [ ] 06.1-01-PLAN.md — Local sync parity tests: populated sync, incremental sync, setActive twice, two-wallet isolation, bidirectional sync
+- [ ] 06.1-02-PLAN.md — Live sync parity tests: non-empty sync to remote StorageClient, funded-key authentication
+
 ### Phase 7: PR Submission
 **Goal**: Fork the repo, prepare a clean branch with only implementation changes (no planning docs), and create a professional pull request to b1narydt/rust-wallet-toolbox
 **Depends on**: Phase 6
@@ -128,7 +140,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 6.1 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -138,4 +150,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 4. Manager Rewrite | 4/4 | Complete   | 2026-03-25 |
 | 5. Manager Orchestration | 1/1 | Complete   | 2026-03-25 |
 | 6. Integration Testing | 1/1 | Complete | 2026-03-25 |
+| 6.1. Integration Test Parity | 0/2 | Planning complete | - |
 | 7. PR Submission | 0/? | Not started | - |
