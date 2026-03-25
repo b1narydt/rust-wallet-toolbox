@@ -742,134 +742,169 @@ impl WalletStorageManager {
 
     // -----------------------------------------------------------------------
     // WalletStorageProvider delegation — read operations
+    //
+    // All read operations acquire the reader lock (level 1) before delegating
+    // to the active provider. This matches the TS `runAsReader` pattern.
     // -----------------------------------------------------------------------
 
+    /// List wallet actions (transactions) with filtering and pagination.
     pub async fn list_actions(
         &self,
         auth: &AuthId,
         args: &ListActionsArgs,
     ) -> WalletResult<ListActionsResult> {
+        let _rg = self.acquire_reader().await?;
         let active = self.get_active().await?;
         active.list_actions(auth, args).await
     }
 
+    /// List outputs with basket/tag filtering.
     pub async fn list_outputs(
         &self,
         auth: &AuthId,
         args: &ListOutputsArgs,
     ) -> WalletResult<ListOutputsResult> {
+        let _rg = self.acquire_reader().await?;
         let active = self.get_active().await?;
         active.list_outputs(auth, args).await
     }
 
+    /// List certificates with certifier/type filtering.
     pub async fn list_certificates(
         &self,
         auth: &AuthId,
         args: &ListCertificatesArgs,
     ) -> WalletResult<ListCertificatesResult> {
+        let _rg = self.acquire_reader().await?;
         let active = self.get_active().await?;
         active.list_certificates(auth, args).await
     }
 
+    /// Find certificates scoped to the given auth identity.
     pub async fn find_certificates_auth(
         &self,
         auth: &AuthId,
         args: &FindCertificatesArgs,
     ) -> WalletResult<Vec<Certificate>> {
+        let _rg = self.acquire_reader().await?;
         let active = self.get_active().await?;
         active.find_certificates_auth(auth, args).await
     }
 
+    /// Find output baskets scoped to the given auth identity.
     pub async fn find_output_baskets_auth(
         &self,
         auth: &AuthId,
         args: &FindOutputBasketsArgs,
     ) -> WalletResult<Vec<OutputBasket>> {
+        let _rg = self.acquire_reader().await?;
         let active = self.get_active().await?;
         active.find_output_baskets_auth(auth, args).await
     }
 
+    /// Find outputs scoped to the given auth identity.
     pub async fn find_outputs_auth(
         &self,
         auth: &AuthId,
         args: &FindOutputsArgs,
     ) -> WalletResult<Vec<Output>> {
+        let _rg = self.acquire_reader().await?;
         let active = self.get_active().await?;
         active.find_outputs_auth(auth, args).await
     }
 
+    /// Find proven transaction requests.
     pub async fn find_proven_tx_reqs(
         &self,
         args: &FindProvenTxReqsArgs,
     ) -> WalletResult<Vec<ProvenTxReq>> {
+        let _rg = self.acquire_reader().await?;
         let active = self.get_active().await?;
         active.find_proven_tx_reqs(args).await
     }
 
     // -----------------------------------------------------------------------
     // WalletStorageProvider delegation — write operations
+    //
+    // All write operations acquire reader + writer locks (levels 1 and 2)
+    // before delegating to the active provider. This matches the TS
+    // `runAsWriter` pattern.
     // -----------------------------------------------------------------------
 
+    /// Abort (cancel) a transaction by reference.
     pub async fn abort_action(
         &self,
         auth: &AuthId,
         args: &AbortActionArgs,
     ) -> WalletResult<AbortActionResult> {
+        let (_rg, _wg) = self.acquire_writer().await?;
         let active = self.get_active().await?;
         active.abort_action(auth, args).await
     }
 
+    /// Create a new transaction in storage.
     pub async fn create_action(
         &self,
         auth: &AuthId,
         args: &StorageCreateActionArgs,
     ) -> WalletResult<StorageCreateActionResult> {
+        let (_rg, _wg) = self.acquire_writer().await?;
         let active = self.get_active().await?;
         active.create_action(auth, args).await
     }
 
+    /// Process (commit) a signed transaction to storage.
     pub async fn process_action(
         &self,
         auth: &AuthId,
         args: &StorageProcessActionArgs,
     ) -> WalletResult<StorageProcessActionResult> {
+        let (_rg, _wg) = self.acquire_writer().await?;
         let active = self.get_active().await?;
         active.process_action(auth, args).await
     }
 
+    /// Internalize outputs from an external transaction.
     pub async fn internalize_action(
         &self,
         auth: &AuthId,
         args: &StorageInternalizeActionArgs,
         services: &dyn WalletServices,
     ) -> WalletResult<StorageInternalizeActionResult> {
+        let (_rg, _wg) = self.acquire_writer().await?;
         let active = self.get_active().await?;
         active.internalize_action(auth, args, services).await
     }
 
+    /// Insert a certificate scoped to the given auth identity.
     pub async fn insert_certificate_auth(
         &self,
         auth: &AuthId,
         certificate: &Certificate,
     ) -> WalletResult<i64> {
+        let (_rg, _wg) = self.acquire_writer().await?;
         let active = self.get_active().await?;
         active.insert_certificate_auth(auth, certificate).await
     }
 
+    /// Relinquish (soft-delete) a certificate by marking it deleted.
     pub async fn relinquish_certificate(
         &self,
         auth: &AuthId,
         args: &RelinquishCertificateArgs,
     ) -> WalletResult<i64> {
+        let (_rg, _wg) = self.acquire_writer().await?;
         let active = self.get_active().await?;
         active.relinquish_certificate(auth, args).await
     }
 
+    /// Relinquish (remove from basket) an output by outpoint.
     pub async fn relinquish_output(
         &self,
         auth: &AuthId,
         args: &RelinquishOutputArgs,
     ) -> WalletResult<i64> {
+        let (_rg, _wg) = self.acquire_writer().await?;
         let active = self.get_active().await?;
         active.relinquish_output(auth, args).await
     }
