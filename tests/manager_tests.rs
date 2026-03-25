@@ -344,6 +344,46 @@ mod manager_tests {
         assert!(result.unavailable.is_empty());
     }
 
+    // ORCH-04: reprove_proven returns error when no services configured
+    #[tokio::test]
+    async fn test_reprove_proven_no_services() {
+        use bsv_wallet_toolbox::tables::ProvenTx;
+        use chrono::Utc;
+
+        let active = create_provider().await.unwrap();
+        let manager = WalletStorageManager::new(
+            IDENTITY_KEY.to_string(),
+            Some(active),
+            vec![],
+        );
+        manager.make_available().await.unwrap();
+
+        // Build a minimal ProvenTx stub (no records in DB)
+        let now = Utc::now().naive_utc();
+        let ptx = ProvenTx {
+            created_at: now,
+            updated_at: now,
+            proven_tx_id: 1,
+            txid: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            height: 0,
+            index: 0,
+            merkle_path: Vec::new(),
+            raw_tx: Vec::new(),
+            block_hash: String::new(),
+            merkle_root: String::new(),
+        };
+
+        // reprove_proven requires services; without services it returns an error.
+        // This confirms the method is callable and reachable (ORCH-04 exists).
+        let result = manager.reprove_proven(&ptx, false).await;
+        assert!(result.is_err(), "reprove_proven should fail without services configured");
+        let err_str = result.unwrap_err().to_string();
+        assert!(
+            err_str.contains("services"),
+            "Expected error about services, got: {err_str}"
+        );
+    }
+
     // -----------------------------------------------------------------------
     // Test 13: get_stores returns WalletStorageInfo for all stores
     // -----------------------------------------------------------------------
