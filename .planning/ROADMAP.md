@@ -94,8 +94,9 @@ Plans:
   3. `reproveHeader()` re-validates proofs against orphaned block headers using ChainTracker + getMerklePath, updates affected ProvenTx records — **already implemented in Phase 4 (manager.rs:1297)**
   4. `reproveProven()` re-validates individual ProvenTx proofs against current chain state — **already implemented in Phase 4 (manager.rs:1213)**
   5. `getStores()` returns `WalletStorageInfo` for all managed providers including status (isActive, isEnabled, isBackup, isConflicting, endpointUrl) — **already implemented in Phase 4 (manager.rs:1116)**
-**Plans**: TBD
-**Note**: Only ORCH-01 (setActive) requires new implementation. ORCH-02-05 were built during Phase 4 execution and need only verification.
+**Plans:** 1/1 plans complete
+Plans:
+- [x] 05-01-PLAN.md — setActive conflict resolution with 8-step TS-parity orchestration, verification of ORCH-02..05
 
 ### Phase 6: Integration Testing
 **Goal**: Cross-language wire compatibility with the live TypeScript storage server at storage.babbage.systems is proven by passing tests
@@ -109,7 +110,9 @@ Plans:
   5. A full payment internalize flow completes end-to-end with `StorageClient` as the backup provider
   6. `syncToWriter()` loop completes a full sync from local storage to remote StorageClient
   7. `updateBackups()` successfully syncs to a StorageClient backup
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 06-01-PLAN.md — Direct StorageClient tests (auth, makeAvailable, findOrInsertUser, sync chunk) + full wallet with StorageClient backup
 
 ### Phase 7: PR Submission
 **Goal**: Fork the repo, prepare a clean branch with only implementation changes (no planning docs), and create a professional pull request to b1narydt/rust-wallet-toolbox
@@ -134,5 +137,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 3. StorageClient | 2/2 | Complete   | 2026-03-24 |
 | 4. Manager Rewrite | 4/4 | Complete   | 2026-03-25 |
 | 5. Manager Orchestration | 1/1 | Complete   | 2026-03-25 |
-| 6. Integration Testing | 0/? | Not started | - |
+| 6. Integration Testing | 0/1 | Not started | - |
 | 7. PR Submission | 0/? | Not started | - |
