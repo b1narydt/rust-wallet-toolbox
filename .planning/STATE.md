@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-manager-rewrite/04-03-PLAN.md
-last_updated: "2026-03-25T00:07:49.579Z"
+stopped_at: Completed 04-manager-rewrite/04-02-PLAN.md
+last_updated: "2026-03-25T00:41:42.395Z"
 last_activity: 2026-03-24 — Completed Phase 04 Plan 01 (WalletStorageManager foundation rewrite)
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
   percent: 25
 ---
 
@@ -52,6 +52,7 @@ Progress: [██░░░░░░░░] 25%
 | Phase 03-storageclient P02 | 2min | 1 tasks | 1 files |
 | Phase 04-manager-rewrite P01 | ~4h | 2 tasks | 26 files |
 | Phase 04-manager-rewrite P03 | 20min | 2 tasks | 5 files |
+| Phase 04-manager-rewrite P02 | 52min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,9 @@ Recent decisions affecting current work:
 - [Phase 04-manager-rewrite]: reprove_proven acquires no lock itself — caller (reprove_header) holds StorageProvider lock
 - [Phase 04-manager-rewrite]: get_endpoint_url default returns None — StorageClient overrides to return Some(endpoint_url)
 - [Phase 04-manager-rewrite]: find_or_insert_user consistency check uses cached auth to prevent silent identity collision
+- [Phase 04-manager-rewrite]: done=true detected at WalletStorageProvider blanket impl level, not free process_sync_chunk function — blanket impl has DB access for SyncState updates
+- [Phase 04-manager-rewrite]: SyncState.when advanced to now() after each chunk to prevent re-fetching same data on subsequent sync iterations
+- [Phase 04-manager-rewrite]: Empty/initial sync_map JSON falls back to SyncMap::new() in make_request_sync_chunk_args to handle first-sync case
 
 ### Codebase Context (from pre-roadmap research)
 
@@ -101,6 +105,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T00:07:34.186Z
-Stopped at: Completed 04-manager-rewrite/04-03-PLAN.md
+Last session: 2026-03-25T00:41:42.393Z
+Stopped at: Completed 04-manager-rewrite/04-02-PLAN.md
 Resume file: None

@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Wire Format** - Fix serde_datetime and Vec<u8> serialization to match TS server expectations (completed 2026-03-24)
 - [ ] **Phase 2: Trait Definition** - Define WalletStorageProvider trait and blanket impl for local providers
 - [x] **Phase 3: StorageClient** - Implement StorageClient struct with rpc_call, all ~25 WalletStorageProvider methods, and updateProvenTxReqWithNewProvenTx (completed 2026-03-24)
-- [ ] **Phase 4: Manager Rewrite** - Multi-provider WalletStorageManager with ManagedStorage, sync loops, and hierarchical locking
+- [x] **Phase 4: Manager Rewrite** - Multi-provider WalletStorageManager with ManagedStorage, sync loops, and hierarchical locking (completed 2026-03-25)
 - [ ] **Phase 5: Manager Orchestration** - setActive conflict resolution, updateBackups fan-out, reprove proof re-validation
 - [ ] **Phase 6: Integration Testing** - Prove cross-language wire compatibility against live TS server
 - [ ] **Phase 7: PR Submission** - Fork repo, clean branch, create professional pull request to b1narydt/rust-wallet-toolbox
@@ -77,7 +77,7 @@ Plans:
   6. CRUD write propagation is replaced with chunk-based sync replication — writes go to active only, backups sync via `updateBackups()`
   7. All manager-level delegation methods exist: `createAction`, `processAction`, `internalizeAction`, `insertCertificate`, `findCertificates`, `findOutputBaskets`, `findOutputs`, `findProvenTxReqs` with appropriate lock acquisition and auth checks
   8. `addWalletStorageProvider()` adds at runtime, resets `is_available`, re-runs `makeAvailable()` partitioning
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 Plans:
 - [ ] 04-01-PLAN.md — ManagedStorage struct, WalletStorageManager rewrite with hierarchical locks, makeAvailable partition logic, TS-parity getter methods, auto-init lock helpers
 - [ ] 04-02-PLAN.md — Sync loops (syncToWriter/syncFromReader) with progLog support, delegation methods with lock semantics and WERR_* error codes, addWalletStorageProvider
@@ -130,7 +130,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 1. Wire Format | 1/1 | Complete | 2026-03-24 |
 | 2. Trait Definition | 0/1 | Planning complete | - |
 | 3. StorageClient | 2/2 | Complete   | 2026-03-24 |
-| 4. Manager Rewrite | 2/3 | In Progress|  |
+| 4. Manager Rewrite | 3/3 | Complete   | 2026-03-25 |
 | 5. Manager Orchestration | 0/? | Not started | - |
 | 6. Integration Testing | 0/? | Not started | - |
 | 7. PR Submission | 0/? | Not started | - |
