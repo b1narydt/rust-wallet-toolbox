@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: in-progress
-stopped_at: Completed 04-manager-rewrite/04-01-PLAN.md
-last_updated: "2026-03-24T23:43:00Z"
-last_activity: 2026-03-24 — Completed Phase 04 Plan 01 (WalletStorageManager foundation)
+status: executing
+stopped_at: Completed 04-manager-rewrite/04-03-PLAN.md
+last_updated: "2026-03-25T00:07:49.579Z"
+last_activity: 2026-03-24 — Completed Phase 04 Plan 01 (WalletStorageManager foundation rewrite)
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 7
+  completed_plans: 6
   percent: 25
 ---
 
@@ -51,6 +51,7 @@ Progress: [██░░░░░░░░] 25%
 | Phase 03-storageclient P01 | 200 | 1 tasks | 4 files |
 | Phase 03-storageclient P02 | 2min | 1 tasks | 1 files |
 | Phase 04-manager-rewrite P01 | ~4h | 2 tasks | 26 files |
+| Phase 04-manager-rewrite P03 | 20min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,9 @@ Recent decisions affecting current work:
 - [Phase 04-manager-rewrite]: Signer methods accept &WalletStorageManager directly (not &dyn StorageActionProvider) — StorageActionProvider supertrait incompatibility
 - [Phase 04-manager-rewrite]: list_outputs blanket impl calls list_outputs_rw to handle specOp basket names (SPEC_OP_WALLET_BALANCE etc.)
 - [Phase 04-manager-rewrite]: setup.rs calls make_available() on each WalletStorageManager after construction — manager state is independent of provider state
+- [Phase 04-manager-rewrite]: reprove_proven acquires no lock itself — caller (reprove_header) holds StorageProvider lock
+- [Phase 04-manager-rewrite]: get_endpoint_url default returns None — StorageClient overrides to return Some(endpoint_url)
+- [Phase 04-manager-rewrite]: find_or_insert_user consistency check uses cached auth to prevent silent identity collision
 
 ### Codebase Context (from pre-roadmap research)
 
@@ -97,6 +101,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-24T23:43:00Z
-Stopped at: Completed 04-manager-rewrite/04-01-PLAN.md
+Last session: 2026-03-25T00:07:34.186Z
+Stopped at: Completed 04-manager-rewrite/04-03-PLAN.md
 Resume file: None

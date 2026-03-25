@@ -77,7 +77,7 @@ Plans:
   6. CRUD write propagation is replaced with chunk-based sync replication — writes go to active only, backups sync via `updateBackups()`
   7. All manager-level delegation methods exist: `createAction`, `processAction`, `internalizeAction`, `insertCertificate`, `findCertificates`, `findOutputBaskets`, `findOutputs`, `findProvenTxReqs` with appropriate lock acquisition and auth checks
   8. `addWalletStorageProvider()` adds at runtime, resets `is_available`, re-runs `makeAvailable()` partitioning
-**Plans:** 3 plans
+**Plans:** 2/3 plans executed
 Plans:
 - [ ] 04-01-PLAN.md — ManagedStorage struct, WalletStorageManager rewrite with hierarchical locks, makeAvailable partition logic, TS-parity getter methods, auto-init lock helpers
 - [ ] 04-02-PLAN.md — Sync loops (syncToWriter/syncFromReader) with progLog support, delegation methods with lock semantics and WERR_* error codes, addWalletStorageProvider
@@ -130,7 +130,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 1. Wire Format | 1/1 | Complete | 2026-03-24 |
 | 2. Trait Definition | 0/1 | Planning complete | - |
 | 3. StorageClient | 2/2 | Complete   | 2026-03-24 |
-| 4. Manager Rewrite | 0/2 | Planning complete | - |
+| 4. Manager Rewrite | 2/3 | In Progress|  |
 | 5. Manager Orchestration | 0/? | Not started | - |
 | 6. Integration Testing | 0/? | Not started | - |
 | 7. PR Submission | 0/? | Not started | - |

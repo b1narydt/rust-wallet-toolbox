@@ -38,7 +38,7 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 - [x] **MGR-04**: Four-level hierarchical lock system (reader < writer < sync < storage_provider) with ordered acquisition
 - [ ] **MGR-05**: syncToWriter() and syncFromReader() chunked sync loops using EntitySyncState + RequestSyncChunkArgs iteration
 - [ ] **MGR-06**: CRUD write propagation replaced with chunk-based sync — writes to active only, backups sync via updateBackups()
-- [ ] **MGR-07**: All manager-level delegation methods with appropriate lock acquisition and auth checks
+- [x] **MGR-07**: All manager-level delegation methods with appropriate lock acquisition and auth checks
 - [ ] **MGR-08**: addWalletStorageProvider() runtime addition with re-partition
 
 ### Manager Orchestration
@@ -113,7 +113,7 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 | MGR-04 | Phase 4 | Complete — 04-01 |
 | MGR-05 | Phase 4 | Pending |
 | MGR-06 | Phase 4 | Pending |
-| MGR-07 | Phase 4 | Pending |
+| MGR-07 | Phase 4 | Complete |
 | MGR-08 | Phase 4 | Pending |
 | ORCH-01 | Phase 5 | Pending |
 | ORCH-02 | Phase 5 | Pending |
