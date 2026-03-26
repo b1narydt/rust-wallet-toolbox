@@ -17,11 +17,12 @@ use crate::signer::complete_signed::complete_signed_transaction;
 use crate::signer::types::{
     PendingSignAction, SignableTransactionRef, SignerCreateActionResult, ValidCreateActionArgs,
 };
-use crate::storage::action_traits::StorageActionProvider;
 use crate::storage::action_types::{
     StorageCreateActionArgs, StorageCreateActionInput, StorageCreateActionOutput,
     StorageProcessActionArgs,
 };
+use crate::storage::manager::WalletStorageManager;
+use crate::wallet::types::AuthId;
 
 /// Simple bytes-to-hex encoding.
 fn bytes_to_hex(bytes: &[u8]) -> String {
@@ -85,7 +86,7 @@ fn to_storage_args(args: &ValidCreateActionArgs) -> StorageCreateActionArgs {
 /// 3a. If is_sign_action: store PendingSignAction, return SignableTransaction
 /// 3b. Otherwise: sign via complete_signed_transaction, process, optionally broadcast
 pub async fn signer_create_action(
-    storage: &(dyn StorageActionProvider + Send + Sync),
+    storage: &WalletStorageManager,
     services: &(dyn WalletServices + Send + Sync),
     key_deriver: &CachedKeyDeriver,
     identity_pub_key: &PublicKey,
@@ -93,8 +94,13 @@ pub async fn signer_create_action(
     args: &ValidCreateActionArgs,
 ) -> WalletResult<(SignerCreateActionResult, Option<PendingSignAction>)> {
     // --- Step 1: Storage create action ---
+    let auth_id = AuthId {
+        identity_key: auth.to_string(),
+        user_id: None,
+        is_active: None,
+    };
     let storage_args = to_storage_args(args);
-    let dcr = storage.create_action(auth, &storage_args, None).await?;
+    let dcr = storage.create_action(&auth_id, &storage_args).await?;
     let reference = dcr.reference.clone();
 
     // --- Step 2: Build unsigned transaction ---
@@ -183,7 +189,7 @@ pub async fn signer_create_action(
         raw_tx: Some(signed_tx_bytes),
         send_with: vec![],
     };
-    let process_result = storage.process_action(auth, &process_args, None).await?;
+    let process_result = storage.process_action(&auth_id, &process_args).await?;
 
     // --- Step 5: Broadcast if needed ---
     if !args.is_no_send && !args.is_delayed {

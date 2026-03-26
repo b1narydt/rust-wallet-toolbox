@@ -223,10 +223,9 @@ impl Monitor {
         // They will be returned when stop_tasks is called.
         let mut tasks: Vec<Box<dyn WalletMonitorTask>> = std::mem::take(&mut self.tasks);
         let storage = WalletStorageManager::new(
-            self.storage.active().clone(),
-            self.storage.backup().cloned(),
-            self.chain.clone(),
             self.storage.auth_id().to_string(),
+            self.storage.active().cloned(),
+            self.storage.backups().to_vec(),
         );
 
         let handle = tokio::spawn(async move {
@@ -636,10 +635,9 @@ impl MonitorBuilder {
         // Helper: create a new WalletStorageManager sharing the same providers
         let make_storage = |s: &WalletStorageManager| -> WalletStorageManager {
             WalletStorageManager::new(
-                s.active().clone(),
-                s.backup().cloned(),
-                chain.clone(),
                 s.auth_id().to_string(),
+                s.active().cloned(),
+                s.backups().to_vec(),
             )
         };
 

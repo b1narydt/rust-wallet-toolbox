@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-03-26
+
+### Added
+
+- **StorageClient\<W\> — full TS WalletStorageProvider parity** -- JSON-RPC 2.0
+  client implementing all ~25 WalletStorageProvider methods with BRC-31 mutual
+  authentication via AuthFetch, WERR-coded error mapping, and settings caching.
+  Wire method names exactly match the TypeScript StorageClient (e.g.,
+  `findOutputBaskets` not `findOutputBasketsAuth`).
+
+- **WalletStorageProvider async trait** -- ~25 method trait matching the TS
+  WalletStorageProvider interface hierarchy, with a blanket impl for existing
+  StorageProvider types. `is_storage_provider()` returns true for local storage,
+  false for remote clients.
+
+- **WalletStorageManager rewrite** -- Multi-provider architecture with
+  ManagedStorage wrappers, four-level hierarchical locking (reader < writer <
+  sync < storage_provider), chunked sync loops (syncToWriter/syncFromReader),
+  and automatic store partitioning into active/backup/conflicting categories.
+
+- **Manager orchestration** -- `setActive()` with full 8-step conflict
+  resolution matching TS behavior (detect conflicts, merge via syncToWriter,
+  update user.activeStorage, propagate to all stores, re-partition).
+  `updateBackups()` fan-out sync to all backup stores with per-backup error
+  isolation. `reproveHeader()` and `reproveProven()` for proof re-validation
+  against orphaned block headers.
+
+- **WalletArc\<W\>** -- Arc wrapper enabling Clone for non-Clone wallet types,
+  required by AuthFetch for BRC-31 auth signing.
+
+- **Integration test suite** -- 8 live integration tests against
+  staging-storage.babbage.systems proving BRC-31 auth, makeAvailable,
+  findOrInsertUser, getSyncChunk/processSyncChunk wire format round-trip,
+  full wallet with StorageClient backup, syncToWriter, updateBackups, non-empty
+  SyncChunk handling, and funded-key authentication. Plus 6 local parity tests
+  covering populated sync, incremental sync, setActive twice, two-wallet
+  isolation, bidirectional sync, and setActive-with-backup-first.
+
+- **serde_helpers module** -- Lenient bool deserialization (`bool_from_int_or_bool`)
+  for TS server interop where boolean fields arrive as `0`/`1` instead of
+  `false`/`true`.
+
+### Fixed
+
+- **serde_datetime** -- Now emits ISO 8601 timestamps with trailing "Z" and
+  3-digit millisecond precision matching TS server expectations.
+
+- **Vec\<u8\> serialization** -- Binary fields (raw_tx, merkle_path, input_beef)
+  now serialize as JSON number arrays matching TS `Array.from(Buffer)` wire
+  format, not base64.
+
+- **SyncState.init deserialization** -- The `init` boolean field on SyncState
+  now accepts integer values from the TS server.
+
+- **ProcessSyncChunkResult.done deserialization** -- The `done` boolean field
+  now accepts integer values from the TS server, preventing infinite sync loops
+  when processing non-empty chunks.
+
+### Changed
+
+- Bumped version from 0.1.20 to 0.2.0 (minor version bump for new public API surface).
+
 ## [0.1.20] - 2026-03-20
 
 ### Fixed

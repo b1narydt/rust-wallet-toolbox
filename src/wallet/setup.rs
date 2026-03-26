@@ -281,104 +281,100 @@ impl WalletBuilder {
             }
         };
 
-        // Create storage provider based on configuration
-        let storage_provider: Arc<dyn crate::storage::traits::provider::StorageProvider> =
-            match storage_kind {
-                StorageKind::Sqlite(path) => {
-                    let url = if path == ":memory:" {
-                        "sqlite::memory:".to_string()
-                    } else {
-                        format!("sqlite:{}", path)
-                    };
-                    let mut config = StorageConfig {
-                        url,
-                        ..StorageConfig::default()
-                    };
-                    apply_pool_overrides(&mut config);
-                    #[cfg(feature = "sqlite")]
-                    {
-                        let storage = crate::storage::sqlx_impl::SqliteStorage::new_sqlite(
-                            config,
-                            chain.clone(),
-                        )
-                        .await?;
-                        Arc::new(storage)
-                    }
-                    #[cfg(not(feature = "sqlite"))]
-                    {
-                        let _ = config;
-                        return Err(WalletError::InvalidOperation(
-                            "SQLite feature not enabled. Add `sqlite` feature to Cargo.toml."
-                                .to_string(),
-                        ));
-                    }
+        // Create storage provider based on configuration.
+        // We need two references: one for migration (StorageProvider) and one
+        // as WalletStorageProvider for the manager. Each concrete type implements
+        // both traits, so we create the concrete Arc and coerce separately.
+        use crate::storage::traits::wallet_provider::WalletStorageProvider;
+        let provider: Arc<dyn WalletStorageProvider> = match storage_kind {
+            StorageKind::Sqlite(path) => {
+                let url = if path == ":memory:" {
+                    "sqlite::memory:".to_string()
+                } else {
+                    format!("sqlite:{}", path)
+                };
+                let mut config = StorageConfig {
+                    url,
+                    ..StorageConfig::default()
+                };
+                apply_pool_overrides(&mut config);
+                #[cfg(feature = "sqlite")]
+                {
+                    let storage =
+                        crate::storage::sqlx_impl::SqliteStorage::new_sqlite(config, chain.clone())
+                            .await?;
+                    Arc::new(storage) as Arc<dyn WalletStorageProvider>
                 }
-                StorageKind::Mysql(url) => {
-                    let mut config = StorageConfig {
-                        url,
-                        ..StorageConfig::default()
-                    };
-                    apply_pool_overrides(&mut config);
-                    #[cfg(feature = "mysql")]
-                    {
-                        let mut storage = crate::storage::sqlx_impl::MysqlStorage::new_mysql(
-                            config,
-                            chain.clone(),
-                        )
-                        .await?;
-                        if let Some(ref sik) = self.storage_identity_key {
-                            storage.storage_identity_key = sik.clone();
-                        }
-                        Arc::new(storage)
-                    }
-                    #[cfg(not(feature = "mysql"))]
-                    {
-                        let _ = config;
-                        return Err(WalletError::InvalidOperation(
-                            "MySQL feature not enabled. Add `mysql` feature to Cargo.toml."
-                                .to_string(),
-                        ));
-                    }
+                #[cfg(not(feature = "sqlite"))]
+                {
+                    let _ = config;
+                    return Err(WalletError::InvalidOperation(
+                        "SQLite feature not enabled. Add `sqlite` feature to Cargo.toml."
+                            .to_string(),
+                    ));
                 }
-                StorageKind::Postgres(url) => {
-                    let mut config = StorageConfig {
-                        url,
-                        ..StorageConfig::default()
-                    };
-                    apply_pool_overrides(&mut config);
-                    #[cfg(feature = "postgres")]
-                    {
-                        let storage = crate::storage::sqlx_impl::PgStorage::new_postgres(
-                            config,
-                            chain.clone(),
-                        )
-                        .await?;
-                        Arc::new(storage)
+            }
+            StorageKind::Mysql(url) => {
+                let mut config = StorageConfig {
+                    url,
+                    ..StorageConfig::default()
+                };
+                apply_pool_overrides(&mut config);
+                #[cfg(feature = "mysql")]
+                {
+                    let mut storage =
+                        crate::storage::sqlx_impl::MysqlStorage::new_mysql(config, chain.clone())
+                            .await?;
+                    if let Some(ref sik) = self.storage_identity_key {
+                        storage.storage_identity_key = sik.clone();
                     }
-                    #[cfg(not(feature = "postgres"))]
-                    {
-                        let _ = config;
-                        return Err(WalletError::InvalidOperation(
-                            "PostgreSQL feature not enabled. Add `postgres` feature to Cargo.toml."
-                                .to_string(),
-                        ));
-                    }
+                    Arc::new(storage) as Arc<dyn WalletStorageProvider>
                 }
-            };
+                #[cfg(not(feature = "mysql"))]
+                {
+                    let _ = config;
+                    return Err(WalletError::InvalidOperation(
+                        "MySQL feature not enabled. Add `mysql` feature to Cargo.toml.".to_string(),
+                    ));
+                }
+            }
+            StorageKind::Postgres(url) => {
+                let mut config = StorageConfig {
+                    url,
+                    ..StorageConfig::default()
+                };
+                apply_pool_overrides(&mut config);
+                #[cfg(feature = "postgres")]
+                {
+                    let storage =
+                        crate::storage::sqlx_impl::PgStorage::new_postgres(config, chain.clone())
+                            .await?;
+                    Arc::new(storage) as Arc<dyn WalletStorageProvider>
+                }
+                #[cfg(not(feature = "postgres"))]
+                {
+                    let _ = config;
+                    return Err(WalletError::InvalidOperation(
+                        "PostgreSQL feature not enabled. Add `postgres` feature to Cargo.toml."
+                            .to_string(),
+                    ));
+                }
+            }
+        };
 
-        // Run migrations
-        storage_provider.migrate_database().await?;
+        // Run migrations and make available via the provider's WalletStorageProvider interface.
+        provider.migrate("setup", "").await?;
 
-        // Create WalletStorageManager
-        let storage = WalletStorageManager::new(
-            storage_provider.clone(),
-            None,
-            chain.clone(),
-            identity_key_hex.clone(),
-        );
+        // Helper: create a manager backed by this provider and make it available.
+        // Calling make_available() initialises the manager's internal state (active_idx,
+        // cached settings/user). The provider itself handles idempotency.
+        let make_manager = |key: String, p: Arc<dyn WalletStorageProvider>| {
+            WalletStorageManager::new(key, Some(p), vec![])
+        };
 
-        // Make storage available (initializes settings/user)
-        storage_provider.make_available().await?;
+        // Create and initialise the primary storage manager (returned in SetupWallet).
+        let storage = make_manager(identity_key_hex.clone(), provider.clone());
+        storage.make_available().await?;
 
         // Determine services
         let services: Option<Arc<dyn WalletServices>> = if let Some(svc) = self.services {
@@ -391,16 +387,14 @@ impl WalletBuilder {
             None
         };
 
-        // Build WalletArgs
+        // Build WalletArgs — wallet gets its own manager (same provider, separate lock state).
+        let wallet_storage = make_manager(identity_key_hex.clone(), provider.clone());
+        wallet_storage.make_available().await?;
+
         let wallet_args = WalletArgs {
             chain: chain.clone(),
             key_deriver: key_deriver.clone(),
-            storage: WalletStorageManager::new(
-                storage_provider.clone(),
-                None,
-                chain.clone(),
-                identity_key_hex.clone(),
-            ),
+            storage: wallet_storage,
             services: services.clone(),
             monitor: None, // Monitor is created after wallet
             privileged_key_manager: self.privileged_key_manager,
@@ -411,17 +405,14 @@ impl WalletBuilder {
         // Construct wallet
         let wallet = Wallet::new(wallet_args)?;
 
-        // Optionally create Monitor
+        // Optionally create Monitor — monitor gets its own manager too.
         let monitor = if self.monitor_enabled {
             if let Some(ref svc) = services {
+                let monitor_storage = make_manager(identity_key_hex.clone(), provider.clone());
+                monitor_storage.make_available().await?;
                 let monitor = crate::monitor::Monitor::builder()
                     .chain(chain.clone())
-                    .storage(WalletStorageManager::new(
-                        storage_provider.clone(),
-                        None,
-                        chain.clone(),
-                        identity_key_hex.clone(),
-                    ))
+                    .storage(monitor_storage)
                     .services(svc.clone())
                     .default_tasks()
                     .build()?;

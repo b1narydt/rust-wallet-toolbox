@@ -10,7 +10,7 @@
 //! has all needed mappings available when processing dependent entities.
 
 use chrono::NaiveDateTime;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{WalletError, WalletResult};
 use crate::storage::find_args::*;
@@ -718,10 +718,12 @@ pub async fn process_sync_chunk(
 }
 
 /// Result of processing a sync chunk.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessSyncChunkResult {
     /// Whether the sync is complete (no more chunks pending).
+    /// TS server may return `0`/`1` instead of `false`/`true`.
+    #[serde(deserialize_with = "crate::serde_helpers::bool_from_int_or_bool")]
     pub done: bool,
     /// Latest updated_at timestamp seen in this chunk.
     #[serde(

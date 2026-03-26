@@ -39,7 +39,7 @@ pub async fn log_event(
         event: event.to_string(),
         details: Some(details.to_string()),
     };
-    storage.insert_monitor_event(&monitor_event, None).await?;
+    storage.insert_monitor_event(&monitor_event).await?;
     Ok(())
 }
 
@@ -128,7 +128,7 @@ pub async fn attempt_to_post_reqs_to_network(
                 ..Default::default()
             };
             let _ = storage
-                .update_proven_tx_req(req.proven_tx_req_id, &update, None)
+                .update_proven_tx_req(req.proven_tx_req_id, &update)
                 .await;
             result.details.push(PostReqDetail {
                 txid: req.txid.clone(),
@@ -201,7 +201,7 @@ pub async fn attempt_to_post_reqs_to_network(
             ..Default::default()
         };
         let _ = storage
-            .update_proven_tx_req(req.proven_tx_req_id, &update, None)
+            .update_proven_tx_req(req.proven_tx_req_id, &update)
             .await;
 
         result.details.push(PostReqDetail {
@@ -290,7 +290,7 @@ pub async fn get_proofs(
                     ..Default::default()
                 };
                 let _ = storage
-                    .update_proven_tx_req(req.proven_tx_req_id, &update, None)
+                    .update_proven_tx_req(req.proven_tx_req_id, &update)
                     .await;
                 result.proven.push(req.clone());
                 continue;
@@ -308,7 +308,7 @@ pub async fn get_proofs(
                 ..Default::default()
             };
             let _ = storage
-                .update_proven_tx_req(req.proven_tx_req_id, &update, None)
+                .update_proven_tx_req(req.proven_tx_req_id, &update)
                 .await;
             result.invalid.push(req.clone());
             continue;
@@ -334,7 +334,7 @@ pub async fn get_proofs(
             };
 
             match storage
-                .update_proven_tx_req_with_new_proven_tx(req.proven_tx_req_id, &proven_tx, None)
+                .update_proven_tx_req_with_new_proven_tx(req.proven_tx_req_id, &proven_tx)
                 .await
             {
                 Ok(_proven_tx_id) => {

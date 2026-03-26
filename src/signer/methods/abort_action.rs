@@ -8,10 +8,10 @@ use bsv::wallet::interfaces::AbortActionResult;
 use crate::error::{WalletError, WalletResult};
 use crate::signer::types::ValidAbortActionArgs;
 use crate::status::TransactionStatus;
-use crate::storage::action_traits::StorageActionProvider;
 use crate::storage::find_args::{
     FindOutputsArgs, FindTransactionsArgs, OutputPartial, TransactionPartial,
 };
+use crate::storage::manager::WalletStorageManager;
 
 /// Execute the signer-level abortAction flow.
 ///
@@ -26,12 +26,12 @@ use crate::storage::find_args::{
 /// `spent_by.is_none()` so a future enhancement should add a nullable update
 /// mechanism. For now, the transaction being failed prevents double-spending.
 pub async fn signer_abort_action(
-    storage: &(dyn StorageActionProvider + Send + Sync),
+    storage: &WalletStorageManager,
     auth: &str,
     args: &ValidAbortActionArgs,
 ) -> WalletResult<AbortActionResult> {
     // Find the user
-    let (user, _) = storage.find_or_insert_user(auth, None).await?;
+    let (user, _) = storage.find_or_insert_user(auth).await?;
     let user_id = user.user_id;
 
     // Find the transaction by reference
@@ -43,7 +43,7 @@ pub async fn signer_abort_action(
         },
         ..Default::default()
     };
-    let txs = storage.find_transactions(&find_tx_args, None).await?;
+    let txs = storage.find_transactions(&find_tx_args).await?;
     let transaction = txs
         .into_iter()
         .next()
@@ -73,7 +73,7 @@ pub async fn signer_abort_action(
         ..Default::default()
     };
     storage
-        .update_transaction(transaction_id, &tx_update, None)
+        .update_transaction(transaction_id, &tx_update)
         .await?;
 
     // Release locked UTXOs: find all outputs where spentBy = this transaction
@@ -86,7 +86,7 @@ pub async fn signer_abort_action(
         },
         ..Default::default()
     };
-    let spent_outputs = storage.find_outputs(&find_spent_args, None).await?;
+    let spent_outputs = storage.find_outputs(&find_spent_args).await?;
 
     for output in &spent_outputs {
         // Only release outputs that belong to a different transaction
@@ -97,7 +97,7 @@ pub async fn signer_abort_action(
                 ..Default::default()
             };
             storage
-                .update_output(output.output_id, &output_update, None)
+                .update_output(output.output_id, &output_update)
                 .await?;
         }
     }

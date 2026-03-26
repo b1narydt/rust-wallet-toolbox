@@ -98,9 +98,11 @@ pub async fn acquire_direct_certificate<W: WalletInterface + ?Sized>(
         .unwrap_or_default();
 
     // Look up the user to get user_id.
-    let user = storage
+    let active = storage
         .active()
-        .find_user_by_identity_key(&auth.identity_key, None)
+        .ok_or_else(|| WalletError::InvalidOperation("No active storage provider".to_string()))?;
+    let user = active
+        .find_user_by_identity_key(&auth.identity_key)
         .await?
         .ok_or_else(|| WalletError::Unauthorized("User not found".to_string()))?;
 
@@ -121,7 +123,7 @@ pub async fn acquire_direct_certificate<W: WalletInterface + ?Sized>(
     };
 
     // Insert the certificate, get the assigned ID.
-    let cert_id = storage.active().insert_certificate(&new_cert, None).await?;
+    let cert_id = active.insert_certificate_storage(&new_cert).await?;
 
     // Insert each field + master key.
     let keyring = args.keyring_for_subject.clone().unwrap_or_default();
@@ -136,9 +138,8 @@ pub async fn acquire_direct_certificate<W: WalletInterface + ?Sized>(
             field_value: field_value.clone(),
             master_key,
         };
-        storage
-            .active()
-            .insert_certificate_field(&field_record, None)
+        active
+            .insert_certificate_field_storage(&field_record)
             .await?;
     }
 
@@ -169,9 +170,11 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
     auth: &AuthId,
     args: &ProveCertificateArgs,
 ) -> WalletResult<ProveCertificateResult> {
-    let user = storage
+    let active = storage
         .active()
-        .find_user_by_identity_key(&auth.identity_key, None)
+        .ok_or_else(|| WalletError::InvalidOperation("No active storage provider".to_string()))?;
+    let user = active
+        .find_user_by_identity_key(&auth.identity_key)
         .await?
         .ok_or_else(|| WalletError::Unauthorized("User not found".to_string()))?;
 
@@ -220,7 +223,7 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
         ..Default::default()
     };
 
-    let certs = storage.active().find_certificates(&find_args, None).await?;
+    let certs = active.find_certificates_storage(&find_args).await?;
 
     if certs.len() != 1 {
         return Err(WalletError::InvalidParameter {
@@ -231,19 +234,15 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
     let storage_cert = &certs[0];
 
     // Fetch the certificate fields to get the keyring (master keys).
-    let fields = storage
-        .active()
-        .find_certificate_fields(
-            &FindCertificateFieldsArgs {
-                partial: CertificateFieldPartial {
-                    certificate_id: Some(storage_cert.certificate_id),
-                    user_id: Some(user.user_id),
-                    ..Default::default()
-                },
+    let fields = active
+        .find_certificate_fields(&FindCertificateFieldsArgs {
+            partial: CertificateFieldPartial {
+                certificate_id: Some(storage_cert.certificate_id),
+                user_id: Some(user.user_id),
                 ..Default::default()
             },
-            None,
-        )
+            ..Default::default()
+        })
         .await?;
 
     let field_map: HashMap<String, String> = fields

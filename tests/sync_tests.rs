@@ -70,6 +70,7 @@ mod sync_tests {
                 user_identity_key: "02abc111".to_string(),
                 sync_map: &sync_map,
                 max_items_per_entity: 1000,
+                offsets: Default::default(),
             },
             None,
         )
@@ -136,6 +137,7 @@ mod sync_tests {
                 user_identity_key: "02abc222".to_string(),
                 sync_map: &sync_map,
                 max_items_per_entity: 1000,
+                offsets: Default::default(),
             },
             None,
         )
@@ -193,6 +195,7 @@ mod sync_tests {
                 user_identity_key: "02abc333".to_string(),
                 sync_map: &sync_map,
                 max_items_per_entity: 1000,
+                offsets: Default::default(),
             },
             None,
         )

@@ -95,7 +95,7 @@ impl WalletMonitorTask for TaskFailAbandoned {
                 no_raw_tx: true,
             };
 
-            let txs = self.storage.find_transactions(&args, None).await?;
+            let txs = self.storage.find_transactions(&args).await?;
             let count = txs.len();
 
             if txs.is_empty() {
@@ -112,7 +112,7 @@ impl WalletMonitorTask for TaskFailAbandoned {
                 if let Some(ref txid) = tx.txid {
                     match self
                         .storage
-                        .update_transaction_status(txid, TransactionStatus::Failed, None)
+                        .update_transaction_status(txid, TransactionStatus::Failed)
                         .await
                     {
                         Ok(_) => {

@@ -13,7 +13,7 @@ use tracing::warn;
 
 use crate::error::WalletResult;
 use crate::storage::find_args::{FindSettingsArgs, SettingsPartial};
-use crate::storage::traits::provider::StorageProvider;
+use crate::storage::traits::wallet_provider::WalletStorageProvider;
 
 /// Cache time-to-live: 2 minutes.
 const CACHE_TTL: Duration = Duration::from_secs(120);
@@ -159,7 +159,7 @@ impl<T> CacheEntry<T> {
 /// Settings are cached in memory for 2 minutes to avoid repeated storage reads.
 pub struct WalletSettingsManager {
     /// Storage provider for reading/writing settings.
-    storage: Arc<dyn StorageProvider>,
+    storage: Arc<dyn WalletStorageProvider>,
     /// Cached settings with TTL.
     cache: Mutex<Option<CacheEntry<WalletSettings>>>,
     /// Default settings to use when none are stored.
@@ -168,13 +168,13 @@ pub struct WalletSettingsManager {
 
 impl WalletSettingsManager {
     /// Create a new WalletSettingsManager with the given storage provider.
-    pub fn new(storage: Arc<dyn StorageProvider>) -> Self {
+    pub fn new(storage: Arc<dyn WalletStorageProvider>) -> Self {
         Self::with_defaults(storage, default_settings())
     }
 
     /// Create a new WalletSettingsManager with custom default settings.
     pub fn with_defaults(
-        storage: Arc<dyn StorageProvider>,
+        storage: Arc<dyn WalletStorageProvider>,
         default_settings: WalletSettings,
     ) -> Self {
         WalletSettingsManager {
@@ -202,7 +202,7 @@ impl WalletSettingsManager {
 
         // Read from the settings table.
         let args = FindSettingsArgs::default();
-        let rows = self.storage.find_settings(&args, None).await?;
+        let rows = self.storage.find_settings_storage(&args).await?;
 
         let settings = if let Some(row) = rows.into_iter().next() {
             match row.wallet_settings_json {
@@ -238,7 +238,7 @@ impl WalletSettingsManager {
             wallet_settings_json: Some(json),
             ..Default::default()
         };
-        self.storage.update_settings(&update, None).await?;
+        self.storage.update_settings_storage(&update).await?;
 
         // Update cache immediately after successful storage write.
         let mut cache = self.cache.lock().await;

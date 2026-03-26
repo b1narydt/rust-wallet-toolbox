@@ -4,7 +4,7 @@
 
 # BSV Wallet Toolbox
 
-Production-ready BSV wallet implementation in Rust, translating the TypeScript wallet-toolbox into idiomatic Rust.
+BSV wallet implementation in Rust, translating the TypeScript wallet-toolbox into idiomatic Rust.
 
 ## Table of Contents
 

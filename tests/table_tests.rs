@@ -709,3 +709,299 @@ fn vec_u8_some_serializes_as_array() {
     assert_eq!(raw_tx.len(), 3);
     assert_eq!(raw_tx[0], 1);
 }
+
+// -- Wire format tests: Task 1 --
+
+#[test]
+fn timestamp_serializes_with_z_and_3ms() {
+    // 718 ms: serialize a NaiveDateTime with millis, assert output is exactly "2024-01-15T10:30:00.718Z"
+    use chrono::NaiveDateTime;
+    let dt =
+        NaiveDateTime::parse_from_str("2024-01-15T10:30:00.718", "%Y-%m-%dT%H:%M:%S%.f").unwrap();
+    let user = User {
+        created_at: dt,
+        updated_at: dt,
+        ..sample_user()
+    };
+    let json = serde_json::to_value(&user).unwrap();
+    let created = json["created_at"].as_str().unwrap();
+    assert_eq!(created, "2024-01-15T10:30:00.718Z");
+}
+
+#[test]
+fn timestamp_zero_millis_serializes_as_000z() {
+    // Zero millis: sample_datetime() has zero millis, assert output ends with ".000Z"
+    let user = sample_user();
+    let json = serde_json::to_value(&user).unwrap();
+    let created = json["created_at"].as_str().unwrap();
+    assert!(
+        created.ends_with(".000Z"),
+        "Expected timestamp to end with .000Z, got: {}",
+        created
+    );
+}
+
+#[test]
+fn option_timestamp_serializes_with_z() {
+    // Option<NaiveDateTime> Some value should have Z and 3-digit ms
+    use bsv_wallet_toolbox::storage::sync::SyncMap;
+    let mut sync_map = SyncMap::new();
+    sync_map.proven_tx.max_updated_at = Some(
+        chrono::NaiveDateTime::parse_from_str("2024-06-01T12:00:00.500", "%Y-%m-%dT%H:%M:%S%.f")
+            .unwrap(),
+    );
+    let json = serde_json::to_value(&sync_map).unwrap();
+    let max_updated = json["provenTx"]["maxUpdatedAt"].as_str().unwrap();
+    assert!(
+        max_updated.ends_with("Z"),
+        "Expected maxUpdatedAt to end with Z, got: {}",
+        max_updated
+    );
+    assert!(
+        max_updated.contains(".500Z"),
+        "Expected 3-digit ms .500Z in maxUpdatedAt, got: {}",
+        max_updated
+    );
+}
+
+#[test]
+fn timestamp_deserializes_ts_format_with_z() {
+    // Deserialize "2024-01-15T10:30:00.718Z" -- assert parsed correctly
+    use bsv_wallet_toolbox::storage::sync::SyncMap;
+    let json_str = r#"{"provenTx":{"entityName":"provenTx","idMap":{},"maxUpdatedAt":"2024-01-15T10:30:00.718Z","count":0},"outputBasket":{"entityName":"outputBasket","idMap":{},"maxUpdatedAt":null,"count":0},"transaction":{"entityName":"transaction","idMap":{},"maxUpdatedAt":null,"count":0},"output":{"entityName":"output","idMap":{},"maxUpdatedAt":null,"count":0},"txLabel":{"entityName":"txLabel","idMap":{},"maxUpdatedAt":null,"count":0},"txLabelMap":{"entityName":"txLabelMap","idMap":{},"maxUpdatedAt":null,"count":0},"outputTag":{"entityName":"outputTag","idMap":{},"maxUpdatedAt":null,"count":0},"outputTagMap":{"entityName":"outputTagMap","idMap":{},"maxUpdatedAt":null,"count":0},"certificate":{"entityName":"certificate","idMap":{},"maxUpdatedAt":null,"count":0},"certificateField":{"entityName":"certificateField","idMap":{},"maxUpdatedAt":null,"count":0},"commission":{"entityName":"commission","idMap":{},"maxUpdatedAt":null,"count":0},"provenTxReq":{"entityName":"provenTxReq","idMap":{},"maxUpdatedAt":null,"count":0}}"#;
+    let sync_map: SyncMap = serde_json::from_str(json_str).unwrap();
+    let max_updated = sync_map.proven_tx.max_updated_at.unwrap();
+    assert_eq!(max_updated.and_utc().timestamp_millis() % 1000, 718);
+}
+
+#[test]
+fn timestamp_deserializes_variable_precision() {
+    // Deserialize "2024-01-15T10:30:00.7" (1 digit) -- should still parse, no regression
+    let json_str = r#"{"created_at":"2024-01-15T10:30:00.7","updated_at":"2024-01-15T10:30:00.7","userId":1,"identityKey":"02abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab","activeStorage":"03storagekey"}"#;
+    let _user: User = serde_json::from_str(json_str).unwrap();
+    // If we get here without panicking, variable precision parsing works
+}
+
+#[test]
+fn sync_chunk_none_fields_absent_not_null() {
+    use bsv_wallet_toolbox::storage::sync::SyncChunk;
+    let chunk = SyncChunk {
+        from_storage_identity_key: "from".to_string(),
+        to_storage_identity_key: "to".to_string(),
+        user_identity_key: "user".to_string(),
+        user: None,
+        proven_txs: None,
+        output_baskets: None,
+        transactions: None,
+        outputs: None,
+        tx_labels: None,
+        tx_label_maps: None,
+        output_tags: None,
+        output_tag_maps: None,
+        certificates: None,
+        certificate_fields: None,
+        commissions: None,
+        proven_tx_reqs: None,
+    };
+    let json = serde_json::to_value(&chunk).unwrap();
+    // None entity lists must be absent from JSON, NOT present as null
+    assert!(
+        json.get("user").is_none(),
+        "Expected 'user' key to be absent from JSON, got: {:?}",
+        json.get("user")
+    );
+    assert!(
+        json.get("provenTxs").is_none(),
+        "Expected 'provenTxs' key to be absent from JSON"
+    );
+    assert!(
+        json.get("transactions").is_none(),
+        "Expected 'transactions' key to be absent from JSON"
+    );
+    assert!(
+        json.get("outputs").is_none(),
+        "Expected 'outputs' key to be absent from JSON"
+    );
+    assert!(
+        json.get("certificates").is_none(),
+        "Expected 'certificates' key to be absent from JSON"
+    );
+}
+
+#[test]
+fn sync_chunk_present_fields_included() {
+    use bsv_wallet_toolbox::storage::sync::SyncChunk;
+    let chunk = SyncChunk {
+        from_storage_identity_key: "from".to_string(),
+        to_storage_identity_key: "to".to_string(),
+        user_identity_key: "user".to_string(),
+        user: None,
+        proven_txs: Some(vec![sample_proven_tx()]),
+        output_baskets: None,
+        transactions: None,
+        outputs: None,
+        tx_labels: None,
+        tx_label_maps: None,
+        output_tags: None,
+        output_tag_maps: None,
+        certificates: None,
+        certificate_fields: None,
+        commissions: None,
+        proven_tx_reqs: None,
+    };
+    let json = serde_json::to_value(&chunk).unwrap();
+    // provenTxs should be present with array value
+    let proven_txs = json
+        .get("provenTxs")
+        .expect("Expected 'provenTxs' key to be present");
+    assert!(proven_txs.is_array(), "Expected 'provenTxs' to be an array");
+    assert_eq!(proven_txs.as_array().unwrap().len(), 1);
+    // other None fields should still be absent
+    assert!(json.get("transactions").is_none());
+}
+
+// -- Wire format tests: Task 2 -- TS-fixture round-trip tests --
+
+#[test]
+fn proven_tx_ts_fixture_roundtrip() {
+    // JSON exactly as TS StorageServer produces: created_at snake_case, 3ms+Z, integer arrays
+    let ts_json = r#"{
+        "created_at": "2024-01-15T10:30:00.718Z",
+        "updated_at": "2024-01-15T10:30:01.000Z",
+        "provenTxId": 42,
+        "txid": "abcd1234ef567890abcd1234ef567890abcd1234ef567890abcd1234ef567890ab",
+        "height": 800000,
+        "index": 5,
+        "merklePath": [1, 2, 3],
+        "rawTx": [4, 5],
+        "blockHash": "000000000000000000abcdef1234567890abcdef1234567890abcdef1234567890",
+        "merkleRoot": "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899aa"
+    }"#;
+
+    let proven_tx: ProvenTx = serde_json::from_str(ts_json).unwrap();
+
+    // Field values correct
+    assert_eq!(proven_tx.proven_tx_id, 42);
+    assert_eq!(proven_tx.merkle_path, vec![1u8, 2, 3]);
+    assert_eq!(proven_tx.raw_tx, vec![4u8, 5]);
+
+    // Re-serialize
+    let out = serde_json::to_value(&proven_tx).unwrap();
+
+    // Timestamps must be exactly TS format: 3ms digits + Z
+    assert_eq!(
+        out["created_at"].as_str().unwrap(),
+        "2024-01-15T10:30:00.718Z"
+    );
+    assert_eq!(
+        out["updated_at"].as_str().unwrap(),
+        "2024-01-15T10:30:01.000Z"
+    );
+
+    // Binary fields are integer arrays
+    let merkle = out["merklePath"].as_array().unwrap();
+    assert_eq!(merkle[0], 1);
+    assert_eq!(merkle[1], 2);
+    assert_eq!(merkle[2], 3);
+}
+
+#[test]
+fn transaction_ts_fixture_roundtrip() {
+    // inputBEEF present as integer array, rawTx null
+    let ts_json = r#"{
+        "created_at": "2024-03-20T08:15:30.250Z",
+        "updated_at": "2024-03-20T08:15:30.250Z",
+        "transactionId": 100,
+        "userId": 1,
+        "provenTxId": null,
+        "status": "completed",
+        "reference": "ref123",
+        "isOutgoing": true,
+        "satoshis": 50000,
+        "description": "Test payment",
+        "version": 1,
+        "lockTime": 0,
+        "txid": "txid123",
+        "inputBEEF": [10, 20, 30],
+        "rawTx": null
+    }"#;
+
+    let tx: Transaction = serde_json::from_str(ts_json).unwrap();
+
+    // Field values correct
+    assert_eq!(tx.input_beef, Some(vec![10u8, 20, 30]));
+    assert!(tx.raw_tx.is_none());
+
+    // Re-serialize
+    let out = serde_json::to_value(&tx).unwrap();
+
+    // Timestamp has Z and 3ms digits
+    assert!(
+        out["created_at"].as_str().unwrap().ends_with("Z"),
+        "created_at must end with Z, got: {}",
+        out["created_at"]
+    );
+
+    // inputBEEF is integer array
+    let beef = out["inputBEEF"].as_array().unwrap();
+    assert_eq!(beef[0], 10);
+    assert_eq!(beef[1], 20);
+    assert_eq!(beef[2], 30);
+
+    // rawTx is null (Option<Vec<u8>> None serializes as null for table structs, matching TS)
+    assert!(out["rawTx"].is_null(), "rawTx should be null when None");
+}
+
+#[test]
+fn sync_chunk_ts_fixture_roundtrip() {
+    use bsv_wallet_toolbox::storage::sync::SyncChunk;
+
+    // Only provenTxs populated, all other entity lists absent from JSON
+    let ts_json = r#"{
+        "fromStorageIdentityKey": "from-key",
+        "toStorageIdentityKey": "to-key",
+        "userIdentityKey": "user-key",
+        "provenTxs": [
+            {
+                "created_at": "2024-01-15T10:30:00.718Z",
+                "updated_at": "2024-01-15T10:30:01.000Z",
+                "provenTxId": 1,
+                "txid": "abcd1234ef567890abcd1234ef567890abcd1234ef567890abcd1234ef567890ab",
+                "height": 800000,
+                "index": 0,
+                "merklePath": [1, 2],
+                "rawTx": [3, 4],
+                "blockHash": "000000000000000000abcdef1234567890abcdef1234567890abcdef1234567890",
+                "merkleRoot": "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899aa"
+            }
+        ]
+    }"#;
+
+    let chunk: SyncChunk = serde_json::from_str(ts_json).unwrap();
+
+    // proven_txs is Some with one element, transactions is None
+    assert!(chunk.proven_txs.is_some());
+    assert_eq!(chunk.proven_txs.as_ref().unwrap().len(), 1);
+    assert!(chunk.transactions.is_none());
+
+    // Re-serialize
+    let out = serde_json::to_value(&chunk).unwrap();
+
+    // provenTxs key is present with array
+    let proven_txs = out.get("provenTxs").expect("provenTxs should be in output");
+    assert!(proven_txs.is_array());
+
+    // transactions key is absent (not null)
+    assert!(
+        out.get("transactions").is_none(),
+        "transactions should be absent from output, not null"
+    );
+
+    // Timestamp inside the nested ProvenTx has Z suffix
+    let nested_ts = proven_txs[0]["created_at"].as_str().unwrap();
+    assert!(
+        nested_ts.ends_with("Z"),
+        "Nested created_at must end with Z, got: {}",
+        nested_ts
+    );
+}

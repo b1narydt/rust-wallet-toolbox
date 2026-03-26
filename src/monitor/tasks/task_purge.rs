@@ -59,7 +59,7 @@ impl WalletMonitorTask for TaskPurge {
         self.check_now = false;
 
         use crate::storage::traits::reader_writer::StorageReaderWriter;
-        let result = self.storage.purge_data(&self.params, None).await?;
+        let result = self.storage.purge_data(&self.params).await?;
         Ok(result)
     }
 }

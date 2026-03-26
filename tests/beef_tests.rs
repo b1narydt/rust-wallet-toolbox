@@ -69,10 +69,9 @@ mod beef_tests {
         let _user_id = insert_test_user(&storage, "02beef01").await;
 
         let known_txids = HashSet::new();
-        let result =
-            get_valid_beef_for_txid(&storage, TXID_UNKNOWN, TrustSelf::No, &known_txids, None)
-                .await
-                .unwrap();
+        let result = get_valid_beef_for_txid(&storage, TXID_UNKNOWN, TrustSelf::No, &known_txids)
+            .await
+            .unwrap();
 
         assert!(result.is_none(), "unknown txid should return None");
     }
@@ -94,7 +93,7 @@ mod beef_tests {
         let mut known_txids = HashSet::new();
         known_txids.insert(TXID_A.to_string());
 
-        let result = get_valid_beef_for_txid(&storage, TXID_A, TrustSelf::No, &known_txids, None)
+        let result = get_valid_beef_for_txid(&storage, TXID_A, TrustSelf::No, &known_txids)
             .await
             .unwrap();
 
@@ -137,7 +136,7 @@ mod beef_tests {
         // With TrustSelf::Known, proven txs are included as txid-only
         // (no raw_tx parsing, no merkle_path parsing needed)
         let result =
-            get_valid_beef_for_txid(&storage, TXID_B, TrustSelf::Known, &known_txids, None).await;
+            get_valid_beef_for_txid(&storage, TXID_B, TrustSelf::Known, &known_txids).await;
 
         assert!(
             result.is_ok(),
@@ -183,7 +182,7 @@ mod beef_tests {
         storage.insert_transaction(&tx, None).await.unwrap();
 
         let known_txids = HashSet::new();
-        let result = get_valid_beef_for_txid(&storage, TXID_C, TrustSelf::No, &known_txids, None)
+        let result = get_valid_beef_for_txid(&storage, TXID_C, TrustSelf::No, &known_txids)
             .await
             .unwrap();
 

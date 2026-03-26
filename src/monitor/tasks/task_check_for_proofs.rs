@@ -142,7 +142,7 @@ impl WalletMonitorTask for TaskCheckForProofs {
                 since: None,
             };
 
-            let reqs = self.storage.find_proven_tx_reqs(&args, None).await?;
+            let reqs = self.storage.find_proven_tx_reqs(&args).await?;
             let count = reqs.len();
 
             if reqs.is_empty() {

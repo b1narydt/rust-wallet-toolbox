@@ -225,8 +225,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                 // This tx has a merkle proof — store it as proven
                 if let Some(ref bsv_tx) = btx.tx {
                     let ancestor_txid = &btx.txid;
-                    let merkle_root =
-                        bump.compute_root(Some(ancestor_txid)).unwrap_or_default();
+                    let merkle_root = bump.compute_root(Some(ancestor_txid)).unwrap_or_default();
 
                     let raw_tx_bytes = bsv_tx.to_bytes().unwrap_or_default();
                     let mut bump_bytes = Vec::new();
@@ -241,9 +240,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                         ..Default::default()
                     };
                     let existing = verify_one_or_none(
-                        storage
-                            .find_proven_txs(&find_proven, Some(&db_trx))
-                            .await?,
+                        storage.find_proven_txs(&find_proven, Some(&db_trx)).await?,
                     )?;
 
                     if existing.is_none() && !raw_tx_bytes.is_empty() && !bump_bytes.is_empty() {
@@ -259,9 +256,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                             block_hash: String::new(),
                             merkle_root,
                         };
-                        let _ = storage
-                            .insert_proven_tx(&new_proven, Some(&db_trx))
-                            .await;
+                        let _ = storage.insert_proven_tx(&new_proven, Some(&db_trx)).await;
                     }
                 }
             }
@@ -341,7 +336,11 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
         let beef_bytes = {
             let mut buf = Vec::new();
             ab.to_binary(&mut buf).ok();
-            if buf.is_empty() { None } else { Some(buf) }
+            if buf.is_empty() {
+                None
+            } else {
+                Some(buf)
+            }
         };
         let new_tx = Transaction {
             created_at: now,

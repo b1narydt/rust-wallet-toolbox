@@ -76,18 +76,15 @@ impl TaskArcSse {
         // Find matching ProvenTxReqs
         let reqs = match self
             .storage
-            .find_proven_tx_reqs(
-                &FindProvenTxReqsArgs {
-                    partial: ProvenTxReqPartial {
-                        txid: Some(event.txid.clone()),
-                        ..Default::default()
-                    },
-                    since: None,
-                    paged: None,
-                    statuses: None,
+            .find_proven_tx_reqs(&FindProvenTxReqsArgs {
+                partial: ProvenTxReqPartial {
+                    txid: Some(event.txid.clone()),
+                    ..Default::default()
                 },
-                None,
-            )
+                since: None,
+                paged: None,
+                statuses: None,
+            })
             .await
         {
             Ok(r) => r,
@@ -127,7 +124,7 @@ impl TaskArcSse {
                         };
                         let _ = self
                             .storage
-                            .update_proven_tx_req(req.proven_tx_req_id, &update, None)
+                            .update_proven_tx_req(req.proven_tx_req_id, &update)
                             .await;
 
                         // Update referenced transactions to unproven
@@ -148,7 +145,6 @@ impl TaskArcSse {
                                                 ),
                                                 ..Default::default()
                                             },
-                                            None,
                                         )
                                         .await;
                                 }
@@ -166,7 +162,7 @@ impl TaskArcSse {
                     };
                     let _ = self
                         .storage
-                        .update_proven_tx_req(req.proven_tx_req_id, &update, None)
+                        .update_proven_tx_req(req.proven_tx_req_id, &update)
                         .await;
                     log.push_str(&format!(
                         "  req {} MINED/IMMUTABLE => unmined (proof collection deferred)\n",
@@ -180,7 +176,7 @@ impl TaskArcSse {
                     };
                     let _ = self
                         .storage
-                        .update_proven_tx_req(req.proven_tx_req_id, &update, None)
+                        .update_proven_tx_req(req.proven_tx_req_id, &update)
                         .await;
 
                     // Update referenced transactions to failed
@@ -198,7 +194,6 @@ impl TaskArcSse {
                                             status: Some(crate::status::TransactionStatus::Failed),
                                             ..Default::default()
                                         },
-                                        None,
                                     )
                                     .await;
                             }
@@ -213,7 +208,7 @@ impl TaskArcSse {
                     };
                     let _ = self
                         .storage
-                        .update_proven_tx_req(req.proven_tx_req_id, &update, None)
+                        .update_proven_tx_req(req.proven_tx_req_id, &update)
                         .await;
 
                     // Update referenced transactions to failed
@@ -231,7 +226,6 @@ impl TaskArcSse {
                                             status: Some(crate::status::TransactionStatus::Failed),
                                             ..Default::default()
                                         },
-                                        None,
                                     )
                                     .await;
                             }

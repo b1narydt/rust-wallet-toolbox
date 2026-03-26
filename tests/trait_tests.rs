@@ -5,7 +5,7 @@ mod sqlite_tests {
     use std::sync::Arc;
 
     use bsv_wallet_toolbox::storage::sqlx_impl::SqliteStorage;
-    use bsv_wallet_toolbox::storage::{StorageConfig, StorageProvider};
+    use bsv_wallet_toolbox::storage::{StorageConfig, StorageProvider, WalletStorageProvider};
 
     /// Test 1: Verify `Arc<dyn StorageProvider>` compiles (object safety).
     /// This function signature proves the trait is object-safe.
@@ -86,5 +86,53 @@ mod sqlite_tests {
         assert!(args.partial.active_storage.is_none());
         assert!(args.since.is_none());
         assert!(args.paged.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // WalletStorageProvider trait tests (Phase 2)
+    // -----------------------------------------------------------------------
+
+    /// Test: Arc<dyn WalletStorageProvider> compiles (object safety).
+    fn _accepts_wsp(_p: Arc<dyn WalletStorageProvider>) {}
+
+    #[test]
+    fn wallet_storage_provider_object_safe() {
+        // If this test compiles, Arc<dyn WalletStorageProvider> is object-safe.
+        assert!(true);
+    }
+
+    /// Test: a function accepting &dyn WalletStorageProvider compiles when passed &SqliteStorage.
+    fn _accepts_wsp_ref(_p: &dyn WalletStorageProvider) {}
+
+    #[tokio::test]
+    async fn sqlite_storage_satisfies_wallet_provider() {
+        let config = StorageConfig {
+            url: "sqlite::memory:".to_string(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::new_sqlite(config, bsv_wallet_toolbox::types::Chain::Test)
+            .await
+            .expect("SqliteStorage should create");
+        // If this compiles, the blanket impl works.
+        _accepts_wsp_ref(&storage);
+    }
+
+    /// Test: is_storage_provider() returns true via blanket impl.
+    #[tokio::test]
+    async fn is_storage_provider_returns_true() {
+        let config = StorageConfig {
+            url: "sqlite::memory:".to_string(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::new_sqlite(config, bsv_wallet_toolbox::types::Chain::Test)
+            .await
+            .expect("SqliteStorage should create");
+        StorageProvider::make_available(&storage)
+            .await
+            .expect("make_available should succeed");
+        assert!(
+            storage.is_storage_provider(),
+            "blanket impl should return true"
+        );
     }
 }

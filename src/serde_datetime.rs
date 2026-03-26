@@ -6,19 +6,25 @@
 //! has no timezone concept.
 //!
 //! This module provides a deserialize function that strips the trailing "Z"
-//! before parsing, and a serialize function that outputs the standard format.
+//! before parsing, and a serialize function that outputs the standard format
+//! with exactly 3 millisecond digits and a trailing "Z" -- matching TS
+//! Date.toISOString() output byte-for-byte.
 
 use chrono::NaiveDateTime;
 use serde::{self, Deserialize, Deserializer, Serializer};
 
-const FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.f";
+/// Tolerant parse format: accepts any fractional second precision (1-9 digits).
+const PARSE_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.f";
 
-/// Serialize a NaiveDateTime to ISO 8601 string.
+/// Strict serialize format: always produces exactly 3 millisecond digits.
+const SERIALIZE_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.3f";
+
+/// Serialize a NaiveDateTime to ISO 8601 string with exactly 3 ms digits and Z suffix.
 pub fn serialize<S>(date: &NaiveDateTime, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let s = date.format(FORMAT).to_string();
+    let s = format!("{}Z", date.format(SERIALIZE_FORMAT));
     serializer.serialize_str(&s)
 }
 
@@ -29,7 +35,7 @@ where
 {
     let s = String::deserialize(deserializer)?;
     let trimmed = s.trim_end_matches('Z');
-    NaiveDateTime::parse_from_str(trimmed, FORMAT).map_err(serde::de::Error::custom)
+    NaiveDateTime::parse_from_str(trimmed, PARSE_FORMAT).map_err(serde::de::Error::custom)
 }
 
 /// Optional variant for `Option<NaiveDateTime>` fields.
@@ -37,15 +43,19 @@ pub mod option {
     use chrono::NaiveDateTime;
     use serde::{self, Deserialize, Deserializer, Serializer};
 
-    const FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.f";
+    /// Tolerant parse format: accepts any fractional second precision (1-9 digits).
+    const PARSE_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.f";
 
-    /// Serialize an optional NaiveDateTime.
+    /// Strict serialize format: always produces exactly 3 millisecond digits.
+    const SERIALIZE_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.3f";
+
+    /// Serialize an optional NaiveDateTime with exactly 3 ms digits and Z suffix.
     pub fn serialize<S>(date: &Option<NaiveDateTime>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         match date {
-            Some(d) => serializer.serialize_str(&d.format(FORMAT).to_string()),
+            Some(d) => serializer.serialize_str(&format!("{}Z", d.format(SERIALIZE_FORMAT))),
             None => serializer.serialize_none(),
         }
     }
@@ -59,7 +69,7 @@ pub mod option {
         match opt {
             Some(s) => {
                 let trimmed = s.trim_end_matches('Z');
-                NaiveDateTime::parse_from_str(trimmed, FORMAT)
+                NaiveDateTime::parse_from_str(trimmed, PARSE_FORMAT)
                     .map(Some)
                     .map_err(serde::de::Error::custom)
             }

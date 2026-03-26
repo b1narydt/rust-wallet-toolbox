@@ -91,28 +91,26 @@ impl DefaultWalletSigner {
         reference: &str,
     ) -> WalletResult<PendingSignAction> {
         let auth = self.auth();
-        let active = self.storage.active();
 
         // --- Step 1: Find the user ---
-        let user = active
-            .find_user_by_identity_key(&auth, None)
+        let user = self
+            .storage
+            .find_user_by_identity_key(&auth)
             .await?
             .ok_or_else(|| WalletError::Unauthorized("User not found".to_string()))?;
 
         // --- Step 2: Find the transaction by reference ---
-        let txs = active
-            .find_transactions(
-                &FindTransactionsArgs {
-                    partial: TransactionPartial {
-                        user_id: Some(user.user_id),
-                        reference: Some(reference.to_string()),
-                        ..Default::default()
-                    },
-                    no_raw_tx: false,
+        let txs = self
+            .storage
+            .find_transactions(&FindTransactionsArgs {
+                partial: TransactionPartial {
+                    user_id: Some(user.user_id),
+                    reference: Some(reference.to_string()),
                     ..Default::default()
                 },
-                None,
-            )
+                no_raw_tx: false,
+                ..Default::default()
+            })
             .await?;
 
         let tx_record = txs
@@ -151,18 +149,16 @@ impl DefaultWalletSigner {
         })?;
 
         // --- Step 6: Find all Output records spent by this transaction ---
-        let spent_outputs = active
-            .find_outputs(
-                &FindOutputsArgs {
-                    partial: OutputPartial {
-                        spent_by: Some(tx_record.transaction_id),
-                        ..Default::default()
-                    },
-                    no_script: false,
+        let spent_outputs = self
+            .storage
+            .find_outputs_storage(&FindOutputsArgs {
+                partial: OutputPartial {
+                    spent_by: Some(tx_record.transaction_id),
                     ..Default::default()
                 },
-                None,
-            )
+                no_script: false,
+                ..Default::default()
+            })
             .await?;
 
         // --- Step 7: Build PendingStorageInput entries ---

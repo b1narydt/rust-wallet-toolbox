@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use bsv::services::overlay_tools::LookupResolver;
 use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+use crate::tables::ProvenTx;
 
 use crate::services::traits::WalletServices;
 use crate::storage::manager::WalletStorageManager;
@@ -53,11 +55,21 @@ pub struct WalletArgs {
 /// Identifies the caller for authorized wallet operations.
 ///
 /// The `identity_key` is a compressed public key hex string representing
-/// the caller's identity.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// the caller's identity. The optional `user_id` and `is_active` fields
+/// match the TypeScript `AuthId` interface for Phase 3 JSON serialization.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuthId {
     /// Compressed public key hex (66 chars) of the caller.
     pub identity_key: String,
+    /// Database user_id for the caller, if already resolved.
+    /// Maps to TypeScript `AuthId.userId?`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<i64>,
+    /// Whether this user has active storage access.
+    /// Maps to TypeScript `AuthId.isActive?`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_active: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -314,4 +326,82 @@ pub struct AdminStatsResult {
     pub tags_month: u64,
     /// Total output tags.
     pub tags_total: u64,
+}
+
+// ---------------------------------------------------------------------------
+// Reprove result types
+// ---------------------------------------------------------------------------
+
+/// Details of a successful ProvenTx proof update.
+///
+/// Matches TS `ReproveProvenUpdate` (the inner object inside ReproveProvenResult).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReproveProvenUpdate {
+    /// The updated ProvenTx record with new proof fields.
+    pub update: ProvenTx,
+    /// Human-readable description of what changed (matches TS logUpdate).
+    pub log_update: String,
+}
+
+/// Result from `reprove_proven`.
+///
+/// Matches TS `ReproveProvenResult`:
+/// - `updated` is Some if the proof was re-validated and fields changed.
+/// - `unchanged` is true if proof was fetched but matched the existing data.
+/// - `unavailable` is true if no merkle proof could be obtained.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReproveProvenResult {
+    /// The updated record and log if the proof was changed, otherwise None.
+    pub updated: Option<ReproveProvenUpdate>,
+    /// True if proof was obtained but data was already up-to-date.
+    pub unchanged: bool,
+    /// True if no merkle proof was available for this tx.
+    pub unavailable: bool,
+}
+
+/// Aggregate result from `reprove_header`.
+///
+/// Matches TS `ReproveHeaderResult`:
+/// All ProvenTx records for the deactivated block hash are partitioned into
+/// updated (proof changed), unchanged (proof same), and unavailable (no proof).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReproveHeaderResult {
+    /// ProvenTx records whose proof was successfully updated to a new block.
+    pub updated: Vec<ProvenTx>,
+    /// ProvenTx records that already had correct proof (no change needed).
+    pub unchanged: Vec<ProvenTx>,
+    /// ProvenTx records for which no merkle proof could be obtained.
+    pub unavailable: Vec<ProvenTx>,
+}
+
+// ---------------------------------------------------------------------------
+// WalletStorageInfo -- per-store metadata for get_stores()
+// ---------------------------------------------------------------------------
+
+/// Metadata about a single storage provider registered in WalletStorageManager.
+///
+/// Matches TS `WalletStorageInfo`:
+/// { storageIdentityKey, storageName, userId?, isActive, isEnabled, isBackup, isConflicting, endpointUrl? }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletStorageInfo {
+    /// Unique identity key of this storage (from Settings.storage_identity_key).
+    pub storage_identity_key: String,
+    /// Human-readable name of this storage (from Settings.storage_name).
+    pub storage_name: String,
+    /// Database user_id for the wallet owner in this store, if resolved.
+    pub user_id: Option<i64>,
+    /// True if this store is the currently active provider.
+    pub is_active: bool,
+    /// True if this store is both active and not conflicting (i.e. enabled for writes).
+    pub is_enabled: bool,
+    /// True if this store is a backup provider.
+    pub is_backup: bool,
+    /// True if this store has a conflicting active_storage reference.
+    pub is_conflicting: bool,
+    /// Remote endpoint URL for StorageClient providers, None for local SQLite.
+    pub endpoint_url: Option<String>,
 }

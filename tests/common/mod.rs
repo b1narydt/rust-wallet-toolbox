@@ -54,8 +54,7 @@ pub async fn create_test_wallet() -> SetupWallet {
     // Ensure user record exists in storage so queries don't fail with "User not found"
     setup
         .storage
-        .active()
-        .find_or_insert_user(&setup.identity_key, None)
+        .find_or_insert_user(&setup.identity_key)
         .await
         .expect("ensure user exists");
     setup
@@ -74,8 +73,7 @@ pub async fn create_test_wallet_with_key(root_key: PrivateKey) -> SetupWallet {
         .expect("Failed to create test wallet with key");
     setup
         .storage
-        .active()
-        .find_or_insert_user(&setup.identity_key, None)
+        .find_or_insert_user(&setup.identity_key)
         .await
         .expect("ensure user exists");
     setup
@@ -246,12 +244,11 @@ pub async fn seed_outputs(
     count: usize,
     satoshis: u64,
 ) -> Vec<i64> {
-    let provider = storage.active();
     let now = Utc::now().naive_utc();
 
     // Ensure user exists
-    let (user, _) = provider
-        .find_or_insert_user(user_identity_key, None)
+    let (user, _) = storage
+        .find_or_insert_user(user_identity_key)
         .await
         .expect("find_or_insert_user");
     let user_id = user.user_id;
@@ -259,37 +256,31 @@ pub async fn seed_outputs(
     // Create or find "default" basket
     let basket_id = {
         use bsv_wallet_toolbox::storage::find_args::{FindOutputBasketsArgs, OutputBasketPartial};
-        let existing = provider
-            .find_output_baskets(
-                &FindOutputBasketsArgs {
-                    partial: OutputBasketPartial {
-                        user_id: Some(user_id),
-                        name: Some("default".to_string()),
-                        ..Default::default()
-                    },
+        let existing = storage
+            .find_output_baskets(&FindOutputBasketsArgs {
+                partial: OutputBasketPartial {
+                    user_id: Some(user_id),
+                    name: Some("default".to_string()),
                     ..Default::default()
                 },
-                None,
-            )
+                ..Default::default()
+            })
             .await
             .expect("find baskets");
         if let Some(b) = existing.first() {
             b.basket_id
         } else {
-            provider
-                .insert_output_basket(
-                    &OutputBasket {
-                        created_at: now,
-                        updated_at: now,
-                        basket_id: 0,
-                        user_id,
-                        name: "default".to_string(),
-                        number_of_desired_utxos: 10,
-                        minimum_desired_utxo_value: 1000,
-                        is_deleted: false,
-                    },
-                    None,
-                )
+            storage
+                .insert_output_basket(&OutputBasket {
+                    created_at: now,
+                    updated_at: now,
+                    basket_id: 0,
+                    user_id,
+                    name: "default".to_string(),
+                    number_of_desired_utxos: 10,
+                    minimum_desired_utxo_value: 1000,
+                    is_deleted: false,
+                })
                 .await
                 .expect("insert basket")
         }
@@ -297,64 +288,58 @@ pub async fn seed_outputs(
 
     // Create a parent transaction (completed status so outputs are visible)
     let txid_hex = format!("{:064x}", rand::random::<u64>());
-    let tx_id = provider
-        .insert_transaction(
-            &Transaction {
-                created_at: now,
-                updated_at: now,
-                transaction_id: 0,
-                user_id,
-                proven_tx_id: None,
-                status: TransactionStatus::Completed,
-                reference: format!("seed-{}", rand::random::<u32>()),
-                is_outgoing: false,
-                satoshis: (satoshis * count as u64) as i64,
-                description: "seed transaction".to_string(),
-                version: Some(1),
-                lock_time: Some(0),
-                txid: Some(txid_hex.clone()),
-                input_beef: None,
-                raw_tx: None,
-            },
-            None,
-        )
+    let tx_id = storage
+        .insert_transaction(&Transaction {
+            created_at: now,
+            updated_at: now,
+            transaction_id: 0,
+            user_id,
+            proven_tx_id: None,
+            status: TransactionStatus::Completed,
+            reference: format!("seed-{}", rand::random::<u32>()),
+            is_outgoing: false,
+            satoshis: (satoshis * count as u64) as i64,
+            description: "seed transaction".to_string(),
+            version: Some(1),
+            lock_time: Some(0),
+            txid: Some(txid_hex.clone()),
+            input_beef: None,
+            raw_tx: None,
+        })
         .await
         .expect("insert transaction");
 
     // Create outputs
     let mut output_ids = Vec::with_capacity(count);
     for i in 0..count {
-        let oid = provider
-            .insert_output(
-                &Output {
-                    created_at: now,
-                    updated_at: now,
-                    output_id: 0,
-                    user_id,
-                    transaction_id: tx_id,
-                    basket_id: Some(basket_id),
-                    spendable: true,
-                    change: false,
-                    output_description: Some(format!("seed output {}", i)),
-                    vout: i as i32,
-                    satoshis: satoshis as i64,
-                    provided_by: StorageProvidedBy::You,
-                    purpose: "change".to_string(),
-                    output_type: "P2PKH".to_string(),
-                    txid: Some(txid_hex.clone()),
-                    sender_identity_key: None,
-                    derivation_prefix: None,
-                    derivation_suffix: None,
-                    custom_instructions: None,
-                    spent_by: None,
-                    sequence_number: None,
-                    spending_description: None,
-                    script_length: None,
-                    script_offset: None,
-                    locking_script: None,
-                },
-                None,
-            )
+        let oid = storage
+            .insert_output(&Output {
+                created_at: now,
+                updated_at: now,
+                output_id: 0,
+                user_id,
+                transaction_id: tx_id,
+                basket_id: Some(basket_id),
+                spendable: true,
+                change: false,
+                output_description: Some(format!("seed output {}", i)),
+                vout: i as i32,
+                satoshis: satoshis as i64,
+                provided_by: StorageProvidedBy::You,
+                purpose: "change".to_string(),
+                output_type: "P2PKH".to_string(),
+                txid: Some(txid_hex.clone()),
+                sender_identity_key: None,
+                derivation_prefix: None,
+                derivation_suffix: None,
+                custom_instructions: None,
+                spent_by: None,
+                sequence_number: None,
+                spending_description: None,
+                script_length: None,
+                script_offset: None,
+                locking_script: None,
+            })
             .await
             .expect("insert output");
         output_ids.push(oid);
@@ -370,36 +355,32 @@ pub async fn seed_transaction(
     user_identity_key: &str,
     status: TransactionStatus,
 ) -> i64 {
-    let provider = storage.active();
     let now = Utc::now().naive_utc();
 
-    let (user, _) = provider
-        .find_or_insert_user(user_identity_key, None)
+    let (user, _) = storage
+        .find_or_insert_user(user_identity_key)
         .await
         .expect("find_or_insert_user");
 
     let txid_hex = format!("{:064x}", rand::random::<u64>());
-    provider
-        .insert_transaction(
-            &Transaction {
-                created_at: now,
-                updated_at: now,
-                transaction_id: 0,
-                user_id: user.user_id,
-                proven_tx_id: None,
-                status,
-                reference: format!("seed-tx-{}", rand::random::<u32>()),
-                is_outgoing: false,
-                satoshis: 0,
-                description: "seed transaction".to_string(),
-                version: Some(1),
-                lock_time: Some(0),
-                txid: Some(txid_hex),
-                input_beef: None,
-                raw_tx: None,
-            },
-            None,
-        )
+    storage
+        .insert_transaction(&Transaction {
+            created_at: now,
+            updated_at: now,
+            transaction_id: 0,
+            user_id: user.user_id,
+            proven_tx_id: None,
+            status,
+            reference: format!("seed-tx-{}", rand::random::<u32>()),
+            is_outgoing: false,
+            satoshis: 0,
+            description: "seed transaction".to_string(),
+            version: Some(1),
+            lock_time: Some(0),
+            txid: Some(txid_hex),
+            input_beef: None,
+            raw_tx: None,
+        })
         .await
         .expect("insert transaction")
 }

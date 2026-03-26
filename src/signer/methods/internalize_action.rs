@@ -6,8 +6,9 @@
 use crate::error::WalletResult;
 use crate::services::traits::WalletServices;
 use crate::signer::types::{SignerInternalizeActionResult, ValidInternalizeActionArgs};
-use crate::storage::action_traits::StorageActionProvider;
 use crate::storage::action_types::{StorageInternalizeActionArgs, StorageInternalizeOutput};
+use crate::storage::manager::WalletStorageManager;
+use crate::wallet::types::AuthId;
 use bsv::wallet::interfaces::InternalizeOutput;
 
 /// Execute the signer-level internalizeAction flow.
@@ -16,7 +17,7 @@ use bsv::wallet::interfaces::InternalizeOutput;
 /// storage.internalize_action, which handles BEEF parsing, merkle proof
 /// validation, and output tracking.
 pub async fn signer_internalize_action(
-    storage: &(dyn StorageActionProvider + Send + Sync),
+    storage: &WalletStorageManager,
     services: &(dyn WalletServices + Send + Sync),
     auth: &str,
     args: &ValidInternalizeActionArgs,
@@ -64,8 +65,13 @@ pub async fn signer_internalize_action(
             .collect(),
     };
 
+    let auth_id = AuthId {
+        identity_key: auth.to_string(),
+        user_id: None,
+        is_active: None,
+    };
     let result = storage
-        .internalize_action(auth, &storage_args, services, None)
+        .internalize_action(&auth_id, &storage_args, services)
         .await?;
 
     Ok(SignerInternalizeActionResult {

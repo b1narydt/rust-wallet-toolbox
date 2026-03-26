@@ -10,9 +10,11 @@
 pub mod get_sync_chunk;
 pub mod merge;
 pub mod process_sync_chunk;
+pub mod request_args;
 pub mod sync_map;
 
 pub use get_sync_chunk::*;
 pub use merge::*;
 pub use process_sync_chunk::*;
+pub use request_args::*;
 pub use sync_map::*;

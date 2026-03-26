@@ -139,7 +139,7 @@ impl WalletMonitorTask for TaskReorg {
                 paged: None,
             };
 
-            let proven_txs = match self.storage.find_proven_txs(&find_args, None).await {
+            let proven_txs = match self.storage.find_proven_txs(&find_args).await {
                 Ok(txs) => txs,
                 Err(e) => {
                     log.push_str(&format!("    error finding proven txs: {}\n", e));
@@ -188,7 +188,7 @@ impl WalletMonitorTask for TaskReorg {
                     };
                     match self
                         .storage
-                        .update_proven_tx(ptx.proven_tx_id, &update, None)
+                        .update_proven_tx(ptx.proven_tx_id, &update)
                         .await
                     {
                         Ok(_) => {

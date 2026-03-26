@@ -77,7 +77,7 @@ impl TaskUnFail {
                 };
                 let _ = self
                     .storage
-                    .update_proven_tx_req(req.proven_tx_req_id, &update, None)
+                    .update_proven_tx_req(req.proven_tx_req_id, &update)
                     .await;
                 log.push_str("unfailed. status is now 'unmined'\n");
 
@@ -99,7 +99,6 @@ impl TaskUnFail {
                                             ),
                                             ..Default::default()
                                         },
-                                        None,
                                     )
                                     .await;
                                 log.push_str(&format!(
@@ -118,7 +117,7 @@ impl TaskUnFail {
                 };
                 let _ = self
                     .storage
-                    .update_proven_tx_req(req.proven_tx_req_id, &update, None)
+                    .update_proven_tx_req(req.proven_tx_req_id, &update)
                     .await;
                 log.push_str("returned to status 'invalid'\n");
             }
@@ -150,15 +149,12 @@ impl WalletMonitorTask for TaskUnFail {
         loop {
             let reqs = self
                 .storage
-                .find_proven_tx_reqs(
-                    &FindProvenTxReqsArgs {
-                        partial: ProvenTxReqPartial::default(),
-                        since: None,
-                        paged: Some(Paged { limit, offset }),
-                        statuses: Some(vec![ProvenTxReqStatus::Unfail]),
-                    },
-                    None,
-                )
+                .find_proven_tx_reqs(&FindProvenTxReqsArgs {
+                    partial: ProvenTxReqPartial::default(),
+                    since: None,
+                    paged: Some(Paged { limit, offset }),
+                    statuses: Some(vec![ProvenTxReqStatus::Unfail]),
+                })
                 .await?;
 
             if reqs.is_empty() {

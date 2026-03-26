@@ -1,6 +1,6 @@
 [package]
 name = "bsv-wallet-toolbox"
-version = "0.1.20"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.87"
 description = "Pure Rust BSV wallet-toolbox implementation"
@@ -15,7 +15,7 @@ license-file = "LICENSE"
 name = "bsv_wallet_toolbox"
 
 [dependencies]
-bsv-sdk = { version = "0.1.75", features = ["network"] }
+bsv-sdk = { version = "0.2.0", features = ["network"] }
 thiserror = "2.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
