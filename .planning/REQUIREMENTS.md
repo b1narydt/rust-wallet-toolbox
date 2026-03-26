@@ -59,6 +59,17 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 - [x] **TEST-06**: syncToWriter() completes a full sync from local to remote StorageClient
 - [x] **TEST-07**: updateBackups() syncs to StorageClient backup successfully
 
+### Integration Test Parity
+
+- [x] **PARITY-01**: Populated sync: syncToWriter with seeded outputs produces inserts > 0 locally
+- [x] **PARITY-02**: Incremental sync: second syncToWriter after new data only syncs the delta (inserts == new count, not total)
+- [x] **PARITY-03**: setActive twice: swapping active store twice leaves user timestamps advanced after swap1 and backup_stores reflects swapped-out store after each swap
+- [x] **PARITY-04**: Two-wallet isolation: two managers with different identity keys don't cross-contaminate data
+- [x] **PARITY-05**: Bidirectional sync: sync A→B then B→A produces matching entity counts
+- [x] **PARITY-06**: Non-empty remote sync: getSyncChunk from staging server returns non-empty SyncChunk with User entity
+- [x] **PARITY-07**: Funded-key live: wallet with different BSV key authenticates via BRC-31 to staging server
+- [x] **PARITY-08**: setActive with backup first: adding backup before calling setActive works correctly
+
 ### PR Submission
 
 - [ ] **PR-01**: Fork created under user's GitHub account with feat/storage-client branch
@@ -127,16 +138,24 @@ Requirements for StorageClient milestone. Direct translation of TS StorageClient
 | TEST-05 | Phase 6 | Complete |
 | TEST-06 | Phase 6 | Complete |
 | TEST-07 | Phase 6 | Complete |
+| PARITY-01 | Phase 6.1 | Complete |
+| PARITY-02 | Phase 6.1 | Complete |
+| PARITY-03 | Phase 6.1 | Complete |
+| PARITY-04 | Phase 6.1 | Complete |
+| PARITY-05 | Phase 6.1 | Complete |
+| PARITY-06 | Phase 6.1 | Complete |
+| PARITY-07 | Phase 6.1 | Complete |
+| PARITY-08 | Phase 6.1 | Complete |
 | PR-01 | Phase 7 | Pending |
 | PR-02 | Phase 7 | Pending |
 | PR-03 | Phase 7 | Pending |
 | PR-04 | Phase 7 | Pending |
 
 **Coverage:**
-- v1 requirements: 38 total
-- Mapped to phases: 38
+- v1 requirements: 46 total
+- Mapped to phases: 46
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-24*
-*Last updated: 2026-03-24 after roadmap creation — all requirements mapped*
+*Last updated: 2026-03-26 — added PARITY-01..08 for Phase 6.1*
