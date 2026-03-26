@@ -876,7 +876,7 @@ impl WalletInterface for Wallet {
         self.validate_originator(originator).map_err(to_sdk_error)?;
         let network = match self.chain {
             Chain::Main => Network::Mainnet,
-            Chain::Test | Chain::Teratest | Chain::Mock => Network::Testnet,
+            Chain::Test => Network::Testnet,
         };
         Ok(GetNetworkResult { network })
     }

@@ -42,7 +42,7 @@ impl Default for StorageFeeModel {
 /// Carries validated create action data from the signer to storage,
 /// which allocates UTXOs, creates transaction records, and returns
 /// the data needed to build the actual transaction.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageCreateActionArgs {
     /// Human-readable description of the action.
     pub description: String,
@@ -67,7 +67,7 @@ pub struct StorageCreateActionArgs {
 }
 
 /// An input specification for storage create action.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageCreateActionInput {
     /// Transaction ID of the output being spent.
     pub outpoint_txid: String,
@@ -82,7 +82,7 @@ pub struct StorageCreateActionInput {
 }
 
 /// An output specification for storage create action.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageCreateActionOutput {
     /// Locking script as hex string.
     pub locking_script: String,
@@ -102,7 +102,7 @@ pub struct StorageCreateActionOutput {
 ///
 /// Contains all the data the signer needs to build and sign the transaction:
 /// allocated inputs (with locking scripts), output assignments, BEEF data, etc.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageCreateActionResult {
     /// The transaction reference string.
     pub reference: String,
@@ -123,7 +123,7 @@ pub struct StorageCreateActionResult {
 }
 
 /// An allocated input from storage, with source transaction data.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageCreateTransactionSdkInput {
     /// The input index in the transaction being built.
     pub vin: u32,
@@ -154,7 +154,7 @@ pub struct StorageCreateTransactionSdkInput {
 }
 
 /// An assigned output from storage create action.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageCreateTransactionSdkOutput {
     /// The output index in the transaction.
     pub vout: u32,
@@ -183,7 +183,7 @@ pub struct StorageCreateTransactionSdkOutput {
 // ---------------------------------------------------------------------------
 
 /// A UTXO allocated as a change input.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AllocatedChangeInput {
     /// The storage output ID.
     pub output_id: i64,
@@ -198,7 +198,7 @@ pub struct AllocatedChangeInput {
 }
 
 /// Arguments for the change generation algorithm.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenerateChangeSdkArgs {
     /// Fixed inputs with known satoshis and script lengths.
     pub fixed_inputs: Vec<FixedInput>,
@@ -220,7 +220,7 @@ pub struct GenerateChangeSdkArgs {
 }
 
 /// A fixed input for change generation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FixedInput {
     /// Input value in satoshis.
     pub satoshis: u64,
@@ -229,7 +229,7 @@ pub struct FixedInput {
 }
 
 /// A fixed output for change generation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FixedOutput {
     /// Output value in satoshis.
     pub satoshis: u64,
@@ -238,7 +238,7 @@ pub struct FixedOutput {
 }
 
 /// Result from the change generation algorithm.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenerateChangeSdkResult {
     /// The change outputs to create.
     pub change_outputs: Vec<ChangeOutput>,
@@ -255,14 +255,14 @@ pub struct GenerateChangeSdkResult {
 }
 
 /// A change output to create.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChangeOutput {
     /// Change output value in satoshis.
     pub satoshis: u64,
 }
 
 /// Reference to an allocated change input.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AllocatedChangeInputRef {
     /// Storage output ID of the allocated input.
     pub output_id: i64,
@@ -271,7 +271,7 @@ pub struct AllocatedChangeInputRef {
 }
 
 /// Adjustment for outputs that request "max possible" satoshis.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MaxPossibleSatoshisAdjustment {
     /// Index of the fixed output that receives the adjustment.
     pub fixed_output_index: usize,
@@ -287,7 +287,7 @@ pub struct MaxPossibleSatoshisAdjustment {
 ///
 /// Sent after a transaction has been signed. Contains the signed transaction
 /// data for storage to commit and optionally broadcast.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageProcessActionArgs {
     /// True if this is a new transaction (not just a send-with).
     pub is_new_tx: bool,
@@ -308,7 +308,7 @@ pub struct StorageProcessActionArgs {
 }
 
 /// Result from storage.process_action.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageProcessActionResult {
     /// Results from batch sending.
     pub send_with_results: Option<Vec<SendWithResult>>,
@@ -321,7 +321,7 @@ pub struct StorageProcessActionResult {
 /// Arguments for storage.internalize_action.
 ///
 /// Takes ownership of outputs from an external transaction.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageInternalizeActionArgs {
     /// The AtomicBEEF transaction bytes.
     pub tx: Vec<u8>,
@@ -334,7 +334,7 @@ pub struct StorageInternalizeActionArgs {
 }
 
 /// Specification for a single output to internalize.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageInternalizeOutput {
     /// The output index in the transaction.
     pub output_index: u32,
@@ -355,7 +355,7 @@ pub struct StorageInternalizeOutput {
 }
 
 /// Result from storage.internalize_action.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageInternalizeActionResult {
     /// Whether the internalization was accepted.
     pub accepted: bool,
