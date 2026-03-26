@@ -40,6 +40,8 @@ mod sqlx_string_enum;
 
 /// Lenient NaiveDateTime serde helpers (handles trailing "Z" from TS).
 pub mod serde_datetime;
+/// Lenient serde helpers for TS interop (integer-as-bool, etc.).
+pub mod serde_helpers;
 /// Status enums for wallet entities.
 pub mod status;
 /// Storage layer: traits, manager, and implementations.

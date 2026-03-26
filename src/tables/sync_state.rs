@@ -40,6 +40,8 @@ pub struct SyncState {
     /// Current sync status.
     pub status: SyncStatus,
     /// Whether initial sync has been performed.
+    /// TS server may return `0`/`1` instead of `false`/`true`.
+    #[serde(deserialize_with = "crate::serde_helpers::bool_from_int_or_bool")]
     pub init: bool,
     /// Reference number for sync protocol.
     pub ref_num: String,
