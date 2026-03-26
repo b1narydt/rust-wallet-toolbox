@@ -76,17 +76,15 @@ impl TaskArcSse {
         // Find matching ProvenTxReqs
         let reqs = match self
             .storage
-            .find_proven_tx_reqs(
-                &FindProvenTxReqsArgs {
-                    partial: ProvenTxReqPartial {
-                        txid: Some(event.txid.clone()),
-                        ..Default::default()
-                    },
-                    since: None,
-                    paged: None,
-                    statuses: None,
-                }
-            )
+            .find_proven_tx_reqs(&FindProvenTxReqsArgs {
+                partial: ProvenTxReqPartial {
+                    txid: Some(event.txid.clone()),
+                    ..Default::default()
+                },
+                since: None,
+                paged: None,
+                statuses: None,
+            })
             .await
         {
             Ok(r) => r,

@@ -300,11 +300,9 @@ impl WalletBuilder {
                 apply_pool_overrides(&mut config);
                 #[cfg(feature = "sqlite")]
                 {
-                    let storage = crate::storage::sqlx_impl::SqliteStorage::new_sqlite(
-                        config,
-                        chain.clone(),
-                    )
-                    .await?;
+                    let storage =
+                        crate::storage::sqlx_impl::SqliteStorage::new_sqlite(config, chain.clone())
+                            .await?;
                     Arc::new(storage) as Arc<dyn WalletStorageProvider>
                 }
                 #[cfg(not(feature = "sqlite"))]
@@ -324,11 +322,9 @@ impl WalletBuilder {
                 apply_pool_overrides(&mut config);
                 #[cfg(feature = "mysql")]
                 {
-                    let mut storage = crate::storage::sqlx_impl::MysqlStorage::new_mysql(
-                        config,
-                        chain.clone(),
-                    )
-                    .await?;
+                    let mut storage =
+                        crate::storage::sqlx_impl::MysqlStorage::new_mysql(config, chain.clone())
+                            .await?;
                     if let Some(ref sik) = self.storage_identity_key {
                         storage.storage_identity_key = sik.clone();
                     }
@@ -338,8 +334,7 @@ impl WalletBuilder {
                 {
                     let _ = config;
                     return Err(WalletError::InvalidOperation(
-                        "MySQL feature not enabled. Add `mysql` feature to Cargo.toml."
-                            .to_string(),
+                        "MySQL feature not enabled. Add `mysql` feature to Cargo.toml.".to_string(),
                     ));
                 }
             }
@@ -351,11 +346,9 @@ impl WalletBuilder {
                 apply_pool_overrides(&mut config);
                 #[cfg(feature = "postgres")]
                 {
-                    let storage = crate::storage::sqlx_impl::PgStorage::new_postgres(
-                        config,
-                        chain.clone(),
-                    )
-                    .await?;
+                    let storage =
+                        crate::storage::sqlx_impl::PgStorage::new_postgres(config, chain.clone())
+                            .await?;
                     Arc::new(storage) as Arc<dyn WalletStorageProvider>
                 }
                 #[cfg(not(feature = "postgres"))]

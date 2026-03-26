@@ -30,22 +30,21 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bsv::wallet::interfaces::{
-    AcquireCertificateArgs, AuthenticatedResult, Certificate, CreateActionArgs, CreateActionResult,
-    CreateHmacArgs, CreateHmacResult, CreateSignatureArgs, CreateSignatureResult, DecryptArgs,
-    DecryptResult, DiscoverByAttributesArgs, DiscoverByIdentityKeyArgs, DiscoverCertificatesResult,
-    EncryptArgs, EncryptResult, GetHeaderArgs, GetHeaderResult, GetHeightResult, GetNetworkResult,
-    GetPublicKeyArgs, GetPublicKeyResult, GetVersionResult, InternalizeActionArgs,
-    InternalizeActionResult, ListActionsArgs, ListActionsResult, ListCertificatesArgs,
-    ListCertificatesResult, ListOutputsArgs, ListOutputsResult, ProveCertificateArgs,
-    ProveCertificateResult, RelinquishCertificateArgs, RelinquishCertificateResult,
-    RelinquishOutputArgs, RelinquishOutputResult, RevealCounterpartyKeyLinkageArgs,
-    RevealCounterpartyKeyLinkageResult, RevealSpecificKeyLinkageArgs,
-    RevealSpecificKeyLinkageResult, SignActionArgs, SignActionResult, VerifyHmacArgs,
-    VerifyHmacResult, VerifySignatureArgs, VerifySignatureResult, WalletInterface,
-    AbortActionArgs, AbortActionResult,
-};
 use bsv::wallet::error::WalletError;
+use bsv::wallet::interfaces::{
+    AbortActionArgs, AbortActionResult, AcquireCertificateArgs, AuthenticatedResult, Certificate,
+    CreateActionArgs, CreateActionResult, CreateHmacArgs, CreateHmacResult, CreateSignatureArgs,
+    CreateSignatureResult, DecryptArgs, DecryptResult, DiscoverByAttributesArgs,
+    DiscoverByIdentityKeyArgs, DiscoverCertificatesResult, EncryptArgs, EncryptResult,
+    GetHeaderArgs, GetHeaderResult, GetHeightResult, GetNetworkResult, GetPublicKeyArgs,
+    GetPublicKeyResult, GetVersionResult, InternalizeActionArgs, InternalizeActionResult,
+    ListActionsArgs, ListActionsResult, ListCertificatesArgs, ListCertificatesResult,
+    ListOutputsArgs, ListOutputsResult, ProveCertificateArgs, ProveCertificateResult,
+    RelinquishCertificateArgs, RelinquishCertificateResult, RelinquishOutputArgs,
+    RelinquishOutputResult, RevealCounterpartyKeyLinkageArgs, RevealCounterpartyKeyLinkageResult,
+    RevealSpecificKeyLinkageArgs, RevealSpecificKeyLinkageResult, SignActionArgs, SignActionResult,
+    VerifyHmacArgs, VerifyHmacResult, VerifySignatureArgs, VerifySignatureResult, WalletInterface,
+};
 
 /// A `Clone`-able wrapper around any `WalletInterface` implementor.
 ///
@@ -150,7 +149,9 @@ impl<W: WalletInterface + Send + Sync + 'static> WalletInterface for WalletArc<W
         args: RevealCounterpartyKeyLinkageArgs,
         originator: Option<&str>,
     ) -> Result<RevealCounterpartyKeyLinkageResult, WalletError> {
-        self.0.reveal_counterparty_key_linkage(args, originator).await
+        self.0
+            .reveal_counterparty_key_linkage(args, originator)
+            .await
     }
 
     async fn reveal_specific_key_linkage(

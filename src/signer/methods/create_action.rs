@@ -17,12 +17,12 @@ use crate::signer::complete_signed::complete_signed_transaction;
 use crate::signer::types::{
     PendingSignAction, SignableTransactionRef, SignerCreateActionResult, ValidCreateActionArgs,
 };
-use crate::storage::manager::WalletStorageManager;
-use crate::wallet::types::AuthId;
 use crate::storage::action_types::{
     StorageCreateActionArgs, StorageCreateActionInput, StorageCreateActionOutput,
     StorageProcessActionArgs,
 };
+use crate::storage::manager::WalletStorageManager;
+use crate::wallet::types::AuthId;
 
 /// Simple bytes-to-hex encoding.
 fn bytes_to_hex(bytes: &[u8]) -> String {
@@ -94,7 +94,11 @@ pub async fn signer_create_action(
     args: &ValidCreateActionArgs,
 ) -> WalletResult<(SignerCreateActionResult, Option<PendingSignAction>)> {
     // --- Step 1: Storage create action ---
-    let auth_id = AuthId { identity_key: auth.to_string(), user_id: None, is_active: None };
+    let auth_id = AuthId {
+        identity_key: auth.to_string(),
+        user_id: None,
+        is_active: None,
+    };
     let storage_args = to_storage_args(args);
     let dcr = storage.create_action(&auth_id, &storage_args).await?;
     let reference = dcr.reference.clone();

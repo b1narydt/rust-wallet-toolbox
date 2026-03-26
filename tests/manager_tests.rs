@@ -22,8 +22,8 @@ mod manager_tests {
     use bsv_wallet_toolbox::storage::traits::provider::StorageProvider;
     use bsv_wallet_toolbox::storage::traits::wallet_provider::WalletStorageProvider;
     use bsv_wallet_toolbox::storage::StorageConfig;
-    use bsv_wallet_toolbox::wallet::types::{ReproveHeaderResult, WalletStorageInfo};
     use bsv_wallet_toolbox::types::Chain;
+    use bsv_wallet_toolbox::wallet::types::{ReproveHeaderResult, WalletStorageInfo};
 
     use super::common;
 
@@ -42,8 +42,10 @@ mod manager_tests {
         Ok(Arc::new(storage) as Arc<dyn WalletStorageProvider>)
     }
 
-    const IDENTITY_KEY: &str = "02aabbccdd0011223344556677889900aabbccdd0011223344556677889900aabbcc";
-    const IDENTITY_KEY_2: &str = "03bbccddee0011223344556677889900aabbccdd0011223344556677889900aabbcc";
+    const IDENTITY_KEY: &str =
+        "02aabbccdd0011223344556677889900aabbccdd0011223344556677889900aabbcc";
+    const IDENTITY_KEY_2: &str =
+        "03bbccddee0011223344556677889900aabbccdd0011223344556677889900aabbcc";
 
     // -----------------------------------------------------------------------
     // Test 1: Constructor stores providers in correct order
@@ -76,18 +78,17 @@ mod manager_tests {
     #[tokio::test]
     async fn test_managed_storage_cache() {
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
 
         // Before makeAvailable: is_available is false
         assert!(!manager.is_available());
 
         // get_active_settings should fail before makeAvailable
         let result = manager.get_active_settings().await;
-        assert!(result.is_err(), "get_active_settings should fail before makeAvailable");
+        assert!(
+            result.is_err(),
+            "get_active_settings should fail before makeAvailable"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -97,11 +98,7 @@ mod manager_tests {
     #[tokio::test]
     async fn test_make_available_single_store() {
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
 
         let settings = manager.make_available().await.unwrap();
         assert!(manager.is_available());
@@ -109,7 +106,10 @@ mod manager_tests {
 
         // Active settings accessible
         let active_settings = manager.get_active_settings().await.unwrap();
-        assert_eq!(active_settings.storage_identity_key, settings.storage_identity_key);
+        assert_eq!(
+            active_settings.storage_identity_key,
+            settings.storage_identity_key
+        );
 
         // No backups
         assert!(manager.get_backup_stores().await.is_empty());
@@ -127,11 +127,8 @@ mod manager_tests {
     async fn test_make_available_partition() {
         let active = create_provider().await.unwrap();
         let backup = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![backup],
-        );
+        let manager =
+            WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![backup]);
 
         manager.make_available().await.unwrap();
         assert!(manager.is_available());
@@ -153,11 +150,7 @@ mod manager_tests {
 
     #[tokio::test]
     async fn test_make_available_zero_stores() {
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            None,
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), None, vec![]);
 
         // can_make_available should return false with no stores
         assert!(!manager.can_make_available().await);
@@ -174,11 +167,7 @@ mod manager_tests {
     #[tokio::test]
     async fn test_make_available_idempotent() {
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
 
         let settings1 = manager.make_available().await.unwrap();
         let settings2 = manager.make_available().await.unwrap();
@@ -198,11 +187,7 @@ mod manager_tests {
     #[tokio::test]
     async fn test_verify_active_before_available() {
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
 
         // get_auth(must_be_active=true) before makeAvailable should fail with NotActive
         let result = manager.get_auth(true).await;
@@ -221,11 +206,7 @@ mod manager_tests {
     #[tokio::test]
     async fn test_getter_methods() {
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
 
         manager.make_available().await.unwrap();
 
@@ -283,11 +264,7 @@ mod manager_tests {
     #[tokio::test]
     async fn test_auto_init_in_lock_helpers() {
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
 
         // Manager not yet available
         assert!(!manager.is_available());
@@ -308,11 +285,7 @@ mod manager_tests {
     #[tokio::test]
     async fn test_is_active_storage_provider() {
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
 
         manager.make_available().await.unwrap();
 
@@ -331,11 +304,7 @@ mod manager_tests {
     #[tokio::test]
     async fn test_reprove_header_empty() {
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
 
         manager.make_available().await.unwrap();
 
@@ -358,11 +327,7 @@ mod manager_tests {
         use chrono::Utc;
 
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
         manager.make_available().await.unwrap();
 
         // Build a minimal ProvenTx stub (no records in DB)
@@ -383,7 +348,10 @@ mod manager_tests {
         // reprove_proven requires services; without services it returns an error.
         // This confirms the method is callable and reachable (ORCH-04 exists).
         let result = manager.reprove_proven(&ptx, false).await;
-        assert!(result.is_err(), "reprove_proven should fail without services configured");
+        assert!(
+            result.is_err(),
+            "reprove_proven should fail without services configured"
+        );
         let err_str = result.unwrap_err().to_string();
         assert!(
             err_str.contains("services"),
@@ -399,11 +367,8 @@ mod manager_tests {
     async fn test_get_stores() {
         let active = create_provider().await.unwrap();
         let backup = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![backup],
-        );
+        let manager =
+            WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![backup]);
 
         manager.make_available().await.unwrap();
 
@@ -440,11 +405,7 @@ mod manager_tests {
     #[tokio::test]
     async fn test_get_store_endpoint_url_local() {
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
 
         manager.make_available().await.unwrap();
 
@@ -498,7 +459,8 @@ mod manager_tests {
             error_other: None,
         };
 
-        let args = make_request_sync_chunk_args(&ss, &IDENTITY_KEY.to_string(), "writer_sik").unwrap();
+        let args =
+            make_request_sync_chunk_args(&ss, &IDENTITY_KEY.to_string(), "writer_sik").unwrap();
 
         assert_eq!(args.from_storage_identity_key, "reader_sik");
         assert_eq!(args.to_storage_identity_key, "writer_sik");
@@ -508,7 +470,11 @@ mod manager_tests {
         assert_eq!(args.max_items, 1000);
         assert_eq!(args.offsets.len(), 12);
 
-        let tx_offset = args.offsets.iter().find(|o| o.name == "transaction").unwrap();
+        let tx_offset = args
+            .offsets
+            .iter()
+            .find(|o| o.name == "transaction")
+            .unwrap();
         assert_eq!(tx_offset.offset, 5);
         let out_offset = args.offsets.iter().find(|o| o.name == "output").unwrap();
         assert_eq!(out_offset.offset, 10);
@@ -525,7 +491,10 @@ mod manager_tests {
         let reader_settings = reader_provider.make_available().await.unwrap();
         let writer_settings = writer_provider.make_available().await.unwrap();
 
-        let _ = reader_provider.find_or_insert_user(IDENTITY_KEY).await.unwrap();
+        let _ = reader_provider
+            .find_or_insert_user(IDENTITY_KEY)
+            .await
+            .unwrap();
 
         let manager = WalletStorageManager::new(
             IDENTITY_KEY.to_string(),
@@ -557,7 +526,10 @@ mod manager_tests {
         let reader_settings = reader_provider.make_available().await.unwrap();
         let writer_settings = writer_provider.make_available().await.unwrap();
 
-        let _ = reader_provider.find_or_insert_user(IDENTITY_KEY).await.unwrap();
+        let _ = reader_provider
+            .find_or_insert_user(IDENTITY_KEY)
+            .await
+            .unwrap();
 
         let manager = WalletStorageManager::new(
             IDENTITY_KEY.to_string(),
@@ -591,7 +563,10 @@ mod manager_tests {
         let writer_provider = create_provider().await.unwrap();
         let reader_settings = reader_provider.make_available().await.unwrap();
         let writer_settings = writer_provider.make_available().await.unwrap();
-        let _ = reader_provider.find_or_insert_user(IDENTITY_KEY).await.unwrap();
+        let _ = reader_provider
+            .find_or_insert_user(IDENTITY_KEY)
+            .await
+            .unwrap();
         let manager = WalletStorageManager::new(
             IDENTITY_KEY.to_string(),
             Some(writer_provider.clone()),
@@ -611,7 +586,10 @@ mod manager_tests {
             )
             .await;
 
-        assert!(result.is_err(), "sync_from_reader should reject mismatched identity key");
+        assert!(
+            result.is_err(),
+            "sync_from_reader should reject mismatched identity key"
+        );
         let err = result.unwrap_err();
         let err_str = err.to_string();
         assert!(
@@ -624,11 +602,7 @@ mod manager_tests {
     #[tokio::test]
     async fn test_update_backups_zero_backups() {
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
         manager.make_available().await.unwrap();
 
         let (inserts, updates, _log) = manager.update_backups(None).await.unwrap();
@@ -645,7 +619,10 @@ mod manager_tests {
         active_provider.make_available().await.unwrap();
         backup_provider.make_available().await.unwrap();
 
-        let _ = active_provider.find_or_insert_user(IDENTITY_KEY).await.unwrap();
+        let _ = active_provider
+            .find_or_insert_user(IDENTITY_KEY)
+            .await
+            .unwrap();
 
         let manager = WalletStorageManager::new(
             IDENTITY_KEY.to_string(),
@@ -662,17 +639,16 @@ mod manager_tests {
     #[tokio::test]
     async fn test_add_provider_runtime() {
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
         manager.make_available().await.unwrap();
 
         assert_eq!(manager.get_all_stores().await.len(), 1);
 
         let new_provider = create_provider().await.unwrap();
-        manager.add_wallet_storage_provider(new_provider).await.unwrap();
+        manager
+            .add_wallet_storage_provider(new_provider)
+            .await
+            .unwrap();
 
         assert_eq!(manager.get_all_stores().await.len(), 2);
     }
@@ -687,7 +663,10 @@ mod manager_tests {
 
         let reader_settings = reader_provider.make_available().await.unwrap();
         let writer_settings = writer_provider.make_available().await.unwrap();
-        let _ = reader_provider.find_or_insert_user(IDENTITY_KEY).await.unwrap();
+        let _ = reader_provider
+            .find_or_insert_user(IDENTITY_KEY)
+            .await
+            .unwrap();
 
         let manager = WalletStorageManager::new(
             IDENTITY_KEY.to_string(),
@@ -723,11 +702,7 @@ mod manager_tests {
     #[tokio::test]
     async fn test_set_active_invalid_sik() {
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
         manager.make_available().await.unwrap();
 
         let result = manager
@@ -746,27 +721,37 @@ mod manager_tests {
     #[tokio::test]
     async fn test_set_active_noop() {
         let active = create_provider().await.unwrap();
-        let manager = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(active),
-            vec![],
-        );
+        let manager = WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(active), vec![]);
         manager.make_available().await.unwrap();
 
         let active_sik = manager.get_active_store().await.unwrap();
 
         // First call to set_active — establishes user.active_storage = active_sik
         let first_result = manager.set_active(&active_sik, None).await;
-        assert!(first_result.is_ok(), "First set_active should succeed: {:?}", first_result.err());
+        assert!(
+            first_result.is_ok(),
+            "First set_active should succeed: {:?}",
+            first_result.err()
+        );
 
         // After first call, is_active_enabled should be true
-        assert!(manager.is_active_enabled().await, "is_active_enabled should be true after first set_active");
+        assert!(
+            manager.is_active_enabled().await,
+            "is_active_enabled should be true after first set_active"
+        );
 
         // Second call with the same sik — should be a no-op returning "unchanged"
         let result = manager.set_active(&active_sik, None).await;
-        assert!(result.is_ok(), "Expected Ok for no-op set_active: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Expected Ok for no-op set_active: {:?}",
+            result.err()
+        );
         let log = result.unwrap();
-        assert!(log.contains("unchanged"), "Expected 'unchanged' in log: {log}");
+        assert!(
+            log.contains("unchanged"),
+            "Expected 'unchanged' in log: {log}"
+        );
 
         // State must not have changed
         assert!(manager.is_active_enabled().await);
@@ -780,8 +765,14 @@ mod manager_tests {
         let backup_provider = create_provider().await.unwrap();
 
         // Pre-seed user in both providers so make_available can partition correctly
-        let _ = active_provider.find_or_insert_user(IDENTITY_KEY).await.unwrap();
-        let _ = backup_provider.find_or_insert_user(IDENTITY_KEY).await.unwrap();
+        let _ = active_provider
+            .find_or_insert_user(IDENTITY_KEY)
+            .await
+            .unwrap();
+        let _ = backup_provider
+            .find_or_insert_user(IDENTITY_KEY)
+            .await
+            .unwrap();
 
         // Get the backup's sik before building the manager
         let backup_settings = backup_provider.make_available().await.unwrap();
@@ -795,15 +786,25 @@ mod manager_tests {
         manager.make_available().await.unwrap();
 
         let original_active_sik = manager.get_active_store().await.unwrap();
-        assert_ne!(original_active_sik, backup_sik, "Precondition: backup sik differs from active");
+        assert_ne!(
+            original_active_sik, backup_sik,
+            "Precondition: backup sik differs from active"
+        );
 
         // Switch active to the backup
         let result = manager.set_active(&backup_sik, None).await;
-        assert!(result.is_ok(), "set_active should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "set_active should succeed: {:?}",
+            result.err()
+        );
 
         // After set_active, the new active should be the backup's sik
         let new_active_sik = manager.get_active_store().await.unwrap();
-        assert_eq!(new_active_sik, backup_sik, "Active sik should now be backup sik");
+        assert_eq!(
+            new_active_sik, backup_sik,
+            "Active sik should now be backup sik"
+        );
     }
 
     // Test: set_active with a conflicting active merges state via sync_to_writer
@@ -851,13 +852,21 @@ mod manager_tests {
         if conflicts.is_empty() {
             // Fallback: no conflicts case — switch to sik1 and verify it succeeds
             let result = manager.set_active(&sik1, None).await;
-            assert!(result.is_ok(), "set_active should succeed even with no conflicts: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "set_active should succeed even with no conflicts: {:?}",
+                result.err()
+            );
         } else {
             // With conflicts: pick the first conflicting sik as the new active
             let target_sik = conflicts[0].clone();
 
             let result = manager.set_active(&target_sik, None).await;
-            assert!(result.is_ok(), "set_active with conflicts should succeed: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "set_active with conflicts should succeed: {:?}",
+                result.err()
+            );
 
             // After set_active, conflicting stores should be resolved
             let remaining_conflicts = manager.get_conflicting_stores().await;
@@ -869,7 +878,10 @@ mod manager_tests {
 
             // New active should be the target sik
             let new_active = manager.get_active_store().await.unwrap();
-            assert_eq!(new_active, target_sik, "Active sik should match target after set_active");
+            assert_eq!(
+                new_active, target_sik,
+                "Active sik should match target after set_active"
+            );
         }
 
         let _ = (sik0, sik1, sik2);
@@ -912,8 +924,14 @@ mod manager_tests {
             .await
             .unwrap();
 
-        assert!(inserts > 0, "First sync must transfer seeded records (inserts={inserts})");
-        assert_eq!(updates, 0, "First sync should have no updates (updates={updates})");
+        assert!(
+            inserts > 0,
+            "First sync must transfer seeded records (inserts={inserts})"
+        );
+        assert_eq!(
+            updates, 0,
+            "First sync should have no updates (updates={updates})"
+        );
 
         // Second sync with no new data: nothing to transfer
         let (inserts2, updates2, _log2) = manager
@@ -927,8 +945,14 @@ mod manager_tests {
             .await
             .unwrap();
 
-        assert_eq!(inserts2, 0, "Second sync must transfer nothing (inserts={inserts2})");
-        assert_eq!(updates2, 0, "Second sync must transfer nothing (updates={updates2})");
+        assert_eq!(
+            inserts2, 0,
+            "Second sync must transfer nothing (inserts={inserts2})"
+        );
+        assert_eq!(
+            updates2, 0,
+            "Second sync must transfer nothing (updates={updates2})"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -967,7 +991,10 @@ mod manager_tests {
             .await
             .unwrap();
 
-        assert!(first_inserts > 0, "Initial sync must transfer records (inserts={first_inserts})");
+        assert!(
+            first_inserts > 0,
+            "Initial sync must transfer records (inserts={first_inserts})"
+        );
 
         // Small delay so updated_at advances past the sync cutoff
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -987,7 +1014,10 @@ mod manager_tests {
             .await
             .unwrap();
 
-        assert!(second_inserts >= 1, "Incremental sync must pick up new records (inserts={second_inserts})");
+        assert!(
+            second_inserts >= 1,
+            "Incremental sync must pick up new records (inserts={second_inserts})"
+        );
         assert!(
             second_inserts < first_inserts,
             "Incremental sync should transfer fewer records than initial (second={second_inserts}, first={first_inserts})"
@@ -1030,7 +1060,11 @@ mod manager_tests {
         // Swap 1: A -> B
         manager.set_active(&sik_b, None).await.unwrap();
 
-        assert_eq!(manager.get_active_store().await.unwrap(), sik_b, "After swap1: active must be sik_b");
+        assert_eq!(
+            manager.get_active_store().await.unwrap(),
+            sik_b,
+            "After swap1: active must be sik_b"
+        );
 
         let backups = manager.get_backup_stores().await;
         assert!(
@@ -1054,7 +1088,11 @@ mod manager_tests {
         // Swap 2: B -> A
         manager.set_active(&sik_a, None).await.unwrap();
 
-        assert_eq!(manager.get_active_store().await.unwrap(), sik_a, "After swap2: active must be sik_a");
+        assert_eq!(
+            manager.get_active_store().await.unwrap(),
+            sik_a,
+            "After swap2: active must be sik_a"
+        );
 
         let backups2 = manager.get_backup_stores().await;
         assert!(
@@ -1080,16 +1118,10 @@ mod manager_tests {
         let store1 = create_provider().await.unwrap();
         let store2 = create_provider().await.unwrap();
 
-        let manager1 = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(store1.clone()),
-            vec![],
-        );
-        let manager2 = WalletStorageManager::new(
-            IDENTITY_KEY_2.to_string(),
-            Some(store2.clone()),
-            vec![],
-        );
+        let manager1 =
+            WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(store1.clone()), vec![]);
+        let manager2 =
+            WalletStorageManager::new(IDENTITY_KEY_2.to_string(), Some(store2.clone()), vec![]);
 
         manager1.make_available().await.unwrap();
         manager2.make_available().await.unwrap();
@@ -1111,7 +1143,12 @@ mod manager_tests {
             .await
             .unwrap();
 
-        assert_eq!(outputs1.len(), 3, "Wallet1 should see exactly 3 outputs, got {}", outputs1.len());
+        assert_eq!(
+            outputs1.len(),
+            3,
+            "Wallet1 should see exactly 3 outputs, got {}",
+            outputs1.len()
+        );
 
         // Verify wallet2 sees exactly its own outputs
         let (user2, _) = manager2.find_or_insert_user(IDENTITY_KEY_2).await.unwrap();
@@ -1126,7 +1163,12 @@ mod manager_tests {
             .await
             .unwrap();
 
-        assert_eq!(outputs2.len(), 2, "Wallet2 should see exactly 2 outputs, got {}", outputs2.len());
+        assert_eq!(
+            outputs2.len(),
+            2,
+            "Wallet2 should see exactly 2 outputs, got {}",
+            outputs2.len()
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1142,11 +1184,8 @@ mod manager_tests {
         store_a.make_available().await.unwrap();
         store_b.make_available().await.unwrap();
 
-        let manager_a = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(store_a.clone()),
-            vec![],
-        );
+        let manager_a =
+            WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(store_a.clone()), vec![]);
         manager_a.make_available().await.unwrap();
 
         // Seed 3 outputs in A
@@ -1167,26 +1206,23 @@ mod manager_tests {
             .await
             .unwrap();
 
-        assert!(forward_inserts > 0, "Forward sync A->B must transfer records (inserts={forward_inserts})");
+        assert!(
+            forward_inserts > 0,
+            "Forward sync A->B must transfer records (inserts={forward_inserts})"
+        );
 
         // Small delay so new data in B has a later updated_at
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         // Seed 1 additional output directly into B (simulates data appearing in B)
-        let manager_b_temp = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(store_b.clone()),
-            vec![],
-        );
+        let manager_b_temp =
+            WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(store_b.clone()), vec![]);
         manager_b_temp.make_available().await.unwrap();
         common::seed_outputs(&manager_b_temp, IDENTITY_KEY, 1, 750).await;
 
         // Reverse sync B -> A
-        let manager_a_new = WalletStorageManager::new(
-            IDENTITY_KEY.to_string(),
-            Some(store_a.clone()),
-            vec![],
-        );
+        let manager_a_new =
+            WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(store_a.clone()), vec![]);
         manager_a_new.make_available().await.unwrap();
 
         let (reverse_inserts, _reverse_updates, _reverse_log) = manager_a_new

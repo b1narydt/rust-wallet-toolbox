@@ -607,7 +607,9 @@ mod sqlite_impl {
                 // "when" is a reserved word in SQLite — must be quoted.
                 sets.push(r#""when" = ?"#);
                 // SQLite stores datetimes as text; use the same format as other timestamps.
-                binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                binds.push(BindVal::String(
+                    v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                ));
             }
             sets.push("updated_at = datetime('now')");
             let sql = format!(

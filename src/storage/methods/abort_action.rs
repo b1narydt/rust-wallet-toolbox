@@ -9,7 +9,9 @@ use bsv::wallet::interfaces::{AbortActionArgs, AbortActionResult};
 
 use crate::error::{WalletError, WalletResult};
 use crate::status::TransactionStatus;
-use crate::storage::find_args::{FindOutputsArgs, FindTransactionsArgs, OutputPartial, TransactionPartial};
+use crate::storage::find_args::{
+    FindOutputsArgs, FindTransactionsArgs, OutputPartial, TransactionPartial,
+};
 use crate::storage::traits::provider::StorageProvider;
 use crate::storage::TrxToken;
 
@@ -65,7 +67,9 @@ pub async fn abort_action(
     if !tx.is_outgoing || un_abortable.contains(&tx.status) {
         return Err(WalletError::InvalidParameter {
             parameter: "reference".to_string(),
-            must_be: "an inprocess, outgoing action that has not been signed and shared to the network".to_string(),
+            must_be:
+                "an inprocess, outgoing action that has not been signed and shared to the network"
+                    .to_string(),
         });
     }
 

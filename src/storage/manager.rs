@@ -19,11 +19,11 @@ use bsv::wallet::interfaces::{
 
 use crate::error::{WalletError, WalletResult};
 use crate::services::traits::WalletServices;
+use crate::status::TransactionStatus;
 use crate::storage::action_types::{
     StorageCreateActionArgs, StorageCreateActionResult, StorageInternalizeActionArgs,
     StorageInternalizeActionResult, StorageProcessActionArgs, StorageProcessActionResult,
 };
-use crate::status::TransactionStatus;
 use crate::storage::find_args::{
     FindCertificateFieldsArgs, FindCertificatesArgs, FindOutputBasketsArgs, FindOutputsArgs,
     FindProvenTxReqsArgs, FindProvenTxsArgs, FindTransactionsArgs, OutputPartial, ProvenTxPartial,
@@ -32,8 +32,8 @@ use crate::storage::find_args::{
 use crate::storage::sync::request_args::{RequestSyncChunkArgs, SyncChunkOffset};
 use crate::storage::sync::sync_map::SyncMap;
 use crate::storage::sync::{ProcessSyncChunkResult, SyncChunk};
-use crate::tables::SyncState;
 use crate::storage::traits::wallet_provider::WalletStorageProvider;
+use crate::tables::SyncState;
 use crate::tables::{
     Certificate, MonitorEvent, Output, OutputBasket, ProvenTx, ProvenTxReq, Settings, Transaction,
     User,
@@ -78,18 +78,54 @@ pub fn make_request_sync_chunk_args(
     // The `count` tracks cumulative items received in the current sync window
     // — this IS the pagination offset, matching TS `ess.count`.
     let offsets = vec![
-        SyncChunkOffset { name: sync_map.proven_tx.entity_name.clone(),       offset: sync_map.proven_tx.count },
-        SyncChunkOffset { name: sync_map.output_basket.entity_name.clone(),   offset: sync_map.output_basket.count },
-        SyncChunkOffset { name: sync_map.transaction.entity_name.clone(),     offset: sync_map.transaction.count },
-        SyncChunkOffset { name: sync_map.output.entity_name.clone(),          offset: sync_map.output.count },
-        SyncChunkOffset { name: sync_map.tx_label.entity_name.clone(),        offset: sync_map.tx_label.count },
-        SyncChunkOffset { name: sync_map.tx_label_map.entity_name.clone(),    offset: sync_map.tx_label_map.count },
-        SyncChunkOffset { name: sync_map.output_tag.entity_name.clone(),      offset: sync_map.output_tag.count },
-        SyncChunkOffset { name: sync_map.output_tag_map.entity_name.clone(),  offset: sync_map.output_tag_map.count },
-        SyncChunkOffset { name: sync_map.certificate.entity_name.clone(),     offset: sync_map.certificate.count },
-        SyncChunkOffset { name: sync_map.certificate_field.entity_name.clone(), offset: sync_map.certificate_field.count },
-        SyncChunkOffset { name: sync_map.commission.entity_name.clone(),      offset: sync_map.commission.count },
-        SyncChunkOffset { name: sync_map.proven_tx_req.entity_name.clone(),   offset: sync_map.proven_tx_req.count },
+        SyncChunkOffset {
+            name: sync_map.proven_tx.entity_name.clone(),
+            offset: sync_map.proven_tx.count,
+        },
+        SyncChunkOffset {
+            name: sync_map.output_basket.entity_name.clone(),
+            offset: sync_map.output_basket.count,
+        },
+        SyncChunkOffset {
+            name: sync_map.transaction.entity_name.clone(),
+            offset: sync_map.transaction.count,
+        },
+        SyncChunkOffset {
+            name: sync_map.output.entity_name.clone(),
+            offset: sync_map.output.count,
+        },
+        SyncChunkOffset {
+            name: sync_map.tx_label.entity_name.clone(),
+            offset: sync_map.tx_label.count,
+        },
+        SyncChunkOffset {
+            name: sync_map.tx_label_map.entity_name.clone(),
+            offset: sync_map.tx_label_map.count,
+        },
+        SyncChunkOffset {
+            name: sync_map.output_tag.entity_name.clone(),
+            offset: sync_map.output_tag.count,
+        },
+        SyncChunkOffset {
+            name: sync_map.output_tag_map.entity_name.clone(),
+            offset: sync_map.output_tag_map.count,
+        },
+        SyncChunkOffset {
+            name: sync_map.certificate.entity_name.clone(),
+            offset: sync_map.certificate.count,
+        },
+        SyncChunkOffset {
+            name: sync_map.certificate_field.entity_name.clone(),
+            offset: sync_map.certificate_field.count,
+        },
+        SyncChunkOffset {
+            name: sync_map.commission.entity_name.clone(),
+            offset: sync_map.commission.count,
+        },
+        SyncChunkOffset {
+            name: sync_map.proven_tx_req.entity_name.clone(),
+            offset: sync_map.proven_tx_req.count,
+        },
     ];
 
     Ok(RequestSyncChunkArgs {
@@ -340,7 +376,9 @@ impl WalletStorageManager {
         let settings = state.stores[idx]
             .get_settings_cached()
             .await
-            .ok_or_else(|| WalletError::InvalidOperation("Active settings not cached".to_string()))?;
+            .ok_or_else(|| {
+                WalletError::InvalidOperation("Active settings not cached".to_string())
+            })?;
         Ok(settings.storage_identity_key)
     }
 
@@ -351,7 +389,9 @@ impl WalletStorageManager {
         let settings = state.stores[idx]
             .get_settings_cached()
             .await
-            .ok_or_else(|| WalletError::InvalidOperation("Active settings not cached".to_string()))?;
+            .ok_or_else(|| {
+                WalletError::InvalidOperation("Active settings not cached".to_string())
+            })?;
         Ok(settings.storage_name)
     }
 
@@ -567,9 +607,7 @@ impl WalletStorageManager {
         let mut init_results: Vec<(Settings, User)> = Vec::with_capacity(providers.len());
         for provider in &providers {
             let settings = provider.make_available().await?;
-            let (user, _) = provider
-                .find_or_insert_user(&self.identity_key)
-                .await?;
+            let (user, _) = provider.find_or_insert_user(&self.identity_key).await?;
             init_results.push((settings, user));
         }
 
@@ -590,11 +628,15 @@ impl WalletStorageManager {
         for i in 1..num_stores {
             let store_sik = {
                 let s = state.stores[i].settings.lock().await;
-                s.as_ref().map(|s| s.storage_identity_key.clone()).unwrap_or_default()
+                s.as_ref()
+                    .map(|s| s.storage_identity_key.clone())
+                    .unwrap_or_default()
             };
             let store_user_active = {
                 let u = state.stores[i].user.lock().await;
-                u.as_ref().map(|u| u.active_storage.clone()).unwrap_or_default()
+                u.as_ref()
+                    .map(|u| u.active_storage.clone())
+                    .unwrap_or_default()
             };
 
             // Check if current active is enabled (settings.sik == user.active_storage)
@@ -602,11 +644,15 @@ impl WalletStorageManager {
                 let active_idx = state.active_index.unwrap();
                 let active_sik = {
                     let s = state.stores[active_idx].settings.lock().await;
-                    s.as_ref().map(|s| s.storage_identity_key.clone()).unwrap_or_default()
+                    s.as_ref()
+                        .map(|s| s.storage_identity_key.clone())
+                        .unwrap_or_default()
                 };
                 let active_user_active = {
                     let u = state.stores[active_idx].user.lock().await;
-                    u.as_ref().map(|u| u.active_storage.clone()).unwrap_or_default()
+                    u.as_ref()
+                        .map(|u| u.active_storage.clone())
+                        .unwrap_or_default()
                 };
                 active_sik == active_user_active
             };
@@ -625,14 +671,18 @@ impl WalletStorageManager {
         let active_sik = {
             let active_idx = state.active_index.unwrap();
             let s = state.stores[active_idx].settings.lock().await;
-            s.as_ref().map(|s| s.storage_identity_key.clone()).unwrap_or_default()
+            s.as_ref()
+                .map(|s| s.storage_identity_key.clone())
+                .unwrap_or_default()
         };
 
         let old_backups = std::mem::take(&mut state.backup_indices);
         for backup_idx in old_backups {
             let backup_user_active = {
                 let u = state.stores[backup_idx].user.lock().await;
-                u.as_ref().map(|u| u.active_storage.clone()).unwrap_or_default()
+                u.as_ref()
+                    .map(|u| u.active_storage.clone())
+                    .unwrap_or_default()
             };
             if backup_user_active != active_sik {
                 state.conflicting_active_indices.push(backup_idx);
@@ -678,7 +728,10 @@ impl WalletStorageManager {
     /// Auto-initializes via `make_available()` if not yet available.
     pub async fn acquire_writer(
         &self,
-    ) -> WalletResult<(tokio::sync::MutexGuard<'_, ()>, tokio::sync::MutexGuard<'_, ()>)> {
+    ) -> WalletResult<(
+        tokio::sync::MutexGuard<'_, ()>,
+        tokio::sync::MutexGuard<'_, ()>,
+    )> {
         if !self.is_available() {
             self.make_available().await?;
         }
@@ -945,10 +998,7 @@ impl WalletStorageManager {
         Ok(result)
     }
 
-    pub async fn get_sync_chunk(
-        &self,
-        args: &RequestSyncChunkArgs,
-    ) -> WalletResult<SyncChunk> {
+    pub async fn get_sync_chunk(&self, args: &RequestSyncChunkArgs) -> WalletResult<SyncChunk> {
         let active = self.get_active().await?;
         active.get_sync_chunk(args).await
     }
@@ -966,10 +1016,7 @@ impl WalletStorageManager {
     // Low-level CRUD operations (certificates, signer, beef helper use these)
     // -----------------------------------------------------------------------
 
-    pub async fn find_user_by_identity_key(
-        &self,
-        key: &str,
-    ) -> WalletResult<Option<User>> {
+    pub async fn find_user_by_identity_key(&self, key: &str) -> WalletResult<Option<User>> {
         let active = self.get_active().await?;
         active.find_user_by_identity_key(key).await
     }
@@ -990,10 +1037,7 @@ impl WalletStorageManager {
         active.find_certificate_fields(args).await
     }
 
-    pub async fn find_outputs_storage(
-        &self,
-        args: &FindOutputsArgs,
-    ) -> WalletResult<Vec<Output>> {
+    pub async fn find_outputs_storage(&self, args: &FindOutputsArgs) -> WalletResult<Vec<Output>> {
         let active = self.get_active().await?;
         active.find_outputs_storage(args).await
     }
@@ -1030,10 +1074,7 @@ impl WalletStorageManager {
     // StorageClient returns NotImplemented for these methods.
     // -----------------------------------------------------------------------
 
-    pub async fn find_proven_txs(
-        &self,
-        args: &FindProvenTxsArgs,
-    ) -> WalletResult<Vec<ProvenTx>> {
+    pub async fn find_proven_txs(&self, args: &FindProvenTxsArgs) -> WalletResult<Vec<ProvenTx>> {
         let active = self.get_active().await?;
         active.find_proven_txs(args).await
     }
@@ -1104,10 +1145,7 @@ impl WalletStorageManager {
         active.purge_data(params).await
     }
 
-    pub async fn review_status(
-        &self,
-        aged_limit: chrono::NaiveDateTime,
-    ) -> WalletResult<String> {
+    pub async fn review_status(&self, aged_limit: chrono::NaiveDateTime) -> WalletResult<String> {
         let active = self.get_active().await?;
         active.review_status(aged_limit).await
     }
@@ -1549,12 +1587,13 @@ impl WalletStorageManager {
             let state = self.state.lock().await;
             let idx = state.require_active()?;
             let active_arc = state.stores[idx].storage.clone();
-            let active_settings = state.stores[idx]
-                .get_settings_cached()
-                .await
-                .ok_or_else(|| {
-                    WalletError::InvalidOperation("Active settings not cached".to_string())
-                })?;
+            let active_settings =
+                state.stores[idx]
+                    .get_settings_cached()
+                    .await
+                    .ok_or_else(|| {
+                        WalletError::InvalidOperation("Active settings not cached".to_string())
+                    })?;
 
             let mut backups = Vec::with_capacity(state.backup_indices.len());
             for &bi in &state.backup_indices {
@@ -1648,14 +1687,13 @@ impl WalletStorageManager {
             found
         };
 
-        let new_active_idx =
-            new_active_idx.ok_or_else(|| WalletError::InvalidParameter {
-                parameter: "storage_identity_key".to_string(),
-                must_be: format!(
-                    "registered with this WalletStorageManager. {} does not match any managed store.",
-                    storage_identity_key
-                ),
-            })?;
+        let new_active_idx = new_active_idx.ok_or_else(|| WalletError::InvalidParameter {
+            parameter: "storage_identity_key".to_string(),
+            must_be: format!(
+                "registered with this WalletStorageManager. {} does not match any managed store.",
+                storage_identity_key
+            ),
+        })?;
 
         // Step 2: Early return if already active and enabled
         let current_active_sik = self.get_active_store().await?;
@@ -1760,11 +1798,7 @@ impl WalletStorageManager {
                             "set_active: new active user not cached".to_string(),
                         )
                     })?;
-                (
-                    new_active_arc.clone(),
-                    new_active_settings.clone(),
-                    user_id,
-                )
+                (new_active_arc.clone(), new_active_settings.clone(), user_id)
             } else {
                 // backup_source is the current active
                 let ai = state.require_active()?;
@@ -1879,7 +1913,10 @@ impl WalletStorageManager {
         self.do_make_available().await?;
 
         if let Some(cb) = prog_log {
-            let msg = format!("set_active: complete, new active is {}", storage_identity_key);
+            let msg = format!(
+                "set_active: complete, new active is {}",
+                storage_identity_key
+            );
             let s = cb(&msg);
             log.push_str(&s);
             log.push('\n');

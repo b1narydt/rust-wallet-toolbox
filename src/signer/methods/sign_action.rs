@@ -15,9 +15,9 @@ use crate::error::{WalletError, WalletResult};
 use crate::services::traits::WalletServices;
 use crate::signer::complete_signed::complete_signed_transaction;
 use crate::signer::types::{PendingSignAction, SignerSignActionResult, ValidSignActionArgs};
+use crate::storage::action_types::StorageProcessActionArgs;
 use crate::storage::manager::WalletStorageManager;
 use crate::wallet::types::AuthId;
-use crate::storage::action_types::StorageProcessActionArgs;
 
 /// Execute the signer-level signAction flow.
 ///
@@ -67,7 +67,11 @@ pub async fn signer_sign_action(
         raw_tx: Some(signed_tx_bytes),
         send_with: vec![],
     };
-    let auth_id = AuthId { identity_key: auth.to_string(), user_id: None, is_active: None };
+    let auth_id = AuthId {
+        identity_key: auth.to_string(),
+        user_id: None,
+        is_active: None,
+    };
     let process_result = storage.process_action(&auth_id, &process_args).await?;
 
     // --- Step 5: Broadcast if needed ---

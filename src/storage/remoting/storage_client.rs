@@ -151,8 +151,7 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> StorageClient<W> {
             "id": id,
         });
 
-        let body_bytes =
-            serde_json::to_vec(&envelope).map_err(WalletError::SerdeJson)?;
+        let body_bytes = serde_json::to_vec(&envelope).map_err(WalletError::SerdeJson)?;
 
         let mut headers = HashMap::new();
         headers.insert("content-type".to_string(), "application/json".to_string());
@@ -160,12 +159,7 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> StorageClient<W> {
         let response = {
             let mut fetch = self.auth_fetch.lock().await;
             fetch
-                .fetch(
-                    &self.endpoint_url,
-                    "POST",
-                    Some(body_bytes),
-                    Some(headers),
-                )
+                .fetch(&self.endpoint_url, "POST", Some(body_bytes), Some(headers))
                 .await
                 .map_err(|e| WalletError::Internal(format!("auth fetch: {}", e)))?
         };
@@ -180,8 +174,8 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> StorageClient<W> {
         let json: Value = serde_json::from_slice(&response.body).map_err(WalletError::SerdeJson)?;
 
         if let Some(error_val) = json.get("error") {
-            let err_obj: WalletErrorObject = serde_json::from_value(error_val.clone())
-                .map_err(WalletError::SerdeJson)?;
+            let err_obj: WalletErrorObject =
+                serde_json::from_value(error_val.clone()).map_err(WalletError::SerdeJson)?;
             return Err(wallet_error_from_object(err_obj));
         }
 
@@ -295,9 +289,8 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         _storage_identity_key: &str,
     ) -> WalletResult<String> {
         // TS StorageClient only sends storageName — storageIdentityKey is dropped.
-        self.rpc_call("migrate", vec![
-            Value::String(storage_name.to_string()),
-        ]).await
+        self.rpc_call("migrate", vec![Value::String(storage_name.to_string())])
+            .await
     }
 
     async fn destroy(&self) -> WalletResult<()> {
@@ -310,7 +303,10 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
 
     async fn find_or_insert_user(&self, identity_key: &str) -> WalletResult<(User, bool)> {
         let r: FindOrInsertUserWire = self
-            .rpc_call("findOrInsertUser", vec![Value::String(identity_key.to_string())])
+            .rpc_call(
+                "findOrInsertUser",
+                vec![Value::String(identity_key.to_string())],
+            )
             .await?;
         Ok((r.user, r.is_new))
     }
@@ -324,10 +320,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         auth: &AuthId,
         args: &FindCertificatesArgs,
     ) -> WalletResult<Vec<Certificate>> {
-        self.rpc_call("findCertificatesAuth", vec![
-            serde_json::to_value(auth)?,
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call(
+            "findCertificatesAuth",
+            vec![serde_json::to_value(auth)?, serde_json::to_value(args)?],
+        )
+        .await
     }
 
     /// Wire name is `findOutputBaskets` — no Auth suffix (intentional TS naming anomaly).
@@ -336,10 +333,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         auth: &AuthId,
         args: &FindOutputBasketsArgs,
     ) -> WalletResult<Vec<OutputBasket>> {
-        self.rpc_call("findOutputBaskets", vec![
-            serde_json::to_value(auth)?,
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call(
+            "findOutputBaskets",
+            vec![serde_json::to_value(auth)?, serde_json::to_value(args)?],
+        )
+        .await
     }
 
     async fn find_outputs_auth(
@@ -347,10 +345,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         auth: &AuthId,
         args: &FindOutputsArgs,
     ) -> WalletResult<Vec<Output>> {
-        self.rpc_call("findOutputsAuth", vec![
-            serde_json::to_value(auth)?,
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call(
+            "findOutputsAuth",
+            vec![serde_json::to_value(auth)?, serde_json::to_value(args)?],
+        )
+        .await
     }
 
     async fn find_proven_tx_reqs(
@@ -358,9 +357,8 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         args: &FindProvenTxReqsArgs,
     ) -> WalletResult<Vec<ProvenTxReq>> {
         // No auth param — public method
-        self.rpc_call("findProvenTxReqs", vec![
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call("findProvenTxReqs", vec![serde_json::to_value(args)?])
+            .await
     }
 
     // -----------------------------------------------------------------------
@@ -372,10 +370,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         auth: &AuthId,
         args: &ListActionsArgs,
     ) -> WalletResult<ListActionsResult> {
-        self.rpc_call("listActions", vec![
-            serde_json::to_value(auth)?,
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call(
+            "listActions",
+            vec![serde_json::to_value(auth)?, serde_json::to_value(args)?],
+        )
+        .await
     }
 
     async fn list_certificates(
@@ -383,10 +382,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         auth: &AuthId,
         args: &ListCertificatesArgs,
     ) -> WalletResult<ListCertificatesResult> {
-        self.rpc_call("listCertificates", vec![
-            serde_json::to_value(auth)?,
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call(
+            "listCertificates",
+            vec![serde_json::to_value(auth)?, serde_json::to_value(args)?],
+        )
+        .await
     }
 
     async fn list_outputs(
@@ -394,10 +394,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         auth: &AuthId,
         args: &ListOutputsArgs,
     ) -> WalletResult<ListOutputsResult> {
-        self.rpc_call("listOutputs", vec![
-            serde_json::to_value(auth)?,
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call(
+            "listOutputs",
+            vec![serde_json::to_value(auth)?, serde_json::to_value(args)?],
+        )
+        .await
     }
 
     // -----------------------------------------------------------------------
@@ -409,10 +410,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         auth: &AuthId,
         args: &AbortActionArgs,
     ) -> WalletResult<AbortActionResult> {
-        self.rpc_call("abortAction", vec![
-            serde_json::to_value(auth)?,
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call(
+            "abortAction",
+            vec![serde_json::to_value(auth)?, serde_json::to_value(args)?],
+        )
+        .await
     }
 
     async fn create_action(
@@ -420,10 +422,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         auth: &AuthId,
         args: &StorageCreateActionArgs,
     ) -> WalletResult<StorageCreateActionResult> {
-        self.rpc_call("createAction", vec![
-            serde_json::to_value(auth)?,
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call(
+            "createAction",
+            vec![serde_json::to_value(auth)?, serde_json::to_value(args)?],
+        )
+        .await
     }
 
     async fn process_action(
@@ -431,10 +434,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         auth: &AuthId,
         args: &StorageProcessActionArgs,
     ) -> WalletResult<StorageProcessActionResult> {
-        self.rpc_call("processAction", vec![
-            serde_json::to_value(auth)?,
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call(
+            "processAction",
+            vec![serde_json::to_value(auth)?, serde_json::to_value(args)?],
+        )
+        .await
     }
 
     /// `services` is not serializable and has no TS equivalent — ignored entirely.
@@ -444,10 +448,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         args: &StorageInternalizeActionArgs,
         _services: &dyn WalletServices,
     ) -> WalletResult<StorageInternalizeActionResult> {
-        self.rpc_call("internalizeAction", vec![
-            serde_json::to_value(auth)?,
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call(
+            "internalizeAction",
+            vec![serde_json::to_value(auth)?, serde_json::to_value(args)?],
+        )
+        .await
     }
 
     // -----------------------------------------------------------------------
@@ -459,10 +464,14 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         auth: &AuthId,
         certificate: &Certificate,
     ) -> WalletResult<i64> {
-        self.rpc_call("insertCertificateAuth", vec![
-            serde_json::to_value(auth)?,
-            serde_json::to_value(certificate)?,
-        ]).await
+        self.rpc_call(
+            "insertCertificateAuth",
+            vec![
+                serde_json::to_value(auth)?,
+                serde_json::to_value(certificate)?,
+            ],
+        )
+        .await
     }
 
     async fn relinquish_certificate(
@@ -470,10 +479,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         auth: &AuthId,
         args: &RelinquishCertificateArgs,
     ) -> WalletResult<i64> {
-        self.rpc_call("relinquishCertificate", vec![
-            serde_json::to_value(auth)?,
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call(
+            "relinquishCertificate",
+            vec![serde_json::to_value(auth)?, serde_json::to_value(args)?],
+        )
+        .await
     }
 
     async fn relinquish_output(
@@ -481,10 +491,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         auth: &AuthId,
         args: &RelinquishOutputArgs,
     ) -> WalletResult<i64> {
-        self.rpc_call("relinquishOutput", vec![
-            serde_json::to_value(auth)?,
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call(
+            "relinquishOutput",
+            vec![serde_json::to_value(auth)?, serde_json::to_value(args)?],
+        )
+        .await
     }
 
     // -----------------------------------------------------------------------
@@ -499,11 +510,14 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
     ) -> WalletResult<(SyncState, bool)> {
         // Positional order: [auth, storageIdentityKey, storageName]
         let r: FindOrInsertSyncStateWire = self
-            .rpc_call("findOrInsertSyncStateAuth", vec![
-                serde_json::to_value(auth)?,
-                Value::String(storage_identity_key.to_string()),
-                Value::String(storage_name.to_string()),
-            ])
+            .rpc_call(
+                "findOrInsertSyncStateAuth",
+                vec![
+                    serde_json::to_value(auth)?,
+                    Value::String(storage_identity_key.to_string()),
+                    Value::String(storage_name.to_string()),
+                ],
+            )
             .await?;
         Ok((r.sync_state, r.is_new))
     }
@@ -513,17 +527,20 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         auth: &AuthId,
         new_active_storage_identity_key: &str,
     ) -> WalletResult<i64> {
-        self.rpc_call("setActive", vec![
-            serde_json::to_value(auth)?,
-            Value::String(new_active_storage_identity_key.to_string()),
-        ]).await
+        self.rpc_call(
+            "setActive",
+            vec![
+                serde_json::to_value(auth)?,
+                Value::String(new_active_storage_identity_key.to_string()),
+            ],
+        )
+        .await
     }
 
     async fn get_sync_chunk(&self, args: &RequestSyncChunkArgs) -> WalletResult<SyncChunk> {
         // No auth param — sync protocol uses args.identity_key directly
-        self.rpc_call("getSyncChunk", vec![
-            serde_json::to_value(args)?,
-        ]).await
+        self.rpc_call("getSyncChunk", vec![serde_json::to_value(args)?])
+            .await
     }
 
     async fn process_sync_chunk(
@@ -531,10 +548,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> WalletStorageProvider
         args: &RequestSyncChunkArgs,
         chunk: &SyncChunk,
     ) -> WalletResult<ProcessSyncChunkResult> {
-        self.rpc_call("processSyncChunk", vec![
-            serde_json::to_value(args)?,
-            serde_json::to_value(chunk)?,
-        ]).await
+        self.rpc_call(
+            "processSyncChunk",
+            vec![serde_json::to_value(args)?, serde_json::to_value(chunk)?],
+        )
+        .await
     }
 }
 
@@ -669,10 +687,8 @@ mod tests {
             "bad key format",
             "deadbeef",
         ));
-        assert!(
-            matches!(err, WalletError::InvalidPublicKey { message, key }
-                if message == "bad key format" && key == "deadbeef")
-        );
+        assert!(matches!(err, WalletError::InvalidPublicKey { message, key }
+                if message == "bad key format" && key == "deadbeef"));
 
         // Unknown code falls through to Internal
         let err = wallet_error_from_object(make_obj("WERR_UNKNOWN_FUTURE_CODE", "mystery"));
@@ -687,7 +703,10 @@ mod tests {
         // so we test the AtomicBool behavior in isolation — same logic used by
         // is_available().
         let flag = AtomicBool::new(false);
-        assert!(!flag.load(Ordering::Acquire), "should be false before make_available");
+        assert!(
+            !flag.load(Ordering::Acquire),
+            "should be false before make_available"
+        );
 
         flag.store(true, Ordering::Release);
         assert!(flag.load(Ordering::Acquire), "should be true after store");
@@ -704,49 +723,64 @@ mod tests {
         // Derived from the TS StorageClient source and cross-checked against
         // the RESEARCH.md wire name table.
         let mappings: &[(&str, &str)] = &[
-            ("make_available",               "makeAvailable"),
-            ("migrate",                      "migrate"),
-            ("destroy",                      "destroy"),
-            ("find_or_insert_user",          "findOrInsertUser"),
-            ("abort_action",                 "abortAction"),
-            ("create_action",                "createAction"),
-            ("process_action",               "processAction"),
-            ("internalize_action",           "internalizeAction"),
-            ("insert_certificate_auth",      "insertCertificateAuth"),
-            ("relinquish_certificate",       "relinquishCertificate"),
-            ("relinquish_output",            "relinquishOutput"),
-            ("find_certificates_auth",       "findCertificatesAuth"),
+            ("make_available", "makeAvailable"),
+            ("migrate", "migrate"),
+            ("destroy", "destroy"),
+            ("find_or_insert_user", "findOrInsertUser"),
+            ("abort_action", "abortAction"),
+            ("create_action", "createAction"),
+            ("process_action", "processAction"),
+            ("internalize_action", "internalizeAction"),
+            ("insert_certificate_auth", "insertCertificateAuth"),
+            ("relinquish_certificate", "relinquishCertificate"),
+            ("relinquish_output", "relinquishOutput"),
+            ("find_certificates_auth", "findCertificatesAuth"),
             // CRITICAL: find_output_baskets_auth uses "findOutputBaskets" — NO Auth suffix
-            ("find_output_baskets_auth",     "findOutputBaskets"),
-            ("find_outputs_auth",            "findOutputsAuth"),
-            ("find_proven_tx_reqs",          "findProvenTxReqs"),
-            ("list_actions",                 "listActions"),
-            ("list_certificates",            "listCertificates"),
-            ("list_outputs",                 "listOutputs"),
-            ("find_or_insert_sync_state_auth", "findOrInsertSyncStateAuth"),
-            ("set_active",                   "setActive"),
-            ("get_sync_chunk",               "getSyncChunk"),
-            ("process_sync_chunk",           "processSyncChunk"),
+            ("find_output_baskets_auth", "findOutputBaskets"),
+            ("find_outputs_auth", "findOutputsAuth"),
+            ("find_proven_tx_reqs", "findProvenTxReqs"),
+            ("list_actions", "listActions"),
+            ("list_certificates", "listCertificates"),
+            ("list_outputs", "listOutputs"),
+            (
+                "find_or_insert_sync_state_auth",
+                "findOrInsertSyncStateAuth",
+            ),
+            ("set_active", "setActive"),
+            ("get_sync_chunk", "getSyncChunk"),
+            ("process_sync_chunk", "processSyncChunk"),
         ];
 
         // Verify each entry is non-empty and camelCase (starts lowercase, no underscores)
         for (rust_name, wire_name) in mappings {
-            assert!(!wire_name.is_empty(), "{} must have a non-empty wire name", rust_name);
+            assert!(
+                !wire_name.is_empty(),
+                "{} must have a non-empty wire name",
+                rust_name
+            );
             assert!(
                 !wire_name.contains('_'),
                 "wire name '{}' for '{}' must be camelCase (no underscores)",
-                wire_name, rust_name
+                wire_name,
+                rust_name
             );
             // camelCase: must start with a lowercase letter
             assert!(
-                wire_name.chars().next().map(|c| c.is_lowercase()).unwrap_or(false),
+                wire_name
+                    .chars()
+                    .next()
+                    .map(|c| c.is_lowercase())
+                    .unwrap_or(false),
                 "wire name '{}' for '{}' must start with a lowercase letter (camelCase)",
-                wire_name, rust_name
+                wire_name,
+                rust_name
             );
         }
 
         // Spot-check the only anomalous mapping: findOutputBaskets has no Auth suffix
-        let basket_entry = mappings.iter().find(|(r, _)| *r == "find_output_baskets_auth");
+        let basket_entry = mappings
+            .iter()
+            .find(|(r, _)| *r == "find_output_baskets_auth");
         assert!(basket_entry.is_some());
         assert_eq!(basket_entry.unwrap().1, "findOutputBaskets");
 
@@ -770,7 +804,10 @@ mod tests {
             merkle_path: vec![1, 2, 3],
         };
         let v = serde_json::to_value(&args).unwrap();
-        assert!(v.get("provenTxReqId").is_some(), "should serialize provenTxReqId");
+        assert!(
+            v.get("provenTxReqId").is_some(),
+            "should serialize provenTxReqId"
+        );
         assert!(v.get("merklePath").is_some(), "should serialize merklePath");
         assert_eq!(v["provenTxReqId"], 42);
     }

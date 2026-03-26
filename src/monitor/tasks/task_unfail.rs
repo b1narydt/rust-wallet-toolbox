@@ -149,14 +149,12 @@ impl WalletMonitorTask for TaskUnFail {
         loop {
             let reqs = self
                 .storage
-                .find_proven_tx_reqs(
-                    &FindProvenTxReqsArgs {
-                        partial: ProvenTxReqPartial::default(),
-                        since: None,
-                        paged: Some(Paged { limit, offset }),
-                        statuses: Some(vec![ProvenTxReqStatus::Unfail]),
-                    },
-                )
+                .find_proven_tx_reqs(&FindProvenTxReqsArgs {
+                    partial: ProvenTxReqPartial::default(),
+                    since: None,
+                    paged: Some(Paged { limit, offset }),
+                    statuses: Some(vec![ProvenTxReqStatus::Unfail]),
+                })
                 .await?;
 
             if reqs.is_empty() {

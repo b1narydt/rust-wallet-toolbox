@@ -716,7 +716,8 @@ fn vec_u8_some_serializes_as_array() {
 fn timestamp_serializes_with_z_and_3ms() {
     // 718 ms: serialize a NaiveDateTime with millis, assert output is exactly "2024-01-15T10:30:00.718Z"
     use chrono::NaiveDateTime;
-    let dt = NaiveDateTime::parse_from_str("2024-01-15T10:30:00.718", "%Y-%m-%dT%H:%M:%S%.f").unwrap();
+    let dt =
+        NaiveDateTime::parse_from_str("2024-01-15T10:30:00.718", "%Y-%m-%dT%H:%M:%S%.f").unwrap();
     let user = User {
         created_at: dt,
         updated_at: dt,
@@ -850,7 +851,9 @@ fn sync_chunk_present_fields_included() {
     };
     let json = serde_json::to_value(&chunk).unwrap();
     // provenTxs should be present with array value
-    let proven_txs = json.get("provenTxs").expect("Expected 'provenTxs' key to be present");
+    let proven_txs = json
+        .get("provenTxs")
+        .expect("Expected 'provenTxs' key to be present");
     assert!(proven_txs.is_array(), "Expected 'provenTxs' to be an array");
     assert_eq!(proven_txs.as_array().unwrap().len(), 1);
     // other None fields should still be absent
@@ -886,8 +889,14 @@ fn proven_tx_ts_fixture_roundtrip() {
     let out = serde_json::to_value(&proven_tx).unwrap();
 
     // Timestamps must be exactly TS format: 3ms digits + Z
-    assert_eq!(out["created_at"].as_str().unwrap(), "2024-01-15T10:30:00.718Z");
-    assert_eq!(out["updated_at"].as_str().unwrap(), "2024-01-15T10:30:01.000Z");
+    assert_eq!(
+        out["created_at"].as_str().unwrap(),
+        "2024-01-15T10:30:00.718Z"
+    );
+    assert_eq!(
+        out["updated_at"].as_str().unwrap(),
+        "2024-01-15T10:30:01.000Z"
+    );
 
     // Binary fields are integer arrays
     let merkle = out["merklePath"].as_array().unwrap();
@@ -927,8 +936,11 @@ fn transaction_ts_fixture_roundtrip() {
     let out = serde_json::to_value(&tx).unwrap();
 
     // Timestamp has Z and 3ms digits
-    assert!(out["created_at"].as_str().unwrap().ends_with("Z"),
-        "created_at must end with Z, got: {}", out["created_at"]);
+    assert!(
+        out["created_at"].as_str().unwrap().ends_with("Z"),
+        "created_at must end with Z, got: {}",
+        out["created_at"]
+    );
 
     // inputBEEF is integer array
     let beef = out["inputBEEF"].as_array().unwrap();

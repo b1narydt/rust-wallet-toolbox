@@ -580,7 +580,10 @@ mod sqlite_impl {
                     use rand::RngCore;
                     let mut bytes = [0u8; 33];
                     rand::thread_rng().fill_bytes(&mut bytes);
-                    bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+                    bytes
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<String>()
                 } else {
                     self.storage_identity_key.clone()
                 };
@@ -1011,7 +1014,10 @@ macro_rules! impl_storage_rw_and_provider {
                             use rand::RngCore;
                             let mut bytes = [0u8; 33];
                             rand::thread_rng().fill_bytes(&mut bytes);
-                            bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+                            bytes
+                                .iter()
+                                .map(|b| format!("{:02x}", b))
+                                .collect::<String>()
                         } else {
                             self.storage_identity_key.clone()
                         };

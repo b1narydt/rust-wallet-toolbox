@@ -146,13 +146,9 @@ pub async fn merge_input_beef(
         if input.provided_by == StorageProvidedBy::Storage {
             let txid = &input.source_txid;
             if !txid.is_empty() && beef.find_txid(txid).is_none() {
-                if let Ok(Some(tx_beef_bytes)) = get_valid_beef_for_storage_reader(
-                    storage,
-                    txid,
-                    TrustSelf::No,
-                    &known_txids,
-                )
-                .await
+                if let Ok(Some(tx_beef_bytes)) =
+                    get_valid_beef_for_storage_reader(storage, txid, TrustSelf::No, &known_txids)
+                        .await
                 {
                     let _ = beef.merge_beef_from_binary(&tx_beef_bytes);
                 }

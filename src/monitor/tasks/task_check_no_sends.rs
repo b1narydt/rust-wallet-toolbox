@@ -82,14 +82,12 @@ impl WalletMonitorTask for TaskCheckNoSends {
         loop {
             let reqs = self
                 .storage
-                .find_proven_tx_reqs(
-                    &FindProvenTxReqsArgs {
-                        partial: ProvenTxReqPartial::default(),
-                        since: None,
-                        paged: Some(Paged { limit, offset }),
-                        statuses: Some(vec![ProvenTxReqStatus::Nosend]),
-                    },
-                )
+                .find_proven_tx_reqs(&FindProvenTxReqsArgs {
+                    partial: ProvenTxReqPartial::default(),
+                    since: None,
+                    paged: Some(Paged { limit, offset }),
+                    statuses: Some(vec![ProvenTxReqStatus::Nosend]),
+                })
                 .await?;
 
             if reqs.is_empty() {

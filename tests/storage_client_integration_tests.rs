@@ -102,8 +102,8 @@ mod storage_client_integration {
         // Wire a StorageClient as a backup provider through the manager.
         // WalletArc wraps ProtoWallet in Arc so it satisfies W: Clone (required by AuthFetch).
         let proto = WalletArc::new(ProtoWallet::new(root_key));
-        let client = Arc::new(StorageClient::new(proto, STAGING_ENDPOINT))
-            as Arc<dyn WalletStorageProvider>;
+        let client =
+            Arc::new(StorageClient::new(proto, STAGING_ENDPOINT)) as Arc<dyn WalletStorageProvider>;
 
         setup
             .storage
@@ -169,7 +169,10 @@ mod storage_client_integration {
             .await
             .expect("find_or_insert_user must succeed on live server");
 
-        assert!(user.user_id > 0, "user_id must be a positive integer assigned by the server");
+        assert!(
+            user.user_id > 0,
+            "user_id must be a positive integer assigned by the server"
+        );
 
         // Second call: idempotency check — must return same user_id.
         let (user2, _) = client
@@ -286,11 +289,9 @@ mod storage_client_integration {
         // update_backups() internally calls sync_to_writer for each backup.
         // This is the simplest correct path to verify the full sync_to_writer
         // protocol works through the manager layer (see plan research note).
-        let (inserts, updates, _log) = setup
-            .storage
-            .update_backups(None)
-            .await
-            .expect("update_backups (which calls sync_to_writer) must complete without auth or wire errors");
+        let (inserts, updates, _log) = setup.storage.update_backups(None).await.expect(
+            "update_backups (which calls sync_to_writer) must complete without auth or wire errors",
+        );
 
         // With an empty wallet, we expect zero inserts and zero updates.
         // The critical proof is that the call completed without error.
@@ -311,11 +312,9 @@ mod storage_client_integration {
 
         // update_backups iterates backup_indices and calls sync_to_writer for each.
         // Returns (total_inserts, total_updates, accumulated_log).
-        let result = setup
-            .storage
-            .update_backups(None)
-            .await
-            .expect("update_backups must complete without auth or wire errors for StorageClient backup");
+        let result = setup.storage.update_backups(None).await.expect(
+            "update_backups must complete without auth or wire errors for StorageClient backup",
+        );
 
         // Destructure the tuple to confirm the return type matches expectations.
         let (_total_inserts, _total_updates, _log) = result;
@@ -347,10 +346,7 @@ mod storage_client_integration {
         let root_key = test_root_key();
         let ik = identity_key_hex(&root_key);
 
-        let settings = client
-            .make_available()
-            .await
-            .expect("make_available");
+        let settings = client.make_available().await.expect("make_available");
 
         client
             .find_or_insert_user(&ik)

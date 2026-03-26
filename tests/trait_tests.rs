@@ -127,7 +127,12 @@ mod sqlite_tests {
         let storage = SqliteStorage::new_sqlite(config, bsv_wallet_toolbox::types::Chain::Test)
             .await
             .expect("SqliteStorage should create");
-        StorageProvider::make_available(&storage).await.expect("make_available should succeed");
-        assert!(storage.is_storage_provider(), "blanket impl should return true");
+        StorageProvider::make_available(&storage)
+            .await
+            .expect("make_available should succeed");
+        assert!(
+            storage.is_storage_provider(),
+            "blanket impl should return true"
+        );
     }
 }

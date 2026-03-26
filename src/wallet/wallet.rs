@@ -1192,11 +1192,7 @@ impl WalletInterface for Wallet {
                     None => crate::storage::beef::TrustSelf::No,
                 };
                 let known_txids: HashSet<String> = HashSet::new();
-                let storage_provider = self
-                    .storage
-                    .get_active()
-                    .await
-                    .map_err(to_sdk_error)?;
+                let storage_provider = self.storage.get_active().await.map_err(to_sdk_error)?;
 
                 // Build a single merged BEEF from all txids
                 let mut merged_beef = Beef::new(BEEF_V2);

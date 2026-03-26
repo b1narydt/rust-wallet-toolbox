@@ -9,8 +9,8 @@ use std::io::Cursor;
 
 use crate::error::{WalletError, WalletResult};
 use crate::storage::find_args::*;
-use crate::storage::traits::wallet_provider::WalletStorageProvider;
 use crate::storage::traits::reader::StorageReader;
+use crate::storage::traits::wallet_provider::WalletStorageProvider;
 
 use bsv::transaction::beef::{Beef, BEEF_V2};
 use bsv::transaction::beef_tx::BeefTx;
@@ -123,15 +123,13 @@ async fn collect_tx_recursive(
 
     // 1. Check if txid is in ProvenTx table (has merkle proof)
     let proven = storage
-        .find_proven_txs(
-            &FindProvenTxsArgs {
-                partial: ProvenTxPartial {
-                    txid: Some(txid.to_string()),
-                    ..Default::default()
-                },
+        .find_proven_txs(&FindProvenTxsArgs {
+            partial: ProvenTxPartial {
+                txid: Some(txid.to_string()),
                 ..Default::default()
             },
-        )
+            ..Default::default()
+        })
         .await?;
 
     if let Some(ptx) = proven.into_iter().next() {
@@ -157,15 +155,13 @@ async fn collect_tx_recursive(
 
     // 2. Not proven -- check Transaction table
     let txs = storage
-        .find_transactions(
-            &FindTransactionsArgs {
-                partial: TransactionPartial {
-                    txid: Some(txid.to_string()),
-                    ..Default::default()
-                },
+        .find_transactions(&FindTransactionsArgs {
+            partial: TransactionPartial {
+                txid: Some(txid.to_string()),
                 ..Default::default()
             },
-        )
+            ..Default::default()
+        })
         .await?;
 
     let tx_record = match txs.into_iter().next() {

@@ -6,9 +6,9 @@
 use crate::error::WalletResult;
 use crate::services::traits::WalletServices;
 use crate::signer::types::{SignerInternalizeActionResult, ValidInternalizeActionArgs};
+use crate::storage::action_types::{StorageInternalizeActionArgs, StorageInternalizeOutput};
 use crate::storage::manager::WalletStorageManager;
 use crate::wallet::types::AuthId;
-use crate::storage::action_types::{StorageInternalizeActionArgs, StorageInternalizeOutput};
 use bsv::wallet::interfaces::InternalizeOutput;
 
 /// Execute the signer-level internalizeAction flow.
@@ -65,7 +65,11 @@ pub async fn signer_internalize_action(
             .collect(),
     };
 
-    let auth_id = AuthId { identity_key: auth.to_string(), user_id: None, is_active: None };
+    let auth_id = AuthId {
+        identity_key: auth.to_string(),
+        user_id: None,
+        is_active: None,
+    };
     let result = storage
         .internalize_action(&auth_id, &storage_args, services)
         .await?;

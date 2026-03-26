@@ -69,10 +69,9 @@ mod beef_tests {
         let _user_id = insert_test_user(&storage, "02beef01").await;
 
         let known_txids = HashSet::new();
-        let result =
-            get_valid_beef_for_txid(&storage, TXID_UNKNOWN, TrustSelf::No, &known_txids)
-                .await
-                .unwrap();
+        let result = get_valid_beef_for_txid(&storage, TXID_UNKNOWN, TrustSelf::No, &known_txids)
+            .await
+            .unwrap();
 
         assert!(result.is_none(), "unknown txid should return None");
     }

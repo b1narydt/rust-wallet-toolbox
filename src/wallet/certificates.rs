@@ -235,16 +235,14 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
 
     // Fetch the certificate fields to get the keyring (master keys).
     let fields = active
-        .find_certificate_fields(
-            &FindCertificateFieldsArgs {
-                partial: CertificateFieldPartial {
-                    certificate_id: Some(storage_cert.certificate_id),
-                    user_id: Some(user.user_id),
-                    ..Default::default()
-                },
+        .find_certificate_fields(&FindCertificateFieldsArgs {
+            partial: CertificateFieldPartial {
+                certificate_id: Some(storage_cert.certificate_id),
+                user_id: Some(user.user_id),
                 ..Default::default()
             },
-        )
+            ..Default::default()
+        })
         .await?;
 
     let field_map: HashMap<String, String> = fields

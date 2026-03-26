@@ -26,12 +26,13 @@ use bsv::wallet::interfaces::{
 
 use crate::error::{WalletError, WalletResult};
 use crate::services::traits::WalletServices;
+use crate::status::SyncStatus;
+use crate::status::TransactionStatus;
 use crate::storage::action_traits::StorageActionProvider;
 use crate::storage::action_types::{
     StorageCreateActionArgs, StorageCreateActionResult, StorageInternalizeActionArgs,
     StorageInternalizeActionResult, StorageProcessActionArgs, StorageProcessActionResult,
 };
-use crate::status::SyncStatus;
 use crate::storage::find_args::{
     CertificateFieldPartial, CertificatePartial, FindCertificateFieldsArgs, FindCertificatesArgs,
     FindOutputBasketsArgs, FindOutputsArgs, FindProvenTxReqsArgs, FindProvenTxsArgs,
@@ -47,7 +48,6 @@ use crate::storage::traits::provider::StorageProvider;
 use crate::storage::traits::reader::StorageReader;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
 use crate::storage::{verify_one, verify_one_or_none, TrxToken};
-use crate::status::TransactionStatus;
 use crate::tables::{
     Certificate, CertificateField, MonitorEvent, Output, OutputBasket, ProvenTx, ProvenTxReq,
     Settings, SyncState, Transaction, User,
@@ -200,11 +200,8 @@ pub trait WalletStorageProvider: Send + Sync {
     /// Run database migrations to bring the schema up to date.
     ///
     /// Wire method: `migrate`
-    async fn migrate(
-        &self,
-        storage_name: &str,
-        storage_identity_key: &str,
-    ) -> WalletResult<String>;
+    async fn migrate(&self, storage_name: &str, storage_identity_key: &str)
+        -> WalletResult<String>;
 
     /// Destroy the storage, cleaning up all resources.
     ///
@@ -328,7 +325,9 @@ pub trait WalletStorageProvider: Send + Sync {
     /// Find a user by identity key.
     async fn find_user_by_identity_key(&self, key: &str) -> WalletResult<Option<User>> {
         let _ = key;
-        Err(WalletError::NotImplemented("find_user_by_identity_key".into()))
+        Err(WalletError::NotImplemented(
+            "find_user_by_identity_key".into(),
+        ))
     }
 
     /// Find certificates matching the given filter (no transaction context).
@@ -337,7 +336,9 @@ pub trait WalletStorageProvider: Send + Sync {
         args: &FindCertificatesArgs,
     ) -> WalletResult<Vec<Certificate>> {
         let _ = args;
-        Err(WalletError::NotImplemented("find_certificates_storage".into()))
+        Err(WalletError::NotImplemented(
+            "find_certificates_storage".into(),
+        ))
     }
 
     /// Find certificate fields matching the given filter.
@@ -346,7 +347,9 @@ pub trait WalletStorageProvider: Send + Sync {
         args: &FindCertificateFieldsArgs,
     ) -> WalletResult<Vec<CertificateField>> {
         let _ = args;
-        Err(WalletError::NotImplemented("find_certificate_fields".into()))
+        Err(WalletError::NotImplemented(
+            "find_certificate_fields".into(),
+        ))
     }
 
     /// Find outputs matching the given filter (no transaction context).
@@ -369,23 +372,21 @@ pub trait WalletStorageProvider: Send + Sync {
     /// Insert a certificate and return the new certificate_id.
     async fn insert_certificate_storage(&self, cert: &Certificate) -> WalletResult<i64> {
         let _ = cert;
-        Err(WalletError::NotImplemented("insert_certificate_storage".into()))
+        Err(WalletError::NotImplemented(
+            "insert_certificate_storage".into(),
+        ))
     }
 
     /// Insert a certificate field.
-    async fn insert_certificate_field_storage(
-        &self,
-        field: &CertificateField,
-    ) -> WalletResult<()> {
+    async fn insert_certificate_field_storage(&self, field: &CertificateField) -> WalletResult<()> {
         let _ = field;
-        Err(WalletError::NotImplemented("insert_certificate_field_storage".into()))
+        Err(WalletError::NotImplemented(
+            "insert_certificate_field_storage".into(),
+        ))
     }
 
     /// Find settings records.
-    async fn find_settings_storage(
-        &self,
-        args: &FindSettingsArgs,
-    ) -> WalletResult<Vec<Settings>> {
+    async fn find_settings_storage(&self, args: &FindSettingsArgs) -> WalletResult<Vec<Settings>> {
         let _ = args;
         Err(WalletError::NotImplemented("find_settings_storage".into()))
     }
@@ -393,7 +394,9 @@ pub trait WalletStorageProvider: Send + Sync {
     /// Update settings record.
     async fn update_settings_storage(&self, update: &SettingsPartial) -> WalletResult<i64> {
         let _ = update;
-        Err(WalletError::NotImplemented("update_settings_storage".into()))
+        Err(WalletError::NotImplemented(
+            "update_settings_storage".into(),
+        ))
     }
 
     // -----------------------------------------------------------------------
@@ -444,7 +447,9 @@ pub trait WalletStorageProvider: Send + Sync {
         new_status: TransactionStatus,
     ) -> WalletResult<()> {
         let _ = (txid, new_status);
-        Err(WalletError::NotImplemented("update_transaction_status".into()))
+        Err(WalletError::NotImplemented(
+            "update_transaction_status".into(),
+        ))
     }
 
     /// Composite: insert ProvenTx and update ProvenTxReq.
@@ -568,7 +573,8 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         args: &FindCertificatesArgs,
     ) -> WalletResult<Vec<Certificate>> {
         // Resolve user_id to scope the query to this identity
-        let (user, _) = StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
+        let (user, _) =
+            StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
         let mut scoped_args = FindCertificatesArgs {
             partial: CertificatePartial {
                 user_id: Some(user.user_id),
@@ -626,7 +632,8 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         auth: &AuthId,
         args: &ListActionsArgs,
     ) -> WalletResult<ListActionsResult> {
-        let (user, _) = StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
+        let (user, _) =
+            StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
         crate::storage::methods::list_actions::list_actions(
             self as &dyn StorageReader,
             &auth.identity_key,
@@ -642,7 +649,8 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         auth: &AuthId,
         args: &ListCertificatesArgs,
     ) -> WalletResult<ListCertificatesResult> {
-        let (user, _) = StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
+        let (user, _) =
+            StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
         crate::storage::methods::list_certificates::list_certificates(
             self as &dyn StorageReader,
             &auth.identity_key,
@@ -658,7 +666,8 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         auth: &AuthId,
         args: &ListOutputsArgs,
     ) -> WalletResult<ListOutputsResult> {
-        let (user, _) = StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
+        let (user, _) =
+            StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
         // Use list_outputs_rw so that specOp basket names (e.g. wallet balance) are handled.
         crate::storage::methods::list_outputs::list_outputs_rw(
             self as &dyn StorageReaderWriter,
@@ -816,7 +825,8 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         storage_name: &str,
     ) -> WalletResult<(SyncState, bool)> {
         // Resolve user_id first
-        let (user, _) = StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
+        let (user, _) =
+            StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
 
         // Look up existing sync state
         let existing = verify_one_or_none(
@@ -875,7 +885,8 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         auth: &AuthId,
         new_active_storage_identity_key: &str,
     ) -> WalletResult<i64> {
-        let (user, _) = StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
+        let (user, _) =
+            StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
         StorageReaderWriter::update_user(
             self,
             user.user_id,
@@ -916,9 +927,15 @@ impl<T: StorageProvider> WalletStorageProvider for T {
             && chunk.tx_labels.as_ref().map_or(true, |v| v.is_empty())
             && chunk.tx_label_maps.as_ref().map_or(true, |v| v.is_empty())
             && chunk.output_tags.as_ref().map_or(true, |v| v.is_empty())
-            && chunk.output_tag_maps.as_ref().map_or(true, |v| v.is_empty())
+            && chunk
+                .output_tag_maps
+                .as_ref()
+                .map_or(true, |v| v.is_empty())
             && chunk.certificates.as_ref().map_or(true, |v| v.is_empty())
-            && chunk.certificate_fields.as_ref().map_or(true, |v| v.is_empty())
+            && chunk
+                .certificate_fields
+                .as_ref()
+                .map_or(true, |v| v.is_empty())
             && chunk.commissions.as_ref().map_or(true, |v| v.is_empty())
             && chunk.proven_tx_reqs.as_ref().map_or(true, |v| v.is_empty());
 
@@ -949,9 +966,7 @@ impl<T: StorageProvider> WalletStorageProvider for T {
                     &FindSyncStatesArgs {
                         partial: SyncStatePartial {
                             user_id: Some(user.user_id),
-                            storage_identity_key: Some(
-                                args.from_storage_identity_key.clone(),
-                            ),
+                            storage_identity_key: Some(args.from_storage_identity_key.clone()),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -963,15 +978,17 @@ impl<T: StorageProvider> WalletStorageProvider for T {
 
             if let Some(state) = existing {
                 // Serialize updated sync_map to JSON for storage.
-                let new_sync_map_json = serde_json::to_string(&sync_map)
-                    .map_err(|e| WalletError::Internal(format!("failed to serialize sync_map: {e}")))?;
+                let new_sync_map_json = serde_json::to_string(&sync_map).map_err(|e| {
+                    WalletError::Internal(format!("failed to serialize sync_map: {e}"))
+                })?;
 
                 // Advance the `when` high-watermark.
                 // Use the maximum updated_at seen in this chunk if available,
                 // otherwise use the current time. This ensures the next iteration
                 // passes a non-None `since` to get_sync_chunk, preventing re-fetching
                 // the same data on subsequent calls.
-                let new_when = result.max_updated_at
+                let new_when = result
+                    .max_updated_at
                     .or_else(|| Some(chrono::Utc::now().naive_utc()));
 
                 StorageReaderWriter::update_sync_state(
@@ -1023,17 +1040,11 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         StorageReaderWriter::insert_certificate(self, cert, None).await
     }
 
-    async fn insert_certificate_field_storage(
-        &self,
-        field: &CertificateField,
-    ) -> WalletResult<()> {
+    async fn insert_certificate_field_storage(&self, field: &CertificateField) -> WalletResult<()> {
         StorageReaderWriter::insert_certificate_field(self, field, None).await
     }
 
-    async fn find_settings_storage(
-        &self,
-        args: &FindSettingsArgs,
-    ) -> WalletResult<Vec<Settings>> {
+    async fn find_settings_storage(&self, args: &FindSettingsArgs) -> WalletResult<Vec<Settings>> {
         StorageReader::find_settings(self, args, None).await
     }
 
@@ -1083,10 +1094,8 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         req_id: i64,
         proven_tx: &ProvenTx,
     ) -> WalletResult<i64> {
-        StorageReaderWriter::update_proven_tx_req_with_new_proven_tx(
-            self, req_id, proven_tx, None,
-        )
-        .await
+        StorageReaderWriter::update_proven_tx_req_with_new_proven_tx(self, req_id, proven_tx, None)
+            .await
     }
 
     async fn find_output_baskets(

@@ -102,17 +102,15 @@ impl DefaultWalletSigner {
         // --- Step 2: Find the transaction by reference ---
         let txs = self
             .storage
-            .find_transactions(
-                &FindTransactionsArgs {
-                    partial: TransactionPartial {
-                        user_id: Some(user.user_id),
-                        reference: Some(reference.to_string()),
-                        ..Default::default()
-                    },
-                    no_raw_tx: false,
+            .find_transactions(&FindTransactionsArgs {
+                partial: TransactionPartial {
+                    user_id: Some(user.user_id),
+                    reference: Some(reference.to_string()),
                     ..Default::default()
                 },
-            )
+                no_raw_tx: false,
+                ..Default::default()
+            })
             .await?;
 
         let tx_record = txs
@@ -153,16 +151,14 @@ impl DefaultWalletSigner {
         // --- Step 6: Find all Output records spent by this transaction ---
         let spent_outputs = self
             .storage
-            .find_outputs_storage(
-                &FindOutputsArgs {
-                    partial: OutputPartial {
-                        spent_by: Some(tx_record.transaction_id),
-                        ..Default::default()
-                    },
-                    no_script: false,
+            .find_outputs_storage(&FindOutputsArgs {
+                partial: OutputPartial {
+                    spent_by: Some(tx_record.transaction_id),
                     ..Default::default()
                 },
-            )
+                no_script: false,
+                ..Default::default()
+            })
             .await?;
 
         // --- Step 7: Build PendingStorageInput entries ---
