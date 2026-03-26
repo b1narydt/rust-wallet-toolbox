@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 06.1-02 Task 1 — awaiting human-verify checkpoint for live test execution
-last_updated: "2026-03-25T17:01:38.134Z"
-last_activity: 2026-03-25 — Completed Phase 06 (all 6 integration tests pass against live TS server)
+stopped_at: Completed 06.1-02 — all 8 live integration tests pass against staging TS server
+last_updated: "2026-03-26T00:00:00Z"
+last_activity: 2026-03-25 — Completed Phase 06.1 (all 8 parity tests pass, PARITY-06 + PARITY-07 verified live)
 progress:
   total_phases: 8
   completed_phases: 7
-  total_plans: 12
-  completed_plans: 12
-  percent: 85
+  total_plans: 13
+  completed_plans: 13
+  percent: 90
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 
 ## Current Position
 
-Phase: 6 of 7 (Integration Testing) — COMPLETE
-Plan: 1/1 complete
+Phase: 6.1 of 7 (Integration Test Parity) — COMPLETE
+Plan: 2/2 complete
 Status: Phase complete, ready for Phase 7
-Last activity: 2026-03-25 — Completed Phase 06 (all 6 integration tests pass against live TS server)
+Last activity: 2026-03-25 — Completed Phase 06.1 (all 8 parity tests pass, PARITY-06 + PARITY-07 verified live)
 
 Progress: [████████░░] 85%
 
@@ -57,6 +57,7 @@ Progress: [████████░░] 85%
 | Phase 05-manager-orchestration P01 | 8min | 2 tasks | 3 files |
 | Phase 06-integrationtesting P01 | 8min | 3 tasks | 3 files |
 | Phase 06.1-integration-test-parity P01 | 50min | 2 tasks | 1 files |
+| Phase 06.1-integration-test-parity P02 | 20min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,8 @@ Recent decisions affecting current work:
 - [Phase 06.1-integration-test-parity]: user.active_storage DB assertion omitted from PARITY-03: sync_to_writer preserves writer active_storage by design; manager in-memory tracking is authoritative after setActive
 - [Phase 06.1-integration-test-parity]: test_funded_key_live uses early return (not panic) when BSV_FUNDED_KEY is absent — test reports passed rather than errored
 - [Phase 06.1-integration-test-parity]: PARITY-07 skips create_action/BEEF — funded key UTXO state on staging unknown; auth+get_stores+update_backups is sufficient proof
+- [Phase 06.1-integration-test-parity]: PARITY-06 rewritten at RPC level (get_sync_chunk direct call) after serde bool interop issue — simpler and more direct proof of sync wire format
+- [Phase 06.1-integration-test-parity]: TS ProcessSyncChunkResult.done is JSON boolean; Rust serde needed explicit coercion — fixed in de36e7e
 
 ### Codebase Context (from pre-roadmap research)
 
@@ -121,6 +124,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-25T17:01:32.483Z
-Stopped at: Completed 06.1-02 Task 1 — awaiting human-verify checkpoint for live test execution
+Last session: 2026-03-26T00:00:00Z
+Stopped at: Completed 06.1-02 — Phase 06.1 Integration Test Parity complete, ready for Phase 7 PR Submission
 Resume file: None
