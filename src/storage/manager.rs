@@ -548,25 +548,37 @@ impl WalletStorageManager {
     /// Separated from `make_available()` so `acquire_reader()` can avoid
     /// re-acquiring the reader_lock that it is about to return to the caller.
     async fn do_make_available(&self) -> WalletResult<Settings> {
-        let mut state = self.state.lock().await;
-
-        if state.stores.is_empty() {
-            return Err(WalletError::InvalidParameter {
-                parameter: "stores".to_string(),
-                must_be: "non-empty — provide at least one storage provider".to_string(),
-            });
-        }
+        // Collect storage Arcs under a brief state lock, then release so that
+        // network I/O (make_available, find_or_insert_user) does not block
+        // concurrent operations on the manager.
+        let providers: Vec<Arc<dyn WalletStorageProvider>> = {
+            let state = self.state.lock().await;
+            if state.stores.is_empty() {
+                return Err(WalletError::InvalidParameter {
+                    parameter: "stores".to_string(),
+                    must_be: "non-empty — provide at least one storage provider".to_string(),
+                });
+            }
+            state.stores.iter().map(|s| s.storage.clone()).collect()
+        };
 
         // Step 1: Call make_available() + find_or_insert_user() on each store
-        for store in &state.stores {
-            let settings = store.storage.make_available().await?;
-            let (user, _) = store
-                .storage
+        // without holding the state lock.
+        let mut init_results: Vec<(Settings, User)> = Vec::with_capacity(providers.len());
+        for provider in &providers {
+            let settings = provider.make_available().await?;
+            let (user, _) = provider
                 .find_or_insert_user(&self.identity_key)
                 .await?;
-            *store.settings.lock().await = Some(settings);
-            *store.user.lock().await = Some(user);
-            store.is_available.store(true, Ordering::Release);
+            init_results.push((settings, user));
+        }
+
+        // Re-acquire the state lock to write results and partition.
+        let mut state = self.state.lock().await;
+        for (i, (settings, user)) in init_results.into_iter().enumerate() {
+            *state.stores[i].settings.lock().await = Some(settings);
+            *state.stores[i].user.lock().await = Some(user);
+            state.stores[i].is_available.store(true, Ordering::Release);
         }
 
         // Step 2: Partition stores — first store is default active

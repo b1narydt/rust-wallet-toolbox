@@ -251,12 +251,12 @@ impl Wallet {
     ///
     /// Returns the active store's storage_identity_key if available (after
     /// make_available), otherwise falls back to the wallet's identity key.
-    pub fn get_storage_identity(&self) -> StorageIdentity {
-        // Use the manager's cached active store key if available.
-        // This is synchronous -- it reads from the manager's internal state
-        // which is populated after make_available(). Before that, falls back
-        // to the wallet's own identity key as a placeholder.
-        let key = self.storage.auth_id().to_string();
+    pub async fn get_storage_identity(&self) -> StorageIdentity {
+        let key = self
+            .storage
+            .get_storage_identity_key()
+            .await
+            .unwrap_or_else(|_| self.identity_key.to_der_hex());
         StorageIdentity {
             storage_identity_key: key,
             storage_name: "default".to_string(),
@@ -264,8 +264,8 @@ impl Wallet {
     }
 
     /// Returns the storage party string.
-    pub fn storage_party(&self) -> String {
-        let si = self.get_storage_identity();
+    pub async fn storage_party(&self) -> String {
+        let si = self.get_storage_identity().await;
         format!("storage {}", si.storage_identity_key)
     }
 
