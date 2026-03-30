@@ -10,13 +10,12 @@ use std::io::Cursor;
 use chrono::Utc;
 
 use bsv::transaction::Beef;
+use bsv::wallet::interfaces::InternalizeOutput;
 
 use crate::error::{WalletError, WalletResult};
 use crate::services::traits::WalletServices;
 use crate::status::TransactionStatus;
-use crate::storage::action_types::{
-    StorageInternalizeActionArgs, StorageInternalizeActionResult, StorageInternalizeOutput,
-};
+use crate::storage::action_types::{StorageInternalizeActionArgs, StorageInternalizeActionResult};
 use crate::storage::find_args::{
     FindOutputsArgs, FindProvenTxsArgs, FindTransactionsArgs, OutputPartial, ProvenTxPartial,
     TransactionPartial,
@@ -101,7 +100,8 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
 
     // Validate output indices
     for out_spec in &args.outputs {
-        if out_spec.output_index >= num_outputs as u32 {
+        let oi = output_index_of(out_spec);
+        if oi >= num_outputs as u32 {
             return Err(WalletError::InvalidParameter {
                 parameter: "outputIndex".to_string(),
                 must_be: format!("a valid output index in range 0 to {}", num_outputs - 1),
@@ -146,17 +146,18 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
 
     // Pre-calculate satoshis for each output spec
     for out_spec in &args.outputs {
-        let txo = &tx.outputs[out_spec.output_index as usize];
+        let oi = output_index_of(out_spec);
+        let txo = &tx.outputs[oi as usize];
         let output_satoshis = txo.satoshis.unwrap_or(0) as i64;
 
-        match out_spec.protocol.as_str() {
-            "wallet payment" => {
+        match out_spec {
+            InternalizeOutput::WalletPayment { .. } => {
                 if is_merge {
                     let find_out = FindOutputsArgs {
                         partial: OutputPartial {
                             user_id: Some(user_id),
                             txid: Some(txid.clone()),
-                            vout: Some(out_spec.output_index as i32),
+                            vout: Some(oi as i32),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -175,13 +176,13 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                     satoshis += output_satoshis;
                 }
             }
-            "basket insertion" => {
+            InternalizeOutput::BasketInsertion { .. } => {
                 if is_merge {
                     let find_out = FindOutputsArgs {
                         partial: OutputPartial {
                             user_id: Some(user_id),
                             txid: Some(txid.clone()),
-                            vout: Some(out_spec.output_index as i32),
+                            vout: Some(oi as i32),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -193,12 +194,6 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                         }
                     }
                 }
-            }
-            other => {
-                return Err(WalletError::Internal(format!(
-                    "unexpected protocol {}",
-                    other
-                )));
             }
         }
     }
@@ -379,13 +374,25 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
 
     // Process each output specification
     for out_spec in &args.outputs {
-        let txo = &tx.outputs[out_spec.output_index as usize];
-        let vout = out_spec.output_index as i32;
+        let oi = output_index_of(out_spec);
+        let txo = &tx.outputs[oi as usize];
+        let vout = oi as i32;
         let output_satoshis = txo.satoshis.unwrap_or(0) as i64;
         let locking_script = txo.locking_script.to_binary();
 
-        match out_spec.protocol.as_str() {
-            "wallet payment" => {
+        match out_spec {
+            InternalizeOutput::WalletPayment {
+                output_index: _,
+                payment,
+            } => {
+                let sender_key = Some(payment.sender_identity_key.to_der_hex());
+                let prefix = Some(
+                    String::from_utf8_lossy(&payment.derivation_prefix).to_string(),
+                );
+                let suffix = Some(
+                    String::from_utf8_lossy(&payment.derivation_suffix).to_string(),
+                );
+
                 if is_merge {
                     let find_out = FindOutputsArgs {
                         partial: OutputPartial {
@@ -410,7 +417,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                             change: Some(true),
                             provided_by: Some(StorageProvidedBy::Storage),
                             purpose: Some("change".to_string()),
-                            sender_identity_key: out_spec.sender_identity_key.clone(),
+                            sender_identity_key: sender_key.clone(),
                             ..Default::default()
                         };
                         storage
@@ -426,7 +433,9 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                             output_satoshis,
                             &locking_script,
                             default_basket.basket_id,
-                            out_spec,
+                            sender_key.as_deref(),
+                            prefix.as_deref(),
+                            suffix.as_deref(),
                             Some(&db_trx),
                         )
                         .await?;
@@ -441,14 +450,23 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                         output_satoshis,
                         &locking_script,
                         default_basket.basket_id,
-                        out_spec,
+                        sender_key.as_deref(),
+                        prefix.as_deref(),
+                        suffix.as_deref(),
                         Some(&db_trx),
                     )
                     .await?;
                 }
             }
-            "basket insertion" => {
-                let basket_name = out_spec.basket.as_deref().unwrap_or("default");
+            InternalizeOutput::BasketInsertion {
+                output_index: _,
+                insertion,
+            } => {
+                let basket_name = if insertion.basket.is_empty() {
+                    "default"
+                } else {
+                    &insertion.basket
+                };
                 let basket = storage
                     .find_or_insert_output_basket(user_id, basket_name, Some(&db_trx))
                     .await?;
@@ -488,7 +506,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                             output_satoshis,
                             &locking_script,
                             basket.basket_id,
-                            out_spec,
+                            insertion.custom_instructions.as_deref(),
                             Some(&db_trx),
                         )
                         .await?;
@@ -503,14 +521,14 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                         output_satoshis,
                         &locking_script,
                         basket.basket_id,
-                        out_spec,
+                        insertion.custom_instructions.as_deref(),
                         Some(&db_trx),
                     )
                     .await?;
                 }
 
                 // Add tags for basket insertions
-                for tag in &out_spec.tags {
+                for tag in &insertion.tags {
                     let output_tag = storage
                         .find_or_insert_output_tag(user_id, tag, Some(&db_trx))
                         .await?;
@@ -537,7 +555,6 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                     }
                 }
             }
-            _ => {} // Already validated above
         }
     }
 
@@ -584,6 +601,14 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
     })
 }
 
+/// Extract the output_index from either variant of InternalizeOutput.
+fn output_index_of(out: &InternalizeOutput) -> u32 {
+    match out {
+        InternalizeOutput::WalletPayment { output_index, .. } => *output_index,
+        InternalizeOutput::BasketInsertion { output_index, .. } => *output_index,
+    }
+}
+
 /// Create a new wallet payment output record.
 async fn store_new_wallet_payment<S: StorageReaderWriter + ?Sized>(
     storage: &S,
@@ -594,7 +619,9 @@ async fn store_new_wallet_payment<S: StorageReaderWriter + ?Sized>(
     satoshis: i64,
     locking_script: &[u8],
     basket_id: i64,
-    spec: &StorageInternalizeOutput,
+    sender_identity_key: Option<&str>,
+    derivation_prefix: Option<&str>,
+    derivation_suffix: Option<&str>,
     trx: Option<&TrxToken>,
 ) -> WalletResult<i64> {
     let now = Utc::now().naive_utc();
@@ -610,12 +637,12 @@ async fn store_new_wallet_payment<S: StorageReaderWriter + ?Sized>(
         basket_id: Some(basket_id),
         satoshis,
         txid: Some(txid.to_string()),
-        sender_identity_key: spec.sender_identity_key.clone(),
+        sender_identity_key: sender_identity_key.map(|s| s.to_string()),
         output_type: "P2PKH".to_string(),
         provided_by: StorageProvidedBy::Storage,
         purpose: "change".to_string(),
-        derivation_prefix: spec.derivation_prefix.clone(),
-        derivation_suffix: spec.derivation_suffix.clone(),
+        derivation_prefix: derivation_prefix.map(|s| s.to_string()),
+        derivation_suffix: derivation_suffix.map(|s| s.to_string()),
         change: true,
         spent_by: None,
         custom_instructions: None,
@@ -638,7 +665,7 @@ async fn store_new_basket_insertion<S: StorageReaderWriter + ?Sized>(
     satoshis: i64,
     locking_script: &[u8],
     basket_id: i64,
-    spec: &StorageInternalizeOutput,
+    custom_instructions: Option<&str>,
     trx: Option<&TrxToken>,
 ) -> WalletResult<i64> {
     let now = Utc::now().naive_utc();
@@ -655,7 +682,7 @@ async fn store_new_basket_insertion<S: StorageReaderWriter + ?Sized>(
         satoshis,
         txid: Some(txid.to_string()),
         output_type: "custom".to_string(),
-        custom_instructions: spec.custom_instructions.clone(),
+        custom_instructions: custom_instructions.map(|s| s.to_string()),
         change: false,
         spent_by: None,
         output_description: Some(String::new()),
@@ -689,9 +716,11 @@ mod tests {
     use crate::types::Chain;
 
     use async_trait::async_trait;
+    use bsv::primitives::public_key::PublicKey;
     use bsv::script::LockingScript;
     use bsv::transaction::chain_tracker::ChainTracker;
     use bsv::transaction::error::TransactionError;
+    use bsv::wallet::interfaces::{BasketInsertion, Payment};
     use bsv::transaction::{Transaction as BsvTransaction, TransactionInput, TransactionOutput};
 
     // Mock chain tracker that accepts all proofs
@@ -930,19 +959,23 @@ mod tests {
         let services = MockWalletServices;
         let (beef_bytes, txid) = create_test_atomic_beef();
 
+        let sender_key = PublicKey::from_string(
+            &("02".to_owned() + &"ab".repeat(32)),
+        )
+        .unwrap();
+
         let args = StorageInternalizeActionArgs {
             tx: beef_bytes,
             description: "test payment".to_string(),
             labels: vec!["test-label".to_string()],
-            outputs: vec![StorageInternalizeOutput {
+            seek_permission: true,
+            outputs: vec![InternalizeOutput::WalletPayment {
                 output_index: 0,
-                protocol: "wallet payment".to_string(),
-                basket: None,
-                custom_instructions: None,
-                tags: vec![],
-                derivation_prefix: Some("prefix1".to_string()),
-                derivation_suffix: Some("suffix1".to_string()),
-                sender_identity_key: Some("sender_key_123".to_string()),
+                payment: Payment {
+                    derivation_prefix: b"prefix1".to_vec(),
+                    derivation_suffix: b"suffix1".to_vec(),
+                    sender_identity_key: sender_key,
+                },
             }],
         };
 
@@ -1017,15 +1050,14 @@ mod tests {
             tx: beef_bytes,
             description: "test basket insert".to_string(),
             labels: vec![],
-            outputs: vec![StorageInternalizeOutput {
+            seek_permission: true,
+            outputs: vec![InternalizeOutput::BasketInsertion {
                 output_index: 1,
-                protocol: "basket insertion".to_string(),
-                basket: Some("custom-basket".to_string()),
-                custom_instructions: Some("special instructions".to_string()),
-                tags: vec!["tag1".to_string()],
-                derivation_prefix: None,
-                derivation_suffix: None,
-                sender_identity_key: None,
+                insertion: BasketInsertion {
+                    basket: "custom-basket".to_string(),
+                    custom_instructions: Some("special instructions".to_string()),
+                    tags: vec!["tag1".to_string()],
+                },
             }],
         };
 
@@ -1069,6 +1101,7 @@ mod tests {
             tx: vec![0x00, 0x01, 0x02, 0x03],
             description: "bad beef".to_string(),
             labels: vec![],
+            seek_permission: true,
             outputs: vec![],
         };
 
@@ -1084,30 +1117,32 @@ mod tests {
         let services = MockWalletServices;
         let (beef_bytes, txid) = create_test_atomic_beef();
 
+        let sender_key = PublicKey::from_string(
+            &("02".to_owned() + &"ab".repeat(32)),
+        )
+        .unwrap();
+
         let args = StorageInternalizeActionArgs {
             tx: beef_bytes,
             description: "both protocols".to_string(),
             labels: vec![],
+            seek_permission: true,
             outputs: vec![
-                StorageInternalizeOutput {
+                InternalizeOutput::WalletPayment {
                     output_index: 0,
-                    protocol: "wallet payment".to_string(),
-                    basket: None,
-                    custom_instructions: None,
-                    tags: vec![],
-                    derivation_prefix: Some("p1".to_string()),
-                    derivation_suffix: Some("s1".to_string()),
-                    sender_identity_key: None,
+                    payment: Payment {
+                        derivation_prefix: b"p1".to_vec(),
+                        derivation_suffix: b"s1".to_vec(),
+                        sender_identity_key: sender_key,
+                    },
                 },
-                StorageInternalizeOutput {
+                InternalizeOutput::BasketInsertion {
                     output_index: 1,
-                    protocol: "basket insertion".to_string(),
-                    basket: Some("my-basket".to_string()),
-                    custom_instructions: None,
-                    tags: vec![],
-                    derivation_prefix: None,
-                    derivation_suffix: None,
-                    sender_identity_key: None,
+                    insertion: BasketInsertion {
+                        basket: "my-basket".to_string(),
+                        custom_instructions: None,
+                        tags: vec![],
+                    },
                 },
             ],
         };
