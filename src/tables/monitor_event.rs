@@ -32,5 +32,6 @@ pub struct MonitorEvent {
     /// Event type identifier string.
     pub event: String,
     /// Optional JSON details for the event.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<String>,
 }

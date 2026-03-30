@@ -32,6 +32,7 @@ pub struct ProvenTxReq {
     /// Primary key.
     pub proven_tx_req_id: i64,
     /// Associated proven transaction, once proof is acquired.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub proven_tx_id: Option<i64>,
     /// Current processing status.
     pub status: ProvenTxReqStatus,
@@ -42,6 +43,7 @@ pub struct ProvenTxReq {
     /// Transaction ID hex string.
     pub txid: String,
     /// Batch identifier for grouped processing.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub batch: Option<String>,
     /// JSON-encoded history of processing attempts.
     pub history: String,
@@ -50,7 +52,7 @@ pub struct ProvenTxReq {
     /// Raw serialized transaction bytes.
     pub raw_tx: Vec<u8>,
     /// Input BEEF data for transaction context.
-    #[serde(rename = "inputBEEF")]
+    #[serde(rename = "inputBEEF", skip_serializing_if = "Option::is_none")]
     #[sqlx(rename = "inputBEEF")]
     pub input_beef: Option<Vec<u8>>,
 }

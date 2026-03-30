@@ -36,12 +36,14 @@ pub struct Output {
     /// Parent transaction foreign key.
     pub transaction_id: i64,
     /// Optional output basket foreign key.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub basket_id: Option<i64>,
     /// Whether this output is spendable by the wallet.
     pub spendable: bool,
     /// Whether this output is a change output.
     pub change: bool,
     /// Human-readable description of the output.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output_description: Option<String>,
     /// Output index within the transaction.
     pub vout: i32,
@@ -56,25 +58,36 @@ pub struct Output {
     #[serde(rename = "type")]
     pub output_type: String,
     /// Transaction ID hex string.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub txid: Option<String>,
     /// Identity key of the sender (for received outputs).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sender_identity_key: Option<String>,
     /// BRC-42 derivation prefix.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub derivation_prefix: Option<String>,
     /// BRC-42 derivation suffix.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub derivation_suffix: Option<String>,
     /// Custom spending instructions.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_instructions: Option<String>,
     /// Transaction ID that spent this output.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub spent_by: Option<i64>,
     /// nSequence number for non-final transactions.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sequence_number: Option<i32>,
     /// Human-readable description of the spending transaction.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub spending_description: Option<String>,
     /// Length of the locking script in bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub script_length: Option<i64>,
     /// Byte offset of the locking script within the transaction.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub script_offset: Option<i64>,
     /// The raw locking script bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub locking_script: Option<Vec<u8>>,
 }
