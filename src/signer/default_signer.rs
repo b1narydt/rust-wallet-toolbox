@@ -310,6 +310,7 @@ impl WalletSigner for DefaultWalletSigner {
         crate::signer::methods::internalize_action::signer_internalize_action(
             self.storage.as_ref(),
             self.services.as_ref(),
+            &self.key_deriver,
             &self.auth(),
             &args,
         )
