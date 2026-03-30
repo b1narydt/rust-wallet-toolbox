@@ -15,7 +15,7 @@ license-file = "LICENSE"
 name = "bsv_wallet_toolbox"
 
 [dependencies]
-bsv-sdk = { version = "0.2.0", features = ["network"] }
+bsv-sdk = { path = "../bsv-rust-sdk", features = ["network"] }
 thiserror = "2.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

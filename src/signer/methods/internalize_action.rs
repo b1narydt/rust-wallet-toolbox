@@ -6,63 +6,32 @@
 use crate::error::WalletResult;
 use crate::services::traits::WalletServices;
 use crate::signer::types::{SignerInternalizeActionResult, ValidInternalizeActionArgs};
-use crate::storage::action_types::{StorageInternalizeActionArgs, StorageInternalizeOutput};
+use crate::storage::action_types::StorageInternalizeActionArgs;
 use crate::storage::manager::WalletStorageManager;
 use crate::wallet::types::AuthId;
-use bsv::wallet::interfaces::InternalizeOutput;
 
 /// Execute the signer-level internalizeAction flow.
 ///
 /// Converts signer-level args to storage-level args and delegates to
 /// storage.internalize_action, which handles BEEF parsing, merkle proof
 /// validation, and output tracking.
+///
+/// The SDK `InternalizeOutput` enum is passed through directly so the
+/// storage layer (and wire format) uses the tagged-enum shape that matches
+/// TypeScript.
 pub async fn signer_internalize_action(
     storage: &WalletStorageManager,
     services: &(dyn WalletServices + Send + Sync),
     auth: &str,
     args: &ValidInternalizeActionArgs,
 ) -> WalletResult<SignerInternalizeActionResult> {
-    // Convert SDK InternalizeOutput enum to storage-level args
+    // Pass SDK InternalizeOutput enum directly — no flat conversion needed.
     let storage_args = StorageInternalizeActionArgs {
         tx: args.tx.clone(),
         description: args.description.clone(),
         labels: args.labels.iter().map(|l| l.to_string()).collect(),
-        outputs: args
-            .outputs
-            .iter()
-            .map(|o| match o {
-                InternalizeOutput::WalletPayment {
-                    output_index,
-                    payment,
-                } => StorageInternalizeOutput {
-                    output_index: *output_index,
-                    protocol: "wallet payment".to_string(),
-                    basket: None,
-                    custom_instructions: None,
-                    tags: vec![],
-                    derivation_prefix: Some(
-                        String::from_utf8_lossy(&payment.derivation_prefix).to_string(),
-                    ),
-                    derivation_suffix: Some(
-                        String::from_utf8_lossy(&payment.derivation_suffix).to_string(),
-                    ),
-                    sender_identity_key: Some(payment.sender_identity_key.to_der_hex()),
-                },
-                InternalizeOutput::BasketInsertion {
-                    output_index,
-                    insertion,
-                } => StorageInternalizeOutput {
-                    output_index: *output_index,
-                    protocol: "basket insertion".to_string(),
-                    basket: Some(insertion.basket.to_string()),
-                    custom_instructions: insertion.custom_instructions.clone(),
-                    tags: insertion.tags.iter().map(|t| t.to_string()).collect(),
-                    derivation_prefix: None,
-                    derivation_suffix: None,
-                    sender_identity_key: None,
-                },
-            })
-            .collect(),
+        seek_permission: true,
+        outputs: args.outputs.clone(),
     };
 
     let auth_id = AuthId {

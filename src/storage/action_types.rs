@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use bsv::wallet::interfaces::SendWithResult;
+use bsv::wallet::interfaces::{InternalizeOutput, SendWithResult};
 use bsv::wallet::types::TXIDHexString;
 
 use crate::types::StorageProvidedBy;
@@ -321,37 +321,29 @@ pub struct StorageProcessActionResult {
 /// Arguments for storage.internalize_action.
 ///
 /// Takes ownership of outputs from an external transaction.
+/// Uses the SDK `InternalizeOutput` tagged enum so the wire format matches
+/// the TypeScript `StorageClient.internalizeAction` shape exactly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageInternalizeActionArgs {
     /// The AtomicBEEF transaction bytes.
     pub tx: Vec<u8>,
     /// Description of the internalization.
     pub description: String,
     /// Labels to apply.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub labels: Vec<String>,
+    /// Whether to seek user permission before internalizing.
+    #[serde(default = "default_true")]
+    pub seek_permission: bool,
     /// Output specifications (which outputs to internalize and how).
-    pub outputs: Vec<StorageInternalizeOutput>,
+    /// Uses the SDK tagged enum: `{ protocol: "wallet payment", paymentRemittance: {...} }`
+    /// or `{ protocol: "basket insertion", insertionRemittance: {...} }`.
+    pub outputs: Vec<InternalizeOutput>,
 }
 
-/// Specification for a single output to internalize.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StorageInternalizeOutput {
-    /// The output index in the transaction.
-    pub output_index: u32,
-    /// The protocol type.
-    pub protocol: String,
-    /// Basket name (for basket insertions).
-    pub basket: Option<String>,
-    /// Custom instructions (for basket insertions).
-    pub custom_instructions: Option<String>,
-    /// Tags (for basket insertions).
-    pub tags: Vec<String>,
-    /// Derivation prefix (for wallet payments).
-    pub derivation_prefix: Option<String>,
-    /// Derivation suffix (for wallet payments).
-    pub derivation_suffix: Option<String>,
-    /// Sender identity key (for wallet payments).
-    pub sender_identity_key: Option<String>,
+fn default_true() -> bool {
+    true
 }
 
 /// Result from storage.internalize_action.
