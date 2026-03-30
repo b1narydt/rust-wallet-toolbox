@@ -17,6 +17,7 @@ use crate::types::StorageProvidedBy;
 
 /// Storage fee model configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageFeeModel {
     /// The fee model type (currently only "sat/kb" is supported).
     pub model: String,
@@ -43,6 +44,7 @@ impl Default for StorageFeeModel {
 /// which allocates UTXOs, creates transaction records, and returns
 /// the data needed to build the actual transaction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageCreateActionArgs {
     /// Human-readable description of the action.
     pub description: String,
@@ -55,6 +57,7 @@ pub struct StorageCreateActionArgs {
     /// Transaction version.
     pub version: u32,
     /// Labels to apply to this action.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub labels: Vec<String>,
     /// If true, do not broadcast the transaction.
     pub is_no_send: bool,
@@ -63,11 +66,13 @@ pub struct StorageCreateActionArgs {
     /// If true, this is a signAction (partial signing) flow.
     pub is_sign_action: bool,
     /// BEEF data for input validity proofs.
+    #[serde(rename = "inputBEEF", skip_serializing_if = "Option::is_none")]
     pub input_beef: Option<Vec<u8>>,
 }
 
 /// An input specification for storage create action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageCreateActionInput {
     /// Transaction ID of the output being spent.
     pub outpoint_txid: String,
@@ -83,6 +88,7 @@ pub struct StorageCreateActionInput {
 
 /// An output specification for storage create action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageCreateActionOutput {
     /// Locking script as hex string.
     pub locking_script: String,
@@ -91,10 +97,13 @@ pub struct StorageCreateActionOutput {
     /// Human-readable output description.
     pub output_description: String,
     /// Optional basket name to categorize this output.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub basket: Option<String>,
     /// Optional custom spending instructions.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_instructions: Option<String>,
     /// Tags to apply to this output.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub tags: Vec<String>,
 }
 
@@ -103,6 +112,7 @@ pub struct StorageCreateActionOutput {
 /// Contains all the data the signer needs to build and sign the transaction:
 /// allocated inputs (with locking scripts), output assignments, BEEF data, etc.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageCreateActionResult {
     /// The transaction reference string.
     pub reference: String,
@@ -117,13 +127,16 @@ pub struct StorageCreateActionResult {
     /// The derivation prefix for this transaction.
     pub derivation_prefix: String,
     /// BEEF data for input validity proofs.
+    #[serde(rename = "inputBEEF", skip_serializing_if = "Option::is_none")]
     pub input_beef: Option<Vec<u8>>,
     /// Output vouts that are change outputs (for noSend).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub no_send_change_output_vouts: Option<Vec<u32>>,
 }
 
 /// An allocated input from storage, with source transaction data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageCreateTransactionSdkInput {
     /// The input index in the transaction being built.
     pub vin: u32,
@@ -136,25 +149,32 @@ pub struct StorageCreateTransactionSdkInput {
     /// The source output locking script (hex).
     pub source_locking_script: String,
     /// Optional raw source transaction bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source_transaction: Option<Vec<u8>>,
     /// The expected unlocking script length for size estimation.
     pub unlocking_script_length: usize,
     /// Who provided this input.
     pub provided_by: StorageProvidedBy,
     /// The type of output (e.g., "P2PKH", "custom").
+    #[serde(rename = "type")]
     pub output_type: String,
     /// Description of why this output is being spent.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub spending_description: Option<String>,
     /// Derivation prefix for key derivation (change inputs).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub derivation_prefix: Option<String>,
     /// Derivation suffix for key derivation (change inputs).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub derivation_suffix: Option<String>,
     /// Sender identity key for authenticated payments.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sender_identity_key: Option<String>,
 }
 
 /// An assigned output from storage create action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageCreateTransactionSdkOutput {
     /// The output index in the transaction.
     pub vout: u32,
@@ -165,16 +185,22 @@ pub struct StorageCreateTransactionSdkOutput {
     /// Who provided this output.
     pub provided_by: StorageProvidedBy,
     /// The purpose of this output (e.g., "change", "service-charge").
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub purpose: Option<String>,
     /// The basket name (if tracked).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub basket: Option<String>,
     /// Output tags.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub tags: Vec<String>,
     /// Output description.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output_description: Option<String>,
     /// Derivation suffix for change outputs.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub derivation_suffix: Option<String>,
     /// Custom instructions.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_instructions: Option<String>,
 }
 
@@ -184,21 +210,26 @@ pub struct StorageCreateTransactionSdkOutput {
 
 /// A UTXO allocated as a change input.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AllocatedChangeInput {
     /// The storage output ID.
     pub output_id: i64,
     /// The value in satoshis.
     pub satoshis: u64,
     /// Derivation prefix for key derivation.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub derivation_prefix: Option<String>,
     /// Derivation suffix for key derivation.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub derivation_suffix: Option<String>,
     /// The locking script (hex).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub locking_script: Option<String>,
 }
 
 /// Arguments for the change generation algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GenerateChangeSdkArgs {
     /// Fixed inputs with known satoshis and script lengths.
     pub fixed_inputs: Vec<FixedInput>,
@@ -216,11 +247,13 @@ pub struct GenerateChangeSdkArgs {
     pub change_unlocking_script_length: usize,
     /// Target net change UTXO count adjustment.
     /// None means only add change output if there is excess, matching TS `targetNetCount?: number`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub target_net_count: Option<i64>,
 }
 
 /// A fixed input for change generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FixedInput {
     /// Input value in satoshis.
     pub satoshis: u64,
@@ -230,6 +263,7 @@ pub struct FixedInput {
 
 /// A fixed output for change generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FixedOutput {
     /// Output value in satoshis.
     pub satoshis: u64,
@@ -239,6 +273,7 @@ pub struct FixedOutput {
 
 /// Result from the change generation algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GenerateChangeSdkResult {
     /// The change outputs to create.
     pub change_outputs: Vec<ChangeOutput>,
@@ -251,11 +286,13 @@ pub struct GenerateChangeSdkResult {
     /// The fee rate used (satoshis per KB).
     pub sats_per_kb: u64,
     /// Adjustment for "max possible satoshis" outputs.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_possible_satoshis_adjustment: Option<MaxPossibleSatoshisAdjustment>,
 }
 
 /// A change output to create.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChangeOutput {
     /// Change output value in satoshis.
     pub satoshis: u64,
@@ -263,6 +300,7 @@ pub struct ChangeOutput {
 
 /// Reference to an allocated change input.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AllocatedChangeInputRef {
     /// Storage output ID of the allocated input.
     pub output_id: i64,
@@ -272,6 +310,7 @@ pub struct AllocatedChangeInputRef {
 
 /// Adjustment for outputs that request "max possible" satoshis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MaxPossibleSatoshisAdjustment {
     /// Index of the fixed output that receives the adjustment.
     pub fixed_output_index: usize,
@@ -288,6 +327,7 @@ pub struct MaxPossibleSatoshisAdjustment {
 /// Sent after a transaction has been signed. Contains the signed transaction
 /// data for storage to commit and optionally broadcast.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageProcessActionArgs {
     /// True if this is a new transaction (not just a send-with).
     pub is_new_tx: bool,
@@ -298,19 +338,25 @@ pub struct StorageProcessActionArgs {
     /// True if broadcasting should be deferred.
     pub is_delayed: bool,
     /// The transaction reference string.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reference: Option<String>,
     /// The transaction ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub txid: Option<TXIDHexString>,
     /// The raw signed transaction bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_tx: Option<Vec<u8>>,
     /// TXIDs to send as a batch with this transaction.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub send_with: Vec<TXIDHexString>,
 }
 
 /// Result from storage.process_action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageProcessActionResult {
     /// Results from batch sending.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub send_with_results: Option<Vec<SendWithResult>>,
 }
 
@@ -322,12 +368,14 @@ pub struct StorageProcessActionResult {
 ///
 /// Takes ownership of outputs from an external transaction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageInternalizeActionArgs {
     /// The AtomicBEEF transaction bytes.
     pub tx: Vec<u8>,
     /// Description of the internalization.
     pub description: String,
     /// Labels to apply.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub labels: Vec<String>,
     /// Output specifications (which outputs to internalize and how).
     pub outputs: Vec<StorageInternalizeOutput>,
@@ -335,27 +383,35 @@ pub struct StorageInternalizeActionArgs {
 
 /// Specification for a single output to internalize.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageInternalizeOutput {
     /// The output index in the transaction.
     pub output_index: u32,
     /// The protocol type.
     pub protocol: String,
     /// Basket name (for basket insertions).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub basket: Option<String>,
     /// Custom instructions (for basket insertions).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_instructions: Option<String>,
     /// Tags (for basket insertions).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub tags: Vec<String>,
     /// Derivation prefix (for wallet payments).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub derivation_prefix: Option<String>,
     /// Derivation suffix (for wallet payments).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub derivation_suffix: Option<String>,
     /// Sender identity key (for wallet payments).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sender_identity_key: Option<String>,
 }
 
 /// Result from storage.internalize_action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageInternalizeActionResult {
     /// Whether the internalization was accepted.
     pub accepted: bool,
@@ -366,5 +422,6 @@ pub struct StorageInternalizeActionResult {
     /// Net change in satoshis.
     pub satoshis: i64,
     /// Send-with results if broadcast was attempted.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub send_with_results: Option<Vec<SendWithResult>>,
 }
