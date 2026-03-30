@@ -450,3 +450,75 @@ fn test_internalize_action_seek_permission_roundtrip() {
     let rt: StorageInternalizeActionArgs = serde_json::from_value(json).unwrap();
     assert!(!rt.seek_permission);
 }
+
+// ---------------------------------------------------------------------------
+// BRC-100 cross-language test vectors from TS wallet-toolbox
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_status_enum_serialization_matches_ts_brc100() {
+    use bsv_wallet_toolbox::status::{TransactionStatus, ProvenTxReqStatus, SyncStatus};
+
+    let cases: Vec<(TransactionStatus, &str)> = vec![
+        (TransactionStatus::Completed, "completed"),
+        (TransactionStatus::Failed, "failed"),
+        (TransactionStatus::Unprocessed, "unprocessed"),
+        (TransactionStatus::Sending, "sending"),
+        (TransactionStatus::Unproven, "unproven"),
+        (TransactionStatus::Unsigned, "unsigned"),
+        (TransactionStatus::Nosend, "nosend"),
+        (TransactionStatus::Nonfinal, "nonfinal"),
+        (TransactionStatus::Unfail, "unfail"),
+    ];
+    for (status, expected) in &cases {
+        assert_eq!(
+            serde_json::to_value(status).unwrap(), *expected,
+            "TransactionStatus::{:?} must serialize as '{}'", status, expected
+        );
+    }
+
+    // ProvenTxReqStatus — note camelCase "doubleSpend"
+    assert_eq!(
+        serde_json::to_value(ProvenTxReqStatus::DoubleSpend).unwrap(),
+        "doubleSpend"
+    );
+
+    let sync_cases: Vec<(SyncStatus, &str)> = vec![
+        (SyncStatus::Success, "success"),
+        (SyncStatus::Error, "error"),
+        (SyncStatus::Identified, "identified"),
+        (SyncStatus::Updated, "updated"),
+        (SyncStatus::Unknown, "unknown"),
+    ];
+    for (status, expected) in &sync_cases {
+        assert_eq!(
+            serde_json::to_value(status).unwrap(), *expected,
+            "SyncStatus::{:?} must serialize as '{}'", status, expected
+        );
+    }
+}
+
+#[test]
+fn test_storage_provided_by_enum_matches_ts() {
+    use bsv_wallet_toolbox::types::StorageProvidedBy;
+
+    assert_eq!(serde_json::to_value(StorageProvidedBy::You).unwrap(), "you");
+    assert_eq!(serde_json::to_value(StorageProvidedBy::Storage).unwrap(), "storage");
+    assert_eq!(
+        serde_json::to_value(StorageProvidedBy::YouAndStorage).unwrap(),
+        "you-and-storage",
+        "Must use hyphenated 'you-and-storage', not camelCase"
+    );
+}
+
+#[test]
+fn test_create_action_options_boolean_defaults_match_ts() {
+    let opts = StorageCreateActionOptions::default();
+    let json = serde_json::to_value(&opts).unwrap();
+
+    assert_eq!(json["signAndProcess"], true);
+    assert_eq!(json["acceptDelayedBroadcast"], true);
+    assert_eq!(json["randomizeOutputs"], true);
+    assert_eq!(json["returnTxidOnly"], false);
+    assert_eq!(json["noSend"], false);
+}

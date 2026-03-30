@@ -473,6 +473,21 @@ mod sqlite_impl {
             wb.add_eq("spentBy");
             binds.push(SqliteBindValue::Int64(*v));
         }
+        if let Some(statuses) = &args.tx_status {
+            if !statuses.is_empty() {
+                wb.add_subquery_in(
+                    "transactions",
+                    "status",
+                    "transactionId",
+                    "outputs",
+                    "transactionId",
+                    statuses.len(),
+                );
+                for s in statuses {
+                    binds.push(SqliteBindValue::String(s.to_string()));
+                }
+            }
+        }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
             binds.push(SqliteBindValue::String(
@@ -649,7 +664,15 @@ mod sqlite_impl {
             wb.add_eq("provenTxId");
             binds.push(SqliteBindValue::Int64(*v));
         }
-        if let Some(v) = &args.partial.status {
+        // Multi-status filter takes precedence over single partial.status
+        if let Some(statuses) = &args.status {
+            if !statuses.is_empty() {
+                wb.add_in("status", statuses.len());
+                for s in statuses {
+                    binds.push(SqliteBindValue::String(s.to_string()));
+                }
+            }
+        } else if let Some(v) = &args.partial.status {
             wb.add_eq("status");
             binds.push(SqliteBindValue::String(v.to_string()));
         }
@@ -1657,6 +1680,21 @@ macro_rules! impl_storage_reader_find {
                     w.add_eq("spentBy");
                     binds.push(BindVal::Int64(*v));
                 }
+                if let Some(statuses) = &args.tx_status {
+                    if !statuses.is_empty() {
+                        w.add_subquery_in(
+                            "transactions",
+                            "status",
+                            "transactionId",
+                            "outputs",
+                            "transactionId",
+                            statuses.len(),
+                        );
+                        for s in statuses {
+                            binds.push(BindVal::String(s.to_string()));
+                        }
+                    }
+                }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
@@ -1823,7 +1861,15 @@ macro_rules! impl_storage_reader_find {
                     w.add_eq("provenTxId");
                     binds.push(BindVal::Int64(*v));
                 }
-                if let Some(v) = &args.partial.status {
+                // Multi-status filter takes precedence over single partial.status
+                if let Some(statuses) = &args.status {
+                    if !statuses.is_empty() {
+                        w.add_in("status", statuses.len());
+                        for s in statuses {
+                            binds.push(BindVal::String(s.to_string()));
+                        }
+                    }
+                } else if let Some(v) = &args.partial.status {
                     w.add_eq("status");
                     binds.push(BindVal::String(v.to_string()));
                 }

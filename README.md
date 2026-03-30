@@ -73,7 +73,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-bsv-wallet-toolbox = "0.1.19"
+bsv-wallet-toolbox = "0.2.1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -127,21 +127,21 @@ MySQL and PostgreSQL are opt-in and require disabling default features.
 
 ```toml
 [dependencies]
-bsv-wallet-toolbox = "0.1.19"
+bsv-wallet-toolbox = "0.2.1"
 ```
 
 **MySQL** -- requires a running MySQL server and connection URL:
 
 ```toml
 [dependencies]
-bsv-wallet-toolbox = { version = "0.1.11", default-features = false, features = ["mysql"] }
+bsv-wallet-toolbox = { version = "0.2.1", default-features = false, features = ["mysql"] }
 ```
 
 **PostgreSQL** -- requires a running PostgreSQL server and connection URL:
 
 ```toml
 [dependencies]
-bsv-wallet-toolbox = { version = "0.1.11", default-features = false, features = ["postgres"] }
+bsv-wallet-toolbox = { version = "0.2.1", default-features = false, features = ["postgres"] }
 ```
 
 When using MySQL or PostgreSQL, pass the connection URL to the builder:

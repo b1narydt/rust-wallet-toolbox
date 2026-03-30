@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-03-30
+
+### Fixed
+
+- **Wire format parity with TypeScript wallet-toolbox** — All action types
+  (`StorageCreateActionArgs`, `StorageProcessActionArgs`,
+  `StorageInternalizeActionArgs`, etc.) now serialize to camelCase JSON matching
+  the TypeScript wire format exactly. Adds `#[serde(rename_all = "camelCase")]`
+  to all 20 structs in `action_types.rs`.
+
+- **`StorageCreateTransactionSdkInput.output_type`** serializes as `"type"` (not
+  `"outputType"`) matching the TS field name.
+
+- **`input_beef` fields** serialize as `"inputBEEF"` (uppercase BEEF) matching TS.
+
+- **`createAction` wire format** — Expanded `StorageCreateActionArgs` with nested
+  `outpoint: { txid, vout }` objects, `options` object (signAndProcess,
+  acceptDelayedBroadcast, randomizeOutputs, etc.), and computed boolean flags
+  (isNewTx, isSendWith, isDelayed, isRemixChange, includeAllSourceTransactions).
+
+- **`internalizeAction` wire format** — Replaced flat `StorageInternalizeOutput`
+  with SDK's `InternalizeOutput` tagged enum serializing as
+  `{ protocol: "wallet payment", paymentRemittance: {...} }`. Added
+  `seekPermission` field.
+
+- **BRC-29 locking script validation** in `internalizeAction` — Parses
+  AtomicBEEF, validates output indices, derives expected P2PKH script via BRC-29
+  key derivation, and rejects outputs with mismatched locking scripts. Prevents
+  accepting unspendable outputs (security fix).
+
+- **`find_outputs` txStatus filtering** — Adds SQL subquery
+  `(SELECT status FROM transactions WHERE transactionId = outputs.transactionId)
+  IN (...)` matching TS StorageKnex behavior. Supports SQLite, MySQL, PostgreSQL.
+
+- **`find_transactions` multi-status filtering** — Adds `status IN (?, ...)`
+  clause for array-based status queries matching TS `whereIn` behavior.
+
+- **`Option` field omission** — All `Option<T>` fields across 16 table structs
+  now use `skip_serializing_if = "Option::is_none"`, omitting `None` values from
+  JSON instead of serializing as `null`. Matches TS `undefined` omission behavior.
+
+### Changed
+
+- Bumped `bsv-sdk` dependency to 0.2.2 (includes `outputIndex` serde fix for
+  `InternalizeOutput` enum).
+
+### Added
+
+- 14 BRC-100 cross-language parity tests verifying wire format against exact
+  TypeScript test vectors (status enums, tagged enum serialization, boolean
+  defaults, StorageProvidedBy enum).
+
 ## [0.2.0] - 2026-03-26
 
 ### Added
