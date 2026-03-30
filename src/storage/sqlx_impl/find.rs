@@ -473,6 +473,21 @@ mod sqlite_impl {
             wb.add_eq("spentBy");
             binds.push(SqliteBindValue::Int64(*v));
         }
+        if let Some(statuses) = &args.tx_status {
+            if !statuses.is_empty() {
+                wb.add_subquery_in(
+                    "transactions",
+                    "status",
+                    "transactionId",
+                    "outputs",
+                    "transactionId",
+                    statuses.len(),
+                );
+                for s in statuses {
+                    binds.push(SqliteBindValue::String(s.to_string()));
+                }
+            }
+        }
         if let Some(v) = &args.since {
             wb.add_gte("updated_at");
             binds.push(SqliteBindValue::String(
@@ -1656,6 +1671,21 @@ macro_rules! impl_storage_reader_find {
                 if let Some(v) = &args.partial.spent_by {
                     w.add_eq("spentBy");
                     binds.push(BindVal::Int64(*v));
+                }
+                if let Some(statuses) = &args.tx_status {
+                    if !statuses.is_empty() {
+                        w.add_subquery_in(
+                            "transactions",
+                            "status",
+                            "transactionId",
+                            "outputs",
+                            "transactionId",
+                            statuses.len(),
+                        );
+                        for s in statuses {
+                            binds.push(BindVal::String(s.to_string()));
+                        }
+                    }
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");

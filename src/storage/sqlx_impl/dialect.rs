@@ -171,6 +171,41 @@ impl WhereBuilder {
             .push(format!("{} IN ({})", qc, placeholders.join(", ")));
     }
 
+    /// Add a subquery IN condition:
+    /// `` (SELECT `sub_col` FROM `table` WHERE `table`.`join_col` = `outer_table`.`outer_col`) IN (?, ?, ...) ``
+    ///
+    /// Used for filtering outputs by their parent transaction's status.
+    #[allow(dead_code)]
+    pub fn add_subquery_in(
+        &mut self,
+        table: &str,
+        sub_col: &str,
+        join_col: &str,
+        outer_table: &str,
+        outer_col: &str,
+        count: usize,
+    ) {
+        if count == 0 {
+            return;
+        }
+        let qt = self.dialect.quote_column(table);
+        let qsc = self.dialect.quote_column(sub_col);
+        let qjc = self.dialect.quote_column(join_col);
+        let qot = self.dialect.quote_column(outer_table);
+        let qoc = self.dialect.quote_column(outer_col);
+        let placeholders: Vec<String> = (0..count).map(|_| self.next_placeholder()).collect();
+        self.clauses.push(format!(
+            "(SELECT {} FROM {} WHERE {}.{} = {}.{}) IN ({})",
+            qsc,
+            qt,
+            qt,
+            qjc,
+            qot,
+            qoc,
+            placeholders.join(", ")
+        ));
+    }
+
     /// Return the current parameter count (useful for building subsequent
     /// parameterized SQL that continues after the WHERE clause).
     pub fn param_count(&self) -> usize {
@@ -263,5 +298,28 @@ mod tests {
             result,
             " ON DUPLICATE KEY UPDATE name = VALUES(name), updated_at = VALUES(updated_at)"
         );
+    }
+
+    #[test]
+    fn sqlite_subquery_in() {
+        let mut wb = WhereBuilder::new(Dialect::Sqlite);
+        wb.add_eq("userId");
+        wb.add_subquery_in("transactions", "status", "transactionId", "outputs", "transactionId", 2);
+        assert_eq!(
+            wb.build_where(),
+            " WHERE `userId` = ? AND (SELECT `status` FROM `transactions` WHERE `transactions`.`transactionId` = `outputs`.`transactionId`) IN (?, ?)"
+        );
+        assert_eq!(wb.param_count(), 3);
+    }
+
+    #[test]
+    fn postgres_subquery_in() {
+        let mut wb = WhereBuilder::new(Dialect::Postgres);
+        wb.add_subquery_in("transactions", "status", "transactionId", "outputs", "transactionId", 2);
+        assert_eq!(
+            wb.build_where(),
+            " WHERE (SELECT \"status\" FROM \"transactions\" WHERE \"transactions\".\"transactionId\" = \"outputs\".\"transactionId\") IN ($1, $2)"
+        );
+        assert_eq!(wb.param_count(), 2);
     }
 }
