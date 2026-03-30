@@ -18,8 +18,8 @@ use crate::signer::types::{
     PendingSignAction, SignableTransactionRef, SignerCreateActionResult, ValidCreateActionArgs,
 };
 use crate::storage::action_types::{
-    StorageCreateActionArgs, StorageCreateActionInput, StorageCreateActionOutput,
-    StorageProcessActionArgs,
+    StorageCreateActionArgs, StorageCreateActionInput, StorageCreateActionOptions,
+    StorageCreateActionOutput, StorageOutPoint, StorageProcessActionArgs,
 };
 use crate::storage::manager::WalletStorageManager;
 use crate::wallet::types::AuthId;
@@ -29,18 +29,56 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+/// Parse an OutpointString ("txid.vout") into a StorageOutPoint.
+fn parse_outpoint_string(s: &str) -> StorageOutPoint {
+    let parts: Vec<&str> = s.rsplitn(2, '.').collect();
+    if parts.len() == 2 {
+        StorageOutPoint {
+            txid: parts[1].to_string(),
+            vout: parts[0].parse().unwrap_or(0),
+        }
+    } else {
+        StorageOutPoint {
+            txid: s.to_string(),
+            vout: 0,
+        }
+    }
+}
+
 /// Convert ValidCreateActionArgs to StorageCreateActionArgs.
 ///
 /// Strips unlocking scripts (storage only needs the length).
+/// Maps SDK CreateActionOptions to StorageCreateActionOptions.
 fn to_storage_args(args: &ValidCreateActionArgs) -> StorageCreateActionArgs {
+    use bsv::wallet::types::{BooleanDefaultFalse, BooleanDefaultTrue};
+
+    let opts = &args.options;
+    let storage_options = StorageCreateActionOptions {
+        sign_and_process: BooleanDefaultTrue(opts.sign_and_process.0),
+        accept_delayed_broadcast: BooleanDefaultTrue(opts.accept_delayed_broadcast.0),
+        trust_self: opts.trust_self.as_ref().map(|ts| ts.as_str().to_string()),
+        known_txids: opts.known_txids.clone(),
+        return_txid_only: BooleanDefaultFalse(opts.return_txid_only.0),
+        no_send: BooleanDefaultFalse(opts.no_send.0),
+        no_send_change: opts
+            .no_send_change
+            .iter()
+            .map(|s| parse_outpoint_string(s))
+            .collect(),
+        send_with: opts.send_with.clone(),
+        randomize_outputs: BooleanDefaultTrue(opts.randomize_outputs.0),
+    };
+
     StorageCreateActionArgs {
         description: args.description.clone(),
         inputs: args
             .inputs
             .iter()
             .map(|i| StorageCreateActionInput {
-                outpoint_txid: i.outpoint.txid.clone(),
-                outpoint_vout: i.outpoint.vout,
+                outpoint: StorageOutPoint {
+                    txid: i.outpoint.txid.clone(),
+                    vout: i.outpoint.vout,
+                },
                 input_description: i.input_description.clone(),
                 unlocking_script_length: if i.unlocking_script.is_some() {
                     i.unlocking_script.as_ref().unwrap().len()
@@ -72,10 +110,17 @@ fn to_storage_args(args: &ValidCreateActionArgs) -> StorageCreateActionArgs {
         lock_time: args.lock_time,
         version: args.version,
         labels: args.labels.iter().map(|l| l.to_string()).collect(),
+        options: storage_options,
+        input_beef: args.input_beef.clone(),
+        is_new_tx: args.is_new_tx,
+        is_sign_action: args.is_sign_action,
         is_no_send: args.is_no_send,
         is_delayed: args.is_delayed,
-        is_sign_action: args.is_sign_action,
-        input_beef: args.input_beef.clone(),
+        is_send_with: args.is_send_with,
+        is_remix_change: false,
+        is_test_werr_review_actions: None,
+        include_all_source_transactions: false,
+        random_vals: None,
     }
 }
 

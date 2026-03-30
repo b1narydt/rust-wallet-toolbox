@@ -226,8 +226,8 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         let find_args = FindOutputsArgs {
             partial: OutputPartial {
                 user_id: Some(user_id),
-                txid: Some(input.outpoint_txid.clone()),
-                vout: Some(input.outpoint_vout as i32),
+                txid: Some(input.outpoint.txid.clone()),
+                vout: Some(input.outpoint.vout as i32),
                 ..Default::default()
             },
             ..Default::default()
@@ -241,7 +241,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
                     parameter: format!("inputs[{}]", vin),
                     must_be: format!(
                         "spendable output. output {}:{} is not spendable.",
-                        input.outpoint_txid, input.outpoint_vout
+                        input.outpoint.txid, input.outpoint.vout
                     ),
                 });
             }
@@ -269,8 +269,8 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
 
             input_records.push(StorageCreateTransactionSdkInput {
                 vin: vin as u32,
-                source_txid: input.outpoint_txid.clone(),
-                source_vout: input.outpoint_vout,
+                source_txid: input.outpoint.txid.clone(),
+                source_vout: input.outpoint.vout,
                 source_satoshis: output.satoshis as u64,
                 source_locking_script: locking_script_hex,
                 source_transaction: None,
@@ -295,8 +295,8 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
 
             input_records.push(StorageCreateTransactionSdkInput {
                 vin: vin as u32,
-                source_txid: input.outpoint_txid.clone(),
-                source_vout: input.outpoint_vout,
+                source_txid: input.outpoint.txid.clone(),
+                source_vout: input.outpoint.vout,
                 source_satoshis: 0,
                 source_locking_script: String::new(),
                 source_transaction: None,
@@ -628,7 +628,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
 #[cfg(feature = "sqlite")]
 mod tests {
     use super::*;
-    use crate::storage::action_types::StorageCreateActionOutput;
+    use crate::storage::action_types::{StorageCreateActionOptions, StorageCreateActionOutput};
     use crate::storage::find_args::{
         FindOutputsArgs, FindTransactionsArgs, OutputPartial, TransactionPartial,
     };
@@ -753,10 +753,17 @@ mod tests {
             lock_time: 0,
             version: 1,
             labels: vec!["test-label".to_string()],
+            options: StorageCreateActionOptions::default(),
+            input_beef: None,
+            is_new_tx: true,
+            is_sign_action: false,
             is_no_send: false,
             is_delayed: false,
-            is_sign_action: false,
-            input_beef: None,
+            is_send_with: false,
+            is_remix_change: false,
+            is_test_werr_review_actions: None,
+            include_all_source_transactions: false,
+            random_vals: None,
         };
 
         let result = storage_create_action(&storage, user_id, &args, None)
@@ -796,10 +803,17 @@ mod tests {
             lock_time: 0,
             version: 1,
             labels: vec![],
+            options: StorageCreateActionOptions::default(),
+            input_beef: None,
+            is_new_tx: true,
+            is_sign_action: false,
             is_no_send: false,
             is_delayed: false,
-            is_sign_action: false,
-            input_beef: None,
+            is_send_with: false,
+            is_remix_change: false,
+            is_test_werr_review_actions: None,
+            include_all_source_transactions: false,
+            random_vals: None,
         };
 
         let result = storage_create_action(&storage, user_id, &args, None)
@@ -842,10 +856,17 @@ mod tests {
             lock_time: 0,
             version: 1,
             labels: vec![],
+            options: StorageCreateActionOptions::default(),
+            input_beef: None,
+            is_new_tx: true,
+            is_sign_action: false,
             is_no_send: false,
             is_delayed: false,
-            is_sign_action: false,
-            input_beef: None,
+            is_send_with: false,
+            is_remix_change: false,
+            is_test_werr_review_actions: None,
+            include_all_source_transactions: false,
+            random_vals: None,
         };
 
         let result = storage_create_action(&storage, user_id, &args, None)
@@ -906,10 +927,17 @@ mod tests {
             lock_time: 0,
             version: 1,
             labels: vec![],
+            options: StorageCreateActionOptions::default(),
+            input_beef: None,
+            is_new_tx: true,
+            is_sign_action: false,
             is_no_send: false,
             is_delayed: false,
-            is_sign_action: false,
-            input_beef: None,
+            is_send_with: false,
+            is_remix_change: false,
+            is_test_werr_review_actions: None,
+            include_all_source_transactions: false,
+            random_vals: None,
         };
 
         let _result = storage_create_action(&storage, user_id, &args, None)
@@ -960,10 +988,17 @@ mod tests {
             lock_time: 0,
             version: 1,
             labels: vec![],
+            options: StorageCreateActionOptions::default(),
+            input_beef: None,
+            is_new_tx: true,
+            is_sign_action: false,
             is_no_send: false,
             is_delayed: false,
-            is_sign_action: false,
-            input_beef: None,
+            is_send_with: false,
+            is_remix_change: false,
+            is_test_werr_review_actions: None,
+            include_all_source_transactions: false,
+            random_vals: None,
         };
 
         let result = storage_create_action(&storage, user_id, &args, None)

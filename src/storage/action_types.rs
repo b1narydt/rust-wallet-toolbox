@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 use bsv::wallet::interfaces::SendWithResult;
-use bsv::wallet::types::TXIDHexString;
+use bsv::wallet::types::{BooleanDefaultFalse, BooleanDefaultTrue, TXIDHexString};
 
 use crate::types::StorageProvidedBy;
 
@@ -37,12 +37,56 @@ impl Default for StorageFeeModel {
 // Create action types
 // ---------------------------------------------------------------------------
 
+/// Outpoint reference matching the TS `{ txid, vout }` wire format.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageOutPoint {
+    pub txid: TXIDHexString,
+    pub vout: u32,
+}
+
+/// Options for create action, matching TS ValidCreateActionOptions wire format.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageCreateActionOptions {
+    pub sign_and_process: BooleanDefaultTrue,
+    pub accept_delayed_broadcast: BooleanDefaultTrue,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trust_self: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub known_txids: Vec<TXIDHexString>,
+    pub return_txid_only: BooleanDefaultFalse,
+    pub no_send: BooleanDefaultFalse,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub no_send_change: Vec<StorageOutPoint>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub send_with: Vec<TXIDHexString>,
+    pub randomize_outputs: BooleanDefaultTrue,
+}
+
+impl Default for StorageCreateActionOptions {
+    fn default() -> Self {
+        Self {
+            sign_and_process: BooleanDefaultTrue(Some(true)),
+            accept_delayed_broadcast: BooleanDefaultTrue(Some(true)),
+            trust_self: None,
+            known_txids: vec![],
+            return_txid_only: BooleanDefaultFalse(Some(false)),
+            no_send: BooleanDefaultFalse(Some(false)),
+            no_send_change: vec![],
+            send_with: vec![],
+            randomize_outputs: BooleanDefaultTrue(Some(true)),
+        }
+    }
+}
+
 /// Arguments for storage.create_action.
 ///
 /// Carries validated create action data from the signer to storage,
 /// which allocates UTXOs, creates transaction records, and returns
 /// the data needed to build the actual transaction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageCreateActionArgs {
     /// Human-readable description of the action.
     pub description: String,
@@ -55,24 +99,41 @@ pub struct StorageCreateActionArgs {
     /// Transaction version.
     pub version: u32,
     /// Labels to apply to this action.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub labels: Vec<String>,
+    /// Action options (signAndProcess, noSend, etc.).
+    pub options: StorageCreateActionOptions,
+    /// BEEF data for input validity proofs.
+    #[serde(rename = "inputBEEF", skip_serializing_if = "Option::is_none")]
+    pub input_beef: Option<Vec<u8>>,
+    /// True if this is a new transaction (not a sign-only operation).
+    pub is_new_tx: bool,
+    /// If true, this is a signAction (partial signing) flow.
+    pub is_sign_action: bool,
     /// If true, do not broadcast the transaction.
     pub is_no_send: bool,
     /// If true, defer broadcasting.
     pub is_delayed: bool,
-    /// If true, this is a signAction (partial signing) flow.
-    pub is_sign_action: bool,
-    /// BEEF data for input validity proofs.
-    pub input_beef: Option<Vec<u8>>,
+    /// True if this is a send-with batch operation.
+    pub is_send_with: bool,
+    /// True if this action remixes change.
+    pub is_remix_change: bool,
+    /// Test hook for werr review actions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_test_werr_review_actions: Option<bool>,
+    /// Whether to include all source transactions in BEEF.
+    pub include_all_source_transactions: bool,
+    /// Test hook: pre-determined random values for deterministic testing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub random_vals: Option<Vec<f64>>,
 }
 
 /// An input specification for storage create action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageCreateActionInput {
-    /// Transaction ID of the output being spent.
-    pub outpoint_txid: String,
-    /// Output index of the output being spent.
-    pub outpoint_vout: u32,
+    /// Nested outpoint reference ({ txid, vout }).
+    pub outpoint: StorageOutPoint,
     /// Human-readable description of why this input is spent.
     pub input_description: String,
     /// Expected unlocking script length for size estimation.
@@ -83,6 +144,7 @@ pub struct StorageCreateActionInput {
 
 /// An output specification for storage create action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageCreateActionOutput {
     /// Locking script as hex string.
     pub locking_script: String,
@@ -91,10 +153,13 @@ pub struct StorageCreateActionOutput {
     /// Human-readable output description.
     pub output_description: String,
     /// Optional basket name to categorize this output.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub basket: Option<String>,
     /// Optional custom spending instructions.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_instructions: Option<String>,
     /// Tags to apply to this output.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub tags: Vec<String>,
 }
 
