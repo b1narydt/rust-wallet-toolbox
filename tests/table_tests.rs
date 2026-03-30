@@ -120,7 +120,8 @@ fn proven_tx_req_serializes_camel_case() {
     let json = serde_json::to_value(&sample_proven_tx_req()).unwrap();
     assert!(json.get("provenTxReqId").is_some());
     assert!(json.get("provenTxId").is_some());
-    assert!(json.get("inputBEEF").is_some());
+    // inputBEEF is None in sample, so it should be omitted
+    assert!(json.get("inputBEEF").is_none(), "None inputBEEF must be omitted");
     assert!(json.get("rawTx").is_some());
 }
 
@@ -161,7 +162,8 @@ fn transaction_serializes_camel_case() {
     assert!(json.get("userId").is_some());
     assert!(json.get("provenTxId").is_some());
     assert!(json.get("isOutgoing").is_some());
-    assert!(json.get("inputBEEF").is_some());
+    // inputBEEF is None in sample, so it should be omitted
+    assert!(json.get("inputBEEF").is_none(), "None inputBEEF must be omitted");
     assert!(json.get("rawTx").is_some());
     assert!(json.get("lockTime").is_some());
 }
@@ -251,7 +253,8 @@ fn output_serializes_camel_case() {
     assert!(json.get("transactionId").is_some());
     assert!(json.get("basketId").is_some());
     assert!(json.get("outputDescription").is_some());
-    assert!(json.get("senderIdentityKey").is_some());
+    // senderIdentityKey is None in sample, so it should be omitted
+    assert!(json.get("senderIdentityKey").is_none(), "None senderIdentityKey must be omitted");
     assert!(json.get("derivationPrefix").is_some());
     assert!(json.get("lockingScript").is_some());
     assert!(json.get("providedBy").is_some());
@@ -262,12 +265,13 @@ fn output_serializes_camel_case() {
 }
 
 #[test]
-fn output_optional_none_serialized() {
+fn output_optional_none_is_omitted() {
     let json = serde_json::to_value(&sample_output()).unwrap();
-    // None values should serialize as null
-    assert!(json.get("senderIdentityKey").unwrap().is_null());
-    assert!(json.get("customInstructions").unwrap().is_null());
-    assert!(json.get("spentBy").unwrap().is_null());
+    // None values should be omitted from JSON, not present as null
+    assert!(json.get("senderIdentityKey").is_none(), "None senderIdentityKey must be omitted");
+    assert!(json.get("customInstructions").is_none(), "None customInstructions must be omitted");
+    assert!(json.get("spentBy").is_none(), "None spentBy must be omitted");
+    assert!(json.get("spendingDescription").is_none(), "None spendingDescription must be omitted");
 }
 
 #[test]
@@ -536,8 +540,9 @@ fn sync_state_serializes_camel_case() {
     assert!(json.get("storageName").is_some());
     assert!(json.get("refNum").is_some());
     assert!(json.get("syncMap").is_some());
-    assert!(json.get("errorLocal").is_some());
-    assert!(json.get("errorOther").is_some());
+    // errorLocal and errorOther are None in sample, so they should be omitted
+    assert!(json.get("errorLocal").is_none(), "None errorLocal must be omitted");
+    assert!(json.get("errorOther").is_none(), "None errorOther must be omitted");
     assert_eq!(json["status"], "unknown");
 }
 
@@ -687,15 +692,15 @@ fn sync_status_values_serialize_correctly() {
 // -- Vec<u8> serialization behavior --
 
 #[test]
-fn vec_u8_optional_none_serializes_as_null() {
+fn vec_u8_optional_none_is_omitted() {
     let tx = Transaction {
         input_beef: None,
         raw_tx: None,
         ..sample_transaction()
     };
     let json = serde_json::to_value(&tx).unwrap();
-    assert!(json["inputBEEF"].is_null());
-    assert!(json["rawTx"].is_null());
+    assert!(json.get("inputBEEF").is_none(), "None inputBEEF must be omitted");
+    assert!(json.get("rawTx").is_none(), "None rawTx must be omitted");
 }
 
 #[test]
@@ -948,8 +953,8 @@ fn transaction_ts_fixture_roundtrip() {
     assert_eq!(beef[1], 20);
     assert_eq!(beef[2], 30);
 
-    // rawTx is null (Option<Vec<u8>> None serializes as null for table structs, matching TS)
-    assert!(out["rawTx"].is_null(), "rawTx should be null when None");
+    // rawTx is omitted (Option<Vec<u8>> None is omitted from JSON, matching TS undefined behavior)
+    assert!(out.get("rawTx").is_none(), "None rawTx must be omitted, not null");
 }
 
 #[test]

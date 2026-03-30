@@ -40,5 +40,6 @@ pub struct Settings {
     /// Maximum locking script size to store inline (bytes).
     pub max_output_script: i32,
     /// Serialized JSON blob of WalletSettings. NULL means use defaults.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub wallet_settings_json: Option<String>,
 }

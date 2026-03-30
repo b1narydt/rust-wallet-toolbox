@@ -34,6 +34,7 @@ pub struct Transaction {
     /// Owning user foreign key.
     pub user_id: i64,
     /// Associated proven transaction, if the tx is on chain.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub proven_tx_id: Option<i64>,
     /// Current processing status.
     pub status: TransactionStatus,
@@ -46,15 +47,19 @@ pub struct Transaction {
     /// Human-readable description.
     pub description: String,
     /// Transaction version number.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<i32>,
     /// Transaction locktime value.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub lock_time: Option<i32>,
     /// Transaction ID hex string.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub txid: Option<String>,
     /// Input BEEF data for transaction signing context.
-    #[serde(rename = "inputBEEF")]
+    #[serde(rename = "inputBEEF", skip_serializing_if = "Option::is_none")]
     #[sqlx(rename = "inputBEEF")]
     pub input_beef: Option<Vec<u8>>,
     /// Raw serialized transaction bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_tx: Option<Vec<u8>>,
 }

@@ -42,6 +42,7 @@ pub struct Certificate {
     /// Identity key of the subject.
     pub subject: String,
     /// Identity key of an optional verifier.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub verifier: Option<String>,
     /// On-chain outpoint for certificate revocation (txid.vout).
     pub revocation_outpoint: String,
