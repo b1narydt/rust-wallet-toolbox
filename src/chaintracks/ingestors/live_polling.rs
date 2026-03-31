@@ -1,0 +1,1 @@
+// Live polling ingestor — implementation will be added in a later task.
