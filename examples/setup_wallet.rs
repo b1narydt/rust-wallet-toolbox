@@ -1,57 +1,55 @@
 //! Setup Wallet Example
 //!
-//! Generates or imports a private key, builds a wallet with SQLite storage,
-//! displays a P2PKH address for faucet funding, and checks the balance.
+//! Creates a local Rust wallet and funds it by requesting a BRC-42 payment
+//! from a running BRC-100 desktop wallet (e.g. Babbage, MetaNet Client).
 //!
-//! If `BSV_FUND_TXID` is set, fetches that transaction from WhatsOnChain,
-//! finds the output paying to our P2PKH address, and internalizes it so
-//! the wallet recognizes the funds. The txid is then persisted to
-//! `examples/.env` so subsequent runs skip re-internalization.
+//! Flow:
+//! 1. Generate or load a private key for the Rust wallet
+//! 2. Connect to the local desktop wallet via `HttpWalletJson` (JSON API)
+//! 3. Desktop wallet derives a P2PKH address for our public key (BRC-42)
+//! 4. Desktop wallet creates a transaction paying to that address
+//! 5. Rust wallet internalizes the payment via `WalletPayment`
+//! 6. Balance is now available for other examples
 //!
-//! Creates an `examples/.env` file with `BSV_CHAIN`, `BSV_PRIVATE_KEY`, and
-//! `BSV_PRIVATE_KEY_2` so that other examples can read configuration
-//! automatically without manually exporting environment variables.
+//! # Prerequisites
+//!
+//! A BRC-100 wallet must be running locally on port 3321 (JSON API).
 //!
 //! # Usage
 //!
 //! ```bash
-//! # Generate a new random key:
+//! # First run — generates keys and funds wallet with 10000 sats
 //! cargo run --example setup_wallet
 //!
-//! # Re-use an existing key:
-//! BSV_PRIVATE_KEY=<64-char-hex> cargo run --example setup_wallet
+//! # Custom amount
+//! cargo run --example setup_wallet -- 50000
 //!
-//! # Internalize a faucet transaction:
-//! BSV_FUND_TXID=<txid-hex> cargo run --example setup_wallet
+//! # Re-use existing key (skip funding if already funded)
+//! cargo run --example setup_wallet
 //!
-//! # Switch to mainnet:
-//! BSV_CHAIN=main BSV_PRIVATE_KEY=<hex> cargo run --example setup_wallet
+//! # Switch to mainnet
+//! BSV_CHAIN=main cargo run --example setup_wallet
 //! ```
 //!
 //! # Environment Variables
 //!
-//! - `BSV_PRIVATE_KEY` - 64-character hex private key. If not set, a new
-//!   random key is generated and printed so you can save it.
-//! - `BSV_CHAIN` - `"main"` for mainnet or `"test"` (default) for testnet.
-//! - `BSV_FUND_TXID` - Transaction ID of a faucet payment to internalize.
+//! - `BSV_PRIVATE_KEY` — Hex private key. Generated if not set.
+//! - `BSV_CHAIN` — `"main"` or `"test"` (default).
+//! - `WALLET_URL` — Desktop wallet JSON API (default: `http://localhost:3321`).
 
 use bsv::primitives::private_key::PrivateKey;
-use bsv::script::address::Address;
+use bsv::primitives::public_key::PublicKey;
 use bsv::script::templates::p2pkh::P2PKH;
 use bsv::script::templates::ScriptTemplateLock;
-use bsv::transaction::beef::{Beef, BEEF_V2};
-use bsv::transaction::beef_tx::BeefTx;
-use bsv::transaction::transaction::Transaction;
 use bsv::wallet::interfaces::{
-    BasketInsertion, InternalizeActionArgs, InternalizeOutput, WalletInterface,
+    CreateActionArgs, CreateActionOutput, GetPublicKeyArgs, InternalizeActionArgs,
+    InternalizeOutput, Payment, WalletInterface,
 };
-use bsv::wallet::types::BooleanDefaultTrue;
+use bsv::wallet::substrates::http_wallet_json::HttpWalletJson;
+use bsv::wallet::types::{BooleanDefaultTrue, Counterparty, CounterpartyType, Protocol};
 use bsv_wallet_toolbox::types::Chain;
 use bsv_wallet_toolbox::WalletBuilder;
-use std::io::Cursor;
 
-/// Read the `BSV_CHAIN` env var and return the corresponding `Chain`.
-/// Defaults to `Chain::Test` if unset or unrecognised.
 fn get_chain() -> Chain {
     match std::env::var("BSV_CHAIN").as_deref() {
         Ok("main") => Chain::Main,
@@ -61,79 +59,59 @@ fn get_chain() -> Chain {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Load any existing .env so re-running picks up previous values.
     dotenvy::from_filename("examples/.env").ok();
 
     let chain = get_chain();
+    let amount: u64 = std::env::args()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10_000);
+
+    println!("=== Setup Wallet ===");
     println!("Chain: {}", chain);
+    println!("Requested amount: {} satoshis", amount);
 
     // -----------------------------------------------------------------------
-    // 1. Private key — read from env or generate a fresh one
+    // 1. Private key — read from env or generate
     // -----------------------------------------------------------------------
     let private_key = match std::env::var("BSV_PRIVATE_KEY") {
         Ok(hex) => {
-            let key = PrivateKey::from_hex(&hex)?;
-            println!("Loaded private key from BSV_PRIVATE_KEY");
-            key
+            println!("\nLoaded private key from BSV_PRIVATE_KEY");
+            PrivateKey::from_hex(&hex)?
         }
         Err(_) => {
             let key = PrivateKey::from_random()?;
-            println!("Generated new random private key.");
-            println!();
+            println!("\nGenerated new private key.");
             println!("  BSV_PRIVATE_KEY={}", key.to_hex());
-            println!();
-            println!("  Save the line above! You will need it to re-open this wallet.");
             key
         }
     };
 
-    // -----------------------------------------------------------------------
-    // 1b. Second private key — read from env or generate
-    // -----------------------------------------------------------------------
     let private_key_2 = match std::env::var("BSV_PRIVATE_KEY_2") {
-        Ok(hex) => {
-            let key = PrivateKey::from_hex(&hex)?;
-            println!("Loaded second private key from BSV_PRIVATE_KEY_2");
-            key
-        }
-        Err(_) => {
-            let key = PrivateKey::from_random()?;
-            println!("Generated second private key (for two-wallet examples).");
-            key
-        }
+        Ok(hex) => PrivateKey::from_hex(&hex)?,
+        Err(_) => PrivateKey::from_random()?,
     };
 
     // -----------------------------------------------------------------------
-    // 1c. Capture BSV_FUND_TXID early (before writing .env)
-    // -----------------------------------------------------------------------
-    let fund_txid = std::env::var("BSV_FUND_TXID").ok().filter(|s| !s.is_empty());
-
-    // -----------------------------------------------------------------------
-    // 1d. Write examples/.env so other examples pick up these values
+    // 2. Write examples/.env
     // -----------------------------------------------------------------------
     let chain_str = match chain {
         Chain::Main => "main",
         Chain::Test => "test",
     };
-    let mut env_content = format!(
+    let env_content = format!(
         "BSV_CHAIN={}\nBSV_PRIVATE_KEY={}\nBSV_PRIVATE_KEY_2={}\n",
         chain_str,
         private_key.to_hex(),
-        private_key_2.to_hex()
+        private_key_2.to_hex(),
     );
-    if let Some(ref txid) = fund_txid {
-        env_content.push_str(&format!("BSV_FUND_TXID={}\n", txid));
-    }
     std::fs::write("examples/.env", &env_content)?;
-    println!();
-    println!("Wrote examples/.env (other examples will read this automatically).");
+    println!("Wrote examples/.env");
 
     // -----------------------------------------------------------------------
-    // 2. Build the wallet
+    // 3. Build the Rust wallet
     // -----------------------------------------------------------------------
-    println!();
-    println!("Building wallet...");
-
+    println!("\nBuilding Rust wallet...");
     let setup = WalletBuilder::new()
         .chain(chain.clone())
         .root_key(private_key.clone())
@@ -142,150 +120,176 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .await?;
 
-    println!("Wallet ready.");
     println!("  Identity key: {}", setup.identity_key);
 
-    // -----------------------------------------------------------------------
-    // 3. Derive a P2PKH address for funding
-    // -----------------------------------------------------------------------
-    let is_mainnet = chain == Chain::Main;
-    let address = Address::from_public_key(&private_key.to_public_key(), is_mainnet);
-
-    println!();
-    println!("Funding address (P2PKH): {}", address);
-
-    if !is_mainnet {
-        println!();
-        println!("Send testnet coins to this address using a faucet:");
-        println!("  https://faucet.bitcoincloud.net/");
-    }
-
-    // -----------------------------------------------------------------------
-    // 4. Check balance
-    // -----------------------------------------------------------------------
     let balance = setup.wallet.balance(None).await?;
+    println!("  Balance: {} satoshis", balance);
 
-    println!();
-    if balance > 0 {
-        println!("Balance: {} satoshis  -- wallet is funded!", balance);
-    } else {
-        println!("Balance: 0 satoshis  -- not yet funded.");
-        println!("Fund the address above, then run this example again.");
+    if balance >= amount {
+        println!("\nWallet already funded. Ready to run other examples.");
+        return Ok(());
     }
 
     // -----------------------------------------------------------------------
-    // 5. Internalize an external P2PKH transaction (e.g. from a faucet)
+    // 4. Connect to local desktop wallet
     // -----------------------------------------------------------------------
-    if let Some(ref txid) = fund_txid {
-        if balance > 0 {
-            println!();
-            println!(
-                "BSV_FUND_TXID is set but balance is already {} satoshis -- skipping internalization.",
-                balance
-            );
-        } else {
-            println!();
-            println!("BSV_FUND_TXID={}", txid);
-            println!("Fetching raw transaction from services...");
+    let wallet_url =
+        std::env::var("WALLET_URL").unwrap_or_else(|_| "http://localhost:3321".to_string());
+    println!("\nConnecting to desktop wallet at {}...", wallet_url);
 
-            let services = setup
-                .services
-                .as_ref()
-                .expect("wallet services required for internalization");
+    let desktop = HttpWalletJson::new("rust-wallet-toolbox-examples", &wallet_url);
 
-            let raw_tx_result = services.get_raw_tx(txid, false).await;
+    // Get desktop wallet's identity key (the sender/payer)
+    let sender_result = desktop
+        .get_public_key(
+            GetPublicKeyArgs {
+                identity_key: true,
+                protocol_id: None,
+                key_id: None,
+                counterparty: None,
+                privileged: false,
+                privileged_reason: None,
+                for_self: None,
+                seek_permission: None,
+            },
+            None,
+        )
+        .await?;
+    let sender_identity_key = sender_result.public_key.clone();
+    println!("  Desktop wallet identity: {}", sender_identity_key.to_der_hex());
 
-            let raw_tx_bytes = raw_tx_result
-                .raw_tx
-                .ok_or_else(|| {
-                    let msg = raw_tx_result
-                        .error
-                        .unwrap_or_else(|| "tx not found".to_string());
-                    format!("Failed to fetch raw tx {}: {}", txid, msg)
-                })?;
+    // Receiver = our Rust wallet's identity key
+    let receiver_pub_key = PublicKey::from_string(&setup.identity_key)?;
 
-            println!("  Raw tx: {} bytes", raw_tx_bytes.len());
+    // -----------------------------------------------------------------------
+    // 5. Desktop wallet derives payment address (BRC-42)
+    // -----------------------------------------------------------------------
+    // Generate random derivation parameters
+    let derivation_prefix = base64_random(10);
+    let derivation_suffix = base64_random(10);
+    println!("\n  Derivation: {} / {}", derivation_prefix, derivation_suffix);
 
-            // Parse the transaction to inspect outputs.
-            let tx = Transaction::from_binary(&mut Cursor::new(&raw_tx_bytes))?;
+    // Desktop wallet derives key for our Rust wallet as counterparty
+    let derived_result = desktop
+        .get_public_key(
+            GetPublicKeyArgs {
+                identity_key: false,
+                protocol_id: Some(Protocol {
+                    security_level: 2,
+                    protocol: "3241645161d8".to_string(),
+                }),
+                key_id: Some(format!("{} {}", derivation_prefix, derivation_suffix)),
+                counterparty: Some(Counterparty {
+                    counterparty_type: CounterpartyType::Other,
+                    public_key: Some(receiver_pub_key.clone()),
+                }),
+                privileged: false,
+                privileged_reason: None,
+                for_self: None,
+                seek_permission: None,
+            },
+            None,
+        )
+        .await?;
 
-            // Build the expected P2PKH locking script for our public key.
-            let pub_key = private_key.to_public_key();
-            let pub_key_hash = pub_key.to_hash();
-            let mut hash20 = [0u8; 20];
-            hash20.copy_from_slice(&pub_key_hash);
-            let p2pkh = P2PKH::from_public_key_hash(hash20);
-            let expected_lock = p2pkh.lock()?;
-            let expected_lock_bytes = expected_lock.to_binary();
+    let derived_pub_key = derived_result.public_key;
+    println!("  Derived public key: {}", derived_pub_key.to_der_hex());
 
-            // Find the output that pays to our address.
-            let mut found_index: Option<u32> = None;
-            for (i, output) in tx.outputs.iter().enumerate() {
-                if output.locking_script.to_binary() == expected_lock_bytes {
-                    found_index = Some(i as u32);
-                    let sats = output.satoshis.unwrap_or(0);
-                    println!(
-                        "  Found our output at index {} ({} satoshis)",
-                        i, sats
-                    );
-                    break;
-                }
-            }
+    // Build P2PKH locking script for the derived key
+    let derived_hash = derived_pub_key.to_hash();
+    let mut hash20 = [0u8; 20];
+    hash20.copy_from_slice(&derived_hash);
+    let p2pkh = P2PKH::from_public_key_hash(hash20);
+    let locking_script = p2pkh.lock()?;
 
-            let output_index = found_index.ok_or_else(|| {
-                format!(
-                    "No output in tx {} pays to our P2PKH address {}",
-                    txid, address
-                )
-            })?;
+    // -----------------------------------------------------------------------
+    // 6. Desktop wallet creates the payment transaction
+    // -----------------------------------------------------------------------
+    println!("\n  Desktop wallet sending {} satoshis...", amount);
 
-            // Build an Atomic BEEF wrapping this single transaction.
-            let beef_tx = BeefTx::from_tx(tx, None)?;
-            let mut beef = Beef::new(BEEF_V2);
-            beef.txs.push(beef_tx);
-            let beef_bytes = beef.to_binary_atomic(txid)?;
+    let create_result = desktop
+        .create_action(
+            CreateActionArgs {
+                description: "Fund Rust wallet".to_string(),
+                outputs: vec![CreateActionOutput {
+                    locking_script: Some(locking_script.to_binary()),
+                    satoshis: amount,
+                    output_description: "BRC-42 payment to Rust wallet".to_string(),
+                    basket: None,
+                    custom_instructions: Some(serde_json::to_string(
+                        &serde_json::json!({
+                            "derivationPrefix": derivation_prefix,
+                            "derivationSuffix": derivation_suffix,
+                            "payee": setup.identity_key,
+                        }),
+                    )?),
+                    tags: vec![],
+                }],
+                inputs: vec![],
+                input_beef: None,
+                lock_time: None,
+                version: None,
+                labels: vec![],
+                options: None,
+                reference: None,
+            },
+            None,
+        )
+        .await?;
 
-            println!(
-                "  Built Atomic BEEF: {} bytes, internalizing...",
-                beef_bytes.len()
-            );
+    let txid = create_result.txid.as_deref().unwrap_or("unknown");
+    println!("  Transaction created: {}", txid);
 
-            // Internalize via BasketInsertion (not WalletPayment -- this is
-            // a plain P2PKH, not a BRC-29 payment).
-            let result = setup
-                .wallet
-                .internalize_action(
-                    InternalizeActionArgs {
-                        tx: beef_bytes,
-                        description: "Faucet funding".to_string(),
-                        labels: vec!["funding".to_string()],
-                        seek_permission: BooleanDefaultTrue(Some(false)),
-                        outputs: vec![InternalizeOutput::BasketInsertion {
-                            output_index,
-                            insertion: BasketInsertion {
-                                basket: "default".to_string(),
-                                custom_instructions: None,
-                                tags: vec![],
-                            },
-                        }],
+    let beef_bytes = create_result
+        .tx
+        .ok_or("Desktop wallet did not return tx bytes")?;
+    println!("  BEEF: {} bytes", beef_bytes.len());
+
+    // -----------------------------------------------------------------------
+    // 7. Rust wallet internalizes the payment
+    // -----------------------------------------------------------------------
+    println!("\n  Internalizing into Rust wallet...");
+
+    let internalize_result = setup
+        .wallet
+        .internalize_action(
+            InternalizeActionArgs {
+                tx: beef_bytes,
+                description: "Funding from desktop wallet".to_string(),
+                labels: vec!["funding".to_string()],
+                seek_permission: BooleanDefaultTrue(Some(false)),
+                outputs: vec![InternalizeOutput::WalletPayment {
+                    output_index: 0,
+                    payment: Payment {
+                        derivation_prefix: derivation_prefix.into_bytes(),
+                        derivation_suffix: derivation_suffix.into_bytes(),
+                        sender_identity_key: sender_identity_key,
                     },
-                    None,
-                )
-                .await?;
+                }],
+            },
+            None,
+        )
+        .await?;
 
-            println!("  Accepted: {}", result.accepted);
+    println!("  Accepted: {}", internalize_result.accepted);
 
-            // Re-check and display the updated balance.
-            let new_balance = setup.wallet.balance(None).await?;
-            println!();
-            println!(
-                "Updated balance: {} satoshis  (was {} before internalization)",
-                new_balance, balance
-            );
-
-            // .env already includes BSV_FUND_TXID (written in step 1d above).
-        }
-    }
+    // -----------------------------------------------------------------------
+    // 8. Verify balance
+    // -----------------------------------------------------------------------
+    let new_balance = setup.wallet.balance(None).await?;
+    println!("\n=== Wallet funded! ===");
+    println!("  Balance: {} satoshis", new_balance);
+    println!("  TXID: {}", txid);
+    println!("\n  Ready to run other examples:");
+    println!("    cargo run --example list_balance");
+    println!("    cargo run --example chaintracks_sync");
+    println!("    cargo run --example p2pkh_transfer");
 
     Ok(())
+}
+
+fn base64_random(len: usize) -> String {
+    use rand::Rng;
+    let bytes: Vec<u8> = (0..len).map(|_| rand::thread_rng().gen()).collect();
+    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes)
 }

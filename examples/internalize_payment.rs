@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sender_setup = WalletBuilder::new()
         .chain(chain.clone())
         .root_key(sender_key.clone())
-        .with_sqlite("internalize_sender.db")
+        .with_sqlite("wallet.db")
         .with_default_services()
         .build()
         .await?;

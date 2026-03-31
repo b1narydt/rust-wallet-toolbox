@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .wallet
         .list_actions(
             ListActionsArgs {
-                labels: vec![],
+                labels: vec!["funding".to_string()],
                 label_query_mode: None,
                 include_labels: Default::default(),
                 include_inputs: Default::default(),
