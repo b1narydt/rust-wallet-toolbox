@@ -6,11 +6,10 @@
 //! Reads configuration from `examples/.env` (created by `setup_wallet`).
 //! You can also set env vars directly.
 //!
-//! 1. Creates a `MemoryStorage` + `Chaintracks` instance
-//! 2. Fetches recent headers from WhatsOnChain
-//! 3. Feeds each header into chaintracks as a `BaseBlockHeader`
-//! 4. Processes the pending header queue
-//! 5. Prints the chain tip and chaintracks info
+//! 1. Fetches recent headers from WhatsOnChain
+//! 2. Inserts them into `MemoryStorage` with real block heights
+//! 3. Wraps storage in a `Chaintracks` instance
+//! 4. Prints the chain tip and chaintracks info
 //!
 //! # Usage
 //!
@@ -27,8 +26,8 @@
 //! - `BSV_CHAIN` - `"main"` for mainnet or `"test"` (default) for testnet.
 
 use bsv_wallet_toolbox::chaintracks::{
-    BaseBlockHeader, BulkWocIngestor, BulkWocOptions, Chaintracks, ChaintracksClient,
-    ChaintracksOptions, MemoryStorage,
+    calculate_work, BulkWocIngestor, BulkWocOptions, Chaintracks, ChaintracksClient,
+    ChaintracksOptions, ChaintracksStorageIngest, LiveBlockHeader, MemoryStorage,
 };
 use bsv_wallet_toolbox::types::Chain;
 
@@ -49,20 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Chain: {}", chain);
 
     // -----------------------------------------------------------------------
-    // 1. Set up Chaintracks with in-memory storage
-    // -----------------------------------------------------------------------
-    let storage = Box::new(MemoryStorage::new(chain.clone()));
-    let options = match chain {
-        Chain::Main => ChaintracksOptions::default_mainnet(),
-        Chain::Test => ChaintracksOptions::default_testnet(),
-    };
-    let ct = Chaintracks::new(options, storage);
-
-    ct.make_available().await?;
-    println!("Chaintracks storage initialised.");
-
-    // -----------------------------------------------------------------------
-    // 2. Fetch recent headers from WhatsOnChain
+    // 1. Fetch recent headers from WhatsOnChain
     // -----------------------------------------------------------------------
     let ingestor_opts = match chain {
         Chain::Main => BulkWocOptions::mainnet(),
@@ -75,34 +61,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Received {} headers.", headers.len());
 
     // -----------------------------------------------------------------------
-    // 3. Feed each header into chaintracks
+    // 2. Insert headers into storage with real heights
     // -----------------------------------------------------------------------
-    // Headers from WoC arrive newest-first; sort ascending by height so that
-    // parent linkage works correctly during processing.
+    // We populate storage before creating the Chaintracks orchestrator so
+    // that each header retains its real block height. The orchestrator's
+    // add_header + process_pending_headers pipeline recomputes height from
+    // parent linkage, which requires all ancestors to be present. With only
+    // ~10 recent headers the first parent is missing and heights reset to 0.
+    let storage = MemoryStorage::new(chain.clone());
+
     let mut sorted_headers = headers.clone();
     sorted_headers.sort_by_key(|h| h.height);
 
     for header in &sorted_headers {
-        let base = BaseBlockHeader {
+        let live = LiveBlockHeader {
             version: header.version,
             previous_hash: header.previous_hash.clone(),
             merkle_root: header.merkle_root.clone(),
             time: header.time,
             bits: header.bits,
             nonce: header.nonce,
+            height: header.height,
+            hash: header.hash.clone(),
+            chain_work: calculate_work(header.bits),
+            is_chain_tip: false,
+            is_active: true,
+            header_id: None,
+            previous_header_id: None,
         };
-        ct.add_header(base).await?;
+        storage.insert_header(live).await?;
     }
-    println!("Added {} headers to the pending queue.", sorted_headers.len());
+    println!("Inserted {} headers into storage.", sorted_headers.len());
 
     // -----------------------------------------------------------------------
-    // 4. Process pending headers
+    // 3. Wrap storage in Chaintracks
     // -----------------------------------------------------------------------
-    ct.process_pending_headers().await?;
-    println!("Pending headers processed.");
+    let options = match chain {
+        Chain::Main => ChaintracksOptions::default_mainnet(),
+        Chain::Test => ChaintracksOptions::default_testnet(),
+    };
+    let ct = Chaintracks::new(options, Box::new(storage));
+    ct.make_available().await?;
 
     // -----------------------------------------------------------------------
-    // 5. Print chain tip
+    // 4. Print chain tip
     // -----------------------------------------------------------------------
     match ct.find_chain_tip_header().await? {
         Some(tip) => {
@@ -119,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // -----------------------------------------------------------------------
-    // 6. Print chaintracks info
+    // 5. Print chaintracks info
     // -----------------------------------------------------------------------
     let info = ct.get_info().await?;
     println!();

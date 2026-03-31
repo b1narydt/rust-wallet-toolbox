@@ -5,7 +5,7 @@
 //! Reads configuration from `examples/.env` (created by `setup_wallet`).
 //! You can also set env vars directly.
 //!
-//! 1. Syncs recent headers (same setup as `chaintracks_sync`)
+//! 1. Fetches recent headers and inserts them into storage with real heights
 //! 2. Retrieves the chain tip header
 //! 3. Validates the real merkle root against its height (should be true)
 //! 4. Validates a bogus all-zero root (should be false)
@@ -26,8 +26,8 @@
 //! - `BSV_CHAIN` - `"main"` for mainnet or `"test"` (default) for testnet.
 
 use bsv_wallet_toolbox::chaintracks::{
-    BaseBlockHeader, BulkWocIngestor, BulkWocOptions, Chaintracks, ChaintracksClient,
-    ChaintracksOptions, MemoryStorage,
+    calculate_work, BulkWocIngestor, BulkWocOptions, Chaintracks, ChaintracksClient,
+    ChaintracksOptions, ChaintracksStorageIngest, LiveBlockHeader, MemoryStorage,
 };
 use bsv_wallet_toolbox::types::Chain;
 
@@ -48,16 +48,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Chain: {}", chain);
 
     // -----------------------------------------------------------------------
-    // 1. Sync recent headers (abbreviated setup from chaintracks_sync)
+    // 1. Fetch and insert headers with real heights
     // -----------------------------------------------------------------------
-    let storage = Box::new(MemoryStorage::new(chain.clone()));
-    let options = match chain {
-        Chain::Main => ChaintracksOptions::default_mainnet(),
-        Chain::Test => ChaintracksOptions::default_testnet(),
-    };
-    let ct = Chaintracks::new(options, storage);
-    ct.make_available().await?;
-
     let ingestor_opts = match chain {
         Chain::Main => BulkWocOptions::mainnet(),
         Chain::Test => BulkWocOptions::testnet(),
@@ -68,23 +60,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let headers = ingestor.get_recent_headers().await?;
     println!("Received {} headers.", headers.len());
 
+    // Populate storage directly so headers keep their real block heights.
+    let storage = MemoryStorage::new(chain.clone());
+
     let mut sorted_headers = headers.clone();
     sorted_headers.sort_by_key(|h| h.height);
 
     for header in &sorted_headers {
-        let base = BaseBlockHeader {
+        let live = LiveBlockHeader {
             version: header.version,
             previous_hash: header.previous_hash.clone(),
             merkle_root: header.merkle_root.clone(),
             time: header.time,
             bits: header.bits,
             nonce: header.nonce,
+            height: header.height,
+            hash: header.hash.clone(),
+            chain_work: calculate_work(header.bits),
+            is_chain_tip: false,
+            is_active: true,
+            header_id: None,
+            previous_header_id: None,
         };
-        ct.add_header(base).await?;
+        storage.insert_header(live).await?;
     }
 
-    ct.process_pending_headers().await?;
-    println!("Headers synced and processed.");
+    let options = match chain {
+        Chain::Main => ChaintracksOptions::default_mainnet(),
+        Chain::Test => ChaintracksOptions::default_testnet(),
+    };
+    let ct = Chaintracks::new(options, Box::new(storage));
+    ct.make_available().await?;
+    println!("Headers synced.");
 
     // -----------------------------------------------------------------------
     // 2. Get chain tip header
