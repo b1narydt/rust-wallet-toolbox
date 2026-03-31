@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.11] - 2026-03-30
+
+### Fixed
+
+- **Post-signing unlock script verification (H2)** — New `verify_unlock_scripts`
+  module validates every input's unlocking script via `Spend::validate()` after
+  signing, matching TS `verifyUnlockScripts`. Catches signing bugs before
+  broadcast.
+
+- **`StorageProcessActionResult` missing fields (H3)** — Added
+  `not_delayed_results: Option<Vec<ReviewActionResult>>` and
+  `log: Option<String>` to match TS wire format.
+
+- **`StorageInternalizeActionResult` missing field (H4)** — Added
+  `not_delayed_results` field.
+
+- **`WERR_REVIEW_ACTIONS` error variant (H5)** — New error variant (code=5) with
+  `review_action_results`, `send_with_results`, `txid`, `tx`, `no_send_change`
+  fields for undelayed broadcast result handling.
+
+- **`returnTXIDOnly` handling (H6)** — `createAction` and `signAction` now
+  conditionally omit `tx` from results when `returnTXIDOnly` is set, matching TS
+  behavior.
+
+- **`mergePriorOptions` in signAction (H7)** — signAction now inherits
+  `is_no_send`, `is_delayed`, `is_send_with` flags from the prior createAction
+  when not explicitly specified. Uses `Option<bool>` semantics so explicit
+  `false` correctly overrides prior `true`.
+
+- **`sendWith` array population (H8)** — `processAction` calls now pass
+  `options.send_with` when `is_send_with` is true instead of always empty.
+
+- **`maxAcceptableHeight` guard (H10)** — `TaskCheckForProofs` and
+  `TaskCheckNoSends` now skip proofs from blocks above the last known header
+  height, preventing acceptance of bleeding-edge proofs vulnerable to reorgs.
+  Shared via `Arc<AtomicU32>` with the Monitor.
+
+- **`TaskUnFail` steps 3-4 (H11)** — After unfailing a transaction, inputs are
+  now matched to user outputs (updating `spentBy`) and output spendability is
+  validated via `isUtxo`. Added `userId` filter for multi-tenant safety. Added
+  `validate_output_script` to recover NULL locking scripts from raw transaction
+  data.
+
+- **`WERR_INVALID_MERKLE_ROOT` error variant (H12)** — New error variant
+  (code=8) with `block_hash`, `block_height`, `merkle_root`, `txid` fields.
+
+- **`WERR_INVALID_PUBLIC_KEY.key` field (H13)** — Wire deserialization now reads
+  from `key` field first, falling back to `parameter` for backward
+  compatibility.
+
+- **`SignerSignActionResult` missing field (H14)** — Added
+  `not_delayed_results` to sign action results.
+
+### Changed
+
+- Bumped `bsv-sdk` dependency to 0.2.3 (adds `ReviewActionResult` type).
+- `ValidSignActionArgs.is_no_send`, `is_delayed`, `is_send_with` changed from
+  `bool` to `Option<bool>` to support proper merge semantics.
+
 ## [0.2.1] - 2026-03-30
 
 ### Fixed
