@@ -32,12 +32,18 @@ futures = "0.3"
 tokio-util = { version = "0.7", features = ["rt"] }
 rand = "0.8"
 base64 = "0.22"
+sha2 = "0.10"
+hex = "0.4"
+uuid = { version = "1", features = ["v4"] }
+tokio-tungstenite = { version = "0.24", features = ["native-tls"], optional = true }
+url = { version = "2", optional = true }
 
 [features]
 default = ["sqlite"]
 sqlite = ["sqlx/sqlite"]
 mysql = ["sqlx/mysql"]
 postgres = ["sqlx/postgres"]
+chaintracks-ws = ["dep:tokio-tungstenite", "dep:url"]
 
 [package.metadata.docs.rs]
 all-features = true
