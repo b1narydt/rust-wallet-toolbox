@@ -121,7 +121,10 @@ fn proven_tx_req_serializes_camel_case() {
     assert!(json.get("provenTxReqId").is_some());
     assert!(json.get("provenTxId").is_some());
     // inputBEEF is None in sample, so it should be omitted
-    assert!(json.get("inputBEEF").is_none(), "None inputBEEF must be omitted");
+    assert!(
+        json.get("inputBEEF").is_none(),
+        "None inputBEEF must be omitted"
+    );
     assert!(json.get("rawTx").is_some());
 }
 
@@ -163,7 +166,10 @@ fn transaction_serializes_camel_case() {
     assert!(json.get("provenTxId").is_some());
     assert!(json.get("isOutgoing").is_some());
     // inputBEEF is None in sample, so it should be omitted
-    assert!(json.get("inputBEEF").is_none(), "None inputBEEF must be omitted");
+    assert!(
+        json.get("inputBEEF").is_none(),
+        "None inputBEEF must be omitted"
+    );
     assert!(json.get("rawTx").is_some());
     assert!(json.get("lockTime").is_some());
 }
@@ -254,7 +260,10 @@ fn output_serializes_camel_case() {
     assert!(json.get("basketId").is_some());
     assert!(json.get("outputDescription").is_some());
     // senderIdentityKey is None in sample, so it should be omitted
-    assert!(json.get("senderIdentityKey").is_none(), "None senderIdentityKey must be omitted");
+    assert!(
+        json.get("senderIdentityKey").is_none(),
+        "None senderIdentityKey must be omitted"
+    );
     assert!(json.get("derivationPrefix").is_some());
     assert!(json.get("lockingScript").is_some());
     assert!(json.get("providedBy").is_some());
@@ -268,10 +277,22 @@ fn output_serializes_camel_case() {
 fn output_optional_none_is_omitted() {
     let json = serde_json::to_value(&sample_output()).unwrap();
     // None values should be omitted from JSON, not present as null
-    assert!(json.get("senderIdentityKey").is_none(), "None senderIdentityKey must be omitted");
-    assert!(json.get("customInstructions").is_none(), "None customInstructions must be omitted");
-    assert!(json.get("spentBy").is_none(), "None spentBy must be omitted");
-    assert!(json.get("spendingDescription").is_none(), "None spendingDescription must be omitted");
+    assert!(
+        json.get("senderIdentityKey").is_none(),
+        "None senderIdentityKey must be omitted"
+    );
+    assert!(
+        json.get("customInstructions").is_none(),
+        "None customInstructions must be omitted"
+    );
+    assert!(
+        json.get("spentBy").is_none(),
+        "None spentBy must be omitted"
+    );
+    assert!(
+        json.get("spendingDescription").is_none(),
+        "None spendingDescription must be omitted"
+    );
 }
 
 #[test]
@@ -541,8 +562,14 @@ fn sync_state_serializes_camel_case() {
     assert!(json.get("refNum").is_some());
     assert!(json.get("syncMap").is_some());
     // errorLocal and errorOther are None in sample, so they should be omitted
-    assert!(json.get("errorLocal").is_none(), "None errorLocal must be omitted");
-    assert!(json.get("errorOther").is_none(), "None errorOther must be omitted");
+    assert!(
+        json.get("errorLocal").is_none(),
+        "None errorLocal must be omitted"
+    );
+    assert!(
+        json.get("errorOther").is_none(),
+        "None errorOther must be omitted"
+    );
     assert_eq!(json["status"], "unknown");
 }
 
@@ -699,7 +726,10 @@ fn vec_u8_optional_none_is_omitted() {
         ..sample_transaction()
     };
     let json = serde_json::to_value(&tx).unwrap();
-    assert!(json.get("inputBEEF").is_none(), "None inputBEEF must be omitted");
+    assert!(
+        json.get("inputBEEF").is_none(),
+        "None inputBEEF must be omitted"
+    );
     assert!(json.get("rawTx").is_none(), "None rawTx must be omitted");
 }
 
@@ -954,7 +984,10 @@ fn transaction_ts_fixture_roundtrip() {
     assert_eq!(beef[2], 30);
 
     // rawTx is omitted (Option<Vec<u8>> None is omitted from JSON, matching TS undefined behavior)
-    assert!(out.get("rawTx").is_none(), "None rawTx must be omitted, not null");
+    assert!(
+        out.get("rawTx").is_none(),
+        "None rawTx must be omitted, not null"
+    );
 }
 
 #[test]

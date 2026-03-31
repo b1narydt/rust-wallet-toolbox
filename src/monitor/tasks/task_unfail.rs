@@ -96,8 +96,7 @@ impl TaskUnFail {
                 if let Some(ref raw_tx) = tx.raw_tx {
                     let end = script_offset + script_length;
                     if end <= raw_tx.len() {
-                        output.locking_script =
-                            Some(raw_tx[script_offset..end].to_vec());
+                        output.locking_script = Some(raw_tx[script_offset..end].to_vec());
                     }
                 }
             }
@@ -168,22 +167,24 @@ impl TaskUnFail {
                                         },
                                         ..Default::default()
                                     };
-                                    self.storage.find_transactions(&tx_args).await.ok()
+                                    self.storage
+                                        .find_transactions(&tx_args)
+                                        .await
+                                        .ok()
                                         .and_then(|txs| txs.into_iter().next())
                                 };
                                 let user_id = tx_record.as_ref().map(|t| t.user_id);
 
                                 if !req.raw_tx.is_empty() {
-                                    if let Ok(bsvtx) = Transaction::from_binary(
-                                        &mut Cursor::new(&req.raw_tx),
-                                    ) {
+                                    if let Ok(bsvtx) =
+                                        Transaction::from_binary(&mut Cursor::new(&req.raw_tx))
+                                    {
                                         for (vin, input) in bsvtx.inputs.iter().enumerate() {
                                             let source_txid = match &input.source_txid {
                                                 Some(t) => t.clone(),
                                                 None => continue,
                                             };
-                                            let source_vout =
-                                                input.source_output_index as i32;
+                                            let source_vout = input.source_output_index as i32;
 
                                             let find_args = FindOutputsArgs {
                                                 partial: OutputPartial {
@@ -251,8 +252,7 @@ impl TaskUnFail {
                                                     }
                                                 };
 
-                                                let txid_str =
-                                                    o.txid.as_deref().unwrap_or("");
+                                                let txid_str = o.txid.as_deref().unwrap_or("");
                                                 let vout = o.vout as u32;
 
                                                 match self
@@ -269,10 +269,7 @@ impl TaskUnFail {
                                                             };
                                                             let _ = self
                                                                 .storage
-                                                                .update_output(
-                                                                    o.output_id,
-                                                                    &update,
-                                                                )
+                                                                .update_output(o.output_id, &update)
                                                                 .await;
                                                             log.push_str(&format!(
                                                                 "{}output {} set to {}\n",

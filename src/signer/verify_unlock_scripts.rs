@@ -14,27 +14,34 @@ use crate::error::{WalletError, WalletResult};
 /// If any source tx is missing from the BEEF (e.g. knownTxids), returns Ok
 /// (skip validation, matching TS behavior).
 pub fn verify_unlock_scripts(txid: &str, beef: &Beef) -> WalletResult<()> {
-    let beef_tx = beef.find_txid(txid).ok_or_else(|| WalletError::InvalidParameter {
-        parameter: "txid".to_string(),
-        must_be: format!("contained in beef, txid {}", txid),
-    })?;
+    let beef_tx = beef
+        .find_txid(txid)
+        .ok_or_else(|| WalletError::InvalidParameter {
+            parameter: "txid".to_string(),
+            must_be: format!("contained in beef, txid {}", txid),
+        })?;
 
-    let tx = beef_tx.tx.as_ref().ok_or_else(|| WalletError::InvalidParameter {
-        parameter: "txid".to_string(),
-        must_be: "a full transaction, not txid-only".to_string(),
-    })?;
+    let tx = beef_tx
+        .tx
+        .as_ref()
+        .ok_or_else(|| WalletError::InvalidParameter {
+            parameter: "txid".to_string(),
+            must_be: "a full transaction, not txid-only".to_string(),
+        })?;
 
     // Phase 1: Collect source transactions, bail if any missing.
     // This matches TS behavior: if any source tx is not in the BEEF
     // (knownTxids), we skip validation entirely.
     let mut source_txs = Vec::new();
     for (i, input) in tx.inputs.iter().enumerate() {
-        let source_txid = input.source_txid.as_ref().ok_or_else(|| {
-            WalletError::InvalidParameter {
-                parameter: format!("inputs[{}].sourceTXID", i),
-                must_be: "valid".to_string(),
-            }
-        })?;
+        let source_txid =
+            input
+                .source_txid
+                .as_ref()
+                .ok_or_else(|| WalletError::InvalidParameter {
+                    parameter: format!("inputs[{}].sourceTXID", i),
+                    must_be: "valid".to_string(),
+                })?;
 
         if input.unlocking_script.is_none() {
             return Err(WalletError::InvalidParameter {
@@ -130,8 +137,8 @@ mod tests {
         tx.add_output(TransactionOutput {
             satoshis: Some(1000),
             locking_script: LockingScript::from_binary(&[
-                0x76, 0xa9, 0x14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0x88, 0xac,
+                0x76, 0xa9, 0x14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x88,
+                0xac,
             ]),
             change: false,
         });

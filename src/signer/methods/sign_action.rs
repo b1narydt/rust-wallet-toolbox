@@ -74,7 +74,11 @@ pub async fn signer_sign_action(
         reference: Some(pending.reference.clone()),
         txid: Some(txid.clone()),
         raw_tx: Some(signed_tx_bytes),
-        send_with: if is_send_with { pending.args.options.send_with.clone() } else { vec![] },
+        send_with: if is_send_with {
+            pending.args.options.send_with.clone()
+        } else {
+            vec![]
+        },
     };
     let auth_id = AuthId {
         identity_key: auth.to_string(),
@@ -94,7 +98,11 @@ pub async fn signer_sign_action(
 
     let result = SignerSignActionResult {
         txid: Some(txid),
-        tx: if return_txid_only { None } else { Some(beef_bytes) },
+        tx: if return_txid_only {
+            None
+        } else {
+            Some(beef_bytes)
+        },
         send_with_results: process_result.send_with_results.unwrap_or_default(),
         not_delayed_results: process_result.not_delayed_results,
     };
@@ -171,12 +179,20 @@ mod tests {
 
         // is_send_with merged true → pass prior txids
         let is_send_with = true;
-        let result: Vec<String> = if is_send_with { prior_send_with.clone() } else { vec![] };
+        let result: Vec<String> = if is_send_with {
+            prior_send_with.clone()
+        } else {
+            vec![]
+        };
         assert_eq!(result.len(), 2);
 
         // is_send_with merged false → empty
         let is_send_with = false;
-        let result: Vec<String> = if is_send_with { prior_send_with } else { vec![] };
+        let result: Vec<String> = if is_send_with {
+            prior_send_with
+        } else {
+            vec![]
+        };
         assert!(result.is_empty());
     }
 }

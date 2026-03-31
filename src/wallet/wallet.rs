@@ -1032,7 +1032,11 @@ impl WalletInterface for Wallet {
             Some(opts) => (
                 opts.no_send.0,
                 opts.accept_delayed_broadcast.0.map(|abd| !abd),
-                if opts.send_with.is_empty() { None } else { Some(true) },
+                if opts.send_with.is_empty() {
+                    None
+                } else {
+                    Some(true)
+                },
             ),
             None => (None, None, None),
         };
