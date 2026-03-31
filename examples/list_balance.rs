@@ -17,7 +17,6 @@
 //! - `BSV_CHAIN` - `"main"` for mainnet or `"test"` (default) for testnet.
 
 use bsv::primitives::private_key::PrivateKey;
-use bsv::wallet::interfaces::{ListOutputsArgs, WalletInterface};
 use bsv_wallet_toolbox::types::Chain;
 use bsv_wallet_toolbox::WalletBuilder;
 
@@ -61,58 +60,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Identity key: {}", setup.identity_key);
 
     // -----------------------------------------------------------------------
-    // 2. List outputs from the "default" basket with pagination
+    // 2. Get balance and UTXO list
     // -----------------------------------------------------------------------
-    println!("\nListing outputs from \"default\" basket...\n");
+    // Note: BRC-100 reserves the "default" basket name — callers cannot pass
+    // it directly to list_outputs. Instead, use balance_and_utxos() which
+    // routes through the specOp wallet balance basket internally.
+    println!("\nQuerying balance and UTXOs...\n");
 
-    let list_result = setup
-        .wallet
-        .list_outputs(
-            ListOutputsArgs {
-                basket: "default".to_string(),
-                tags: vec![],
-                tag_query_mode: None,
-                include: None,
-                include_custom_instructions: Default::default(),
-                include_tags: Default::default(),
-                include_labels: Default::default(),
-                limit: Some(25),
-                offset: None,
-                seek_permission: Default::default(),
-            },
-            None,
-        )
-        .await?;
+    let wallet_balance = setup.wallet.balance_and_utxos(None).await?;
 
-    println!(
-        "Total outputs in basket: {}",
-        list_result.total_outputs
-    );
+    println!("Total balance: {} satoshis", wallet_balance.total);
+    println!("UTXOs: {}", wallet_balance.utxos.len());
 
-    if list_result.outputs.is_empty() {
-        println!("  (no outputs found)");
+    if wallet_balance.utxos.is_empty() {
+        println!("  (no spendable outputs found)");
     } else {
         println!(
-            "\n  {:<64}  {:>10}  {:>9}",
-            "Outpoint", "Satoshis", "Spendable"
+            "\n  {:<68}  {:>10}",
+            "Outpoint", "Satoshis"
         );
-        println!("  {}", "-".repeat(87));
-        for output in &list_result.outputs {
+        println!("  {}", "-".repeat(80));
+        for utxo in &wallet_balance.utxos {
             println!(
-                "  {:<64}  {:>10}  {:>9}",
-                output.outpoint,
-                output.satoshis,
-                if output.spendable { "yes" } else { "no" }
+                "  {:<68}  {:>10}",
+                utxo.outpoint, utxo.satoshis,
             );
         }
     }
 
     // -----------------------------------------------------------------------
-    // 3. Call convenience balance method
+    // 3. Also demonstrate the quick balance() convenience method
     // -----------------------------------------------------------------------
     let balance = setup.wallet.balance(None).await?;
-
-    println!("\nWallet balance (via balance()): {} satoshis", balance);
+    println!("\nQuick balance check: {} satoshis", balance);
 
     Ok(())
 }
