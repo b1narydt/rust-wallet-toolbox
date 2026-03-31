@@ -92,12 +92,12 @@ pub struct ValidSignActionArgs {
     pub options: SignActionOptions,
     /// Whether this is a new transaction.
     pub is_new_tx: bool,
-    /// Whether the transaction should not be broadcast.
-    pub is_no_send: bool,
-    /// Whether broadcasting should be deferred.
-    pub is_delayed: bool,
-    /// Whether this is a send-with batch operation.
-    pub is_send_with: bool,
+    /// Whether the transaction should not be broadcast. None = not specified by caller.
+    pub is_no_send: Option<bool>,
+    /// Whether broadcasting should be deferred. None = not specified by caller.
+    pub is_delayed: Option<bool>,
+    /// Whether this is a send-with batch operation. None = not specified by caller.
+    pub is_send_with: Option<bool>,
 }
 
 /// Validated internalize action arguments.

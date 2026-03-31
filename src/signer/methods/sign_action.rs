@@ -40,10 +40,12 @@ pub async fn signer_sign_action(
     let mut tx = Transaction::from_binary(&mut cursor)
         .map_err(|e| WalletError::Internal(format!("Failed to reconstruct unsigned tx: {}", e)))?;
 
-    // Merge prior createAction options: inherit flags the caller didn't override
-    let is_no_send = args.is_no_send || pending.args.is_no_send;
-    let is_delayed = args.is_delayed || pending.args.is_delayed;
-    let is_send_with = args.is_send_with || pending.args.is_send_with;
+    // Merge prior createAction options: use signAction's value if explicitly set,
+    // otherwise inherit from createAction.  This matches TS mergePriorOptions
+    // semantics where `undefined` means "inherit" and explicit `false` wins.
+    let is_no_send = args.is_no_send.unwrap_or(pending.args.is_no_send);
+    let is_delayed = args.is_delayed.unwrap_or(pending.args.is_delayed);
+    let is_send_with = args.is_send_with.unwrap_or(pending.args.is_send_with);
 
     // --- Step 2: Sign the transaction ---
     let signed_tx_bytes = complete_signed_transaction(
@@ -103,28 +105,41 @@ pub async fn signer_sign_action(
 #[cfg(test)]
 mod tests {
     #[test]
-    fn test_merge_prior_options() {
-        // signAction doesn't set noSend, inherits from createAction
-        let sign_no_send = false;
-        let prior_no_send = true;
-        let merged = sign_no_send || prior_no_send;
-        assert!(merged);
-
-        // signAction explicitly sets noSend=false, but prior was true
-        // In this OR logic, true wins — this matches TS behavior where
-        // options like noSend are "sticky" from createAction
-        let sign_no_send = false;
-        let prior_no_send = true;
-        let merged = sign_no_send || prior_no_send;
-        assert!(merged); // noSend from createAction persists
-
-        // Both false → merged is false
-        let merged = false || false;
+    fn test_merge_prior_options_explicit_false_overrides_prior_true() {
+        // signAction explicitly sets noSend=false, prior was true.
+        // Explicit false must win over prior true (TS mergePriorOptions semantics).
+        let sign_no_send: Option<bool> = Some(false);
+        let prior_no_send: bool = true;
+        let merged = sign_no_send.unwrap_or(prior_no_send);
         assert!(!merged);
+    }
 
-        // signAction sets true, prior false → merged is true
-        let merged = true || false;
+    #[test]
+    fn test_merge_prior_options_none_inherits_prior() {
+        // signAction doesn't specify noSend (None), prior was true.
+        // None means "inherit from createAction".
+        let sign_no_send: Option<bool> = None;
+        let prior_no_send: bool = true;
+        let merged = sign_no_send.unwrap_or(prior_no_send);
         assert!(merged);
+    }
+
+    #[test]
+    fn test_merge_prior_options_explicit_true_overrides_prior_false() {
+        // signAction explicitly sets noSend=true, prior was false.
+        let sign_no_send: Option<bool> = Some(true);
+        let prior_no_send: bool = false;
+        let merged = sign_no_send.unwrap_or(prior_no_send);
+        assert!(merged);
+    }
+
+    #[test]
+    fn test_merge_prior_options_none_inherits_false() {
+        // signAction doesn't specify, prior was false.
+        let sign_no_send: Option<bool> = None;
+        let prior_no_send: bool = false;
+        let merged = sign_no_send.unwrap_or(prior_no_send);
+        assert!(!merged);
     }
 
     #[test]
