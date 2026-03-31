@@ -104,6 +104,7 @@ impl WalletMonitorTask for TaskCheckNoSends {
                 &self.chain,
                 self.unproven_attempts_limit,
                 counts_as_attempt,
+                None, // nosend reqs do not use the max acceptable height guard
             )
             .await?;
             log.push_str(&r.log);

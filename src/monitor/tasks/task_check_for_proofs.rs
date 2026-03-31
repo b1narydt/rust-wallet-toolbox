@@ -6,7 +6,7 @@
 //! Queries for ProvenTxReqs with status "unmined"/"callback"/"sending"/"unknown"/"unconfirmed"
 //! and attempts to retrieve merkle proofs via services.get_merkle_path().
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -46,6 +46,9 @@ pub struct TaskCheckForProofs {
     chain: Chain,
     /// Max unproven attempts before giving up.
     unproven_attempts_limit: u32,
+    /// Shared last header height (AtomicU32, u32::MAX means no height known).
+    /// Updated by the Monitor when new block headers arrive.
+    last_new_header_height: Arc<AtomicU32>,
 }
 
 impl TaskCheckForProofs {
@@ -57,6 +60,7 @@ impl TaskCheckForProofs {
         check_now: Arc<AtomicBool>,
         unproven_attempts_limit: u32,
         on_tx_proven: Option<AsyncCallback<String>>,
+        last_new_header_height: Arc<AtomicU32>,
     ) -> Self {
         Self {
             storage,
@@ -67,6 +71,7 @@ impl TaskCheckForProofs {
             on_tx_proven,
             chain,
             unproven_attempts_limit,
+            last_new_header_height,
         }
     }
 
@@ -79,6 +84,7 @@ impl TaskCheckForProofs {
         trigger_msecs: u64,
         unproven_attempts_limit: u32,
         on_tx_proven: Option<AsyncCallback<String>>,
+        last_new_header_height: Arc<AtomicU32>,
     ) -> Self {
         Self {
             storage,
@@ -89,6 +95,7 @@ impl TaskCheckForProofs {
             on_tx_proven,
             chain,
             unproven_attempts_limit,
+            last_new_header_height,
         }
     }
 }
@@ -154,6 +161,14 @@ impl WalletMonitorTask for TaskCheckForProofs {
                 reqs.len()
             ));
 
+            // Read the shared last header height; u32::MAX is the sentinel for "unknown".
+            let raw_height = self.last_new_header_height.load(Ordering::SeqCst);
+            let max_acceptable_height = if raw_height == u32::MAX {
+                None
+            } else {
+                Some(raw_height)
+            };
+
             let r = get_proofs(
                 &self.storage,
                 self.services.as_ref(),
@@ -161,6 +176,7 @@ impl WalletMonitorTask for TaskCheckForProofs {
                 &self.chain,
                 self.unproven_attempts_limit,
                 counts_as_attempt,
+                max_acceptable_height,
             )
             .await?;
 
