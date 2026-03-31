@@ -131,7 +131,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         no_send: BooleanDefaultFalse(Some(true)),
                         no_send_change: accumulated_change.clone(),
                         randomize_outputs: BooleanDefaultTrue(Some(false)),
-                        accept_delayed_broadcast: BooleanDefaultTrue(Some(true)),
                         ..Default::default()
                     }),
                     reference: None,
@@ -191,11 +190,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 version: None,
                 labels: vec!["nosend-batch".to_string()],
                 options: Some(CreateActionOptions {
-                    no_send: BooleanDefaultFalse(Some(false)),
                     no_send_change: accumulated_change,
                     send_with: collected_txids.clone(),
                     randomize_outputs: BooleanDefaultTrue(Some(false)),
-                    accept_delayed_broadcast: BooleanDefaultTrue(Some(true)),
                     ..Default::default()
                 }),
                 reference: None,

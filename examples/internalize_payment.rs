@@ -152,7 +152,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 labels: vec!["internalize-example".to_string()],
                 options: Some(CreateActionOptions {
                     randomize_outputs: BooleanDefaultTrue(Some(false)),
-                    accept_delayed_broadcast: BooleanDefaultTrue(Some(true)),
                     ..Default::default()
                 }),
                 reference: None,
