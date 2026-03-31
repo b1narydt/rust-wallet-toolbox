@@ -36,6 +36,8 @@ pub async fn storage_process_action<S: StorageReaderWriter + ?Sized>(
 ) -> WalletResult<StorageProcessActionResult> {
     let r = StorageProcessActionResult {
         send_with_results: None,
+        not_delayed_results: None,
+        log: None,
     };
 
     if !args.is_new_tx {

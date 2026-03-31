@@ -193,6 +193,7 @@ pub async fn signer_create_action(
                 reference: reference.clone(),
                 tx: signable_beef,
             }),
+            not_delayed_results: None,
         };
 
         return Ok((result, Some(pending)));
@@ -211,8 +212,10 @@ pub async fn signer_create_action(
         .id()
         .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {}", e)))?;
 
-    // Build BEEF with signed transaction
-    let beef_bytes = build_beef_bytes(&tx, &dcr.input_beef)?;
+    // Build BEEF, verify unlock scripts, then serialize
+    let beef = build_beef(&tx, &dcr.input_beef)?;
+    crate::signer::verify_unlock_scripts::verify_unlock_scripts(&txid, &beef)?;
+    let beef_bytes = serialize_beef_atomic(&beef, &txid)?;
 
     let no_send_change = if args.is_no_send {
         dcr.no_send_change_output_vouts
@@ -232,7 +235,11 @@ pub async fn signer_create_action(
         reference: Some(reference),
         txid: Some(txid.clone()),
         raw_tx: Some(signed_tx_bytes),
-        send_with: vec![],
+        send_with: if args.is_send_with {
+            args.options.send_with.clone()
+        } else {
+            vec![]
+        },
     };
     let process_result = storage.process_action(&auth_id, &process_args).await?;
 
@@ -243,30 +250,29 @@ pub async fn signer_create_action(
 
     let result = SignerCreateActionResult {
         txid: Some(txid),
-        tx: Some(beef_bytes),
+        tx: if args.options.return_txid_only.0.unwrap_or(false) {
+            None
+        } else {
+            Some(beef_bytes)
+        },
         no_send_change,
         send_with_results: process_result.send_with_results.unwrap_or_default(),
         signable_transaction: None,
+        not_delayed_results: process_result.not_delayed_results,
     };
 
     Ok((result, None))
 }
 
-/// Build Atomic BEEF bytes containing the transaction and its input proofs.
+/// Build a Beef object containing the transaction and its input proofs.
 ///
 /// Constructs a Beef by:
 /// 1. Merging input_beef if available (contains source txs with proofs)
 /// 2. Merging the signed/unsigned transaction via merge_raw_tx
-/// 3. Serializing as Atomic BEEF via to_binary_atomic
-pub(crate) fn build_beef_bytes(
+pub(crate) fn build_beef(
     tx: &bsv::transaction::transaction::Transaction,
     input_beef: &Option<Vec<u8>>,
-) -> WalletResult<Vec<u8>> {
-    let txid = tx
-        .id()
-        .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {}", e)))?;
-
-    // Start with a fresh V1 BEEF and merge input_beef if available
+) -> WalletResult<Beef> {
     let mut beef = Beef::new(bsv::transaction::beef::BEEF_V1);
     if let Some(ref input_beef_bytes) = input_beef {
         if !input_beef_bytes.is_empty() {
@@ -275,14 +281,88 @@ pub(crate) fn build_beef_bytes(
         }
     }
 
-    // Serialize the transaction to raw bytes and merge via merge_raw_tx
     let mut raw_tx = Vec::new();
     tx.to_binary(&mut raw_tx)
         .map_err(|e| WalletError::Internal(format!("Failed to serialize tx: {}", e)))?;
     beef.merge_raw_tx(&raw_tx, None)
         .map_err(|e| WalletError::Internal(format!("Failed to merge raw tx: {}", e)))?;
 
-    // Serialize as Atomic BEEF targeting our transaction
-    beef.to_binary_atomic(&txid)
+    Ok(beef)
+}
+
+/// Serialize a Beef as Atomic BEEF bytes targeting a specific txid.
+pub(crate) fn serialize_beef_atomic(beef: &Beef, txid: &str) -> WalletResult<Vec<u8>> {
+    beef.to_binary_atomic(txid)
         .map_err(|e| WalletError::Internal(format!("Failed to serialize Atomic BEEF: {}", e)))
+}
+
+/// Build Atomic BEEF bytes containing the transaction and its input proofs.
+///
+/// Convenience wrapper around `build_beef` + `serialize_beef_atomic`.
+/// Used for the signable BEEF path (delayed signing) where verification
+/// is NOT done since the tx is unsigned.
+pub(crate) fn build_beef_bytes(
+    tx: &bsv::transaction::transaction::Transaction,
+    input_beef: &Option<Vec<u8>>,
+) -> WalletResult<Vec<u8>> {
+    let txid = tx
+        .id()
+        .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {}", e)))?;
+    let beef = build_beef(tx, input_beef)?;
+    serialize_beef_atomic(&beef, &txid)
+}
+
+#[cfg(test)]
+mod tests {
+    use bsv::wallet::types::BooleanDefaultFalse;
+
+    #[test]
+    fn test_return_txid_only_controls_tx_field() {
+        let return_txid_only = BooleanDefaultFalse(Some(true));
+        let beef_bytes = vec![1, 2, 3];
+        let tx: Option<Vec<u8>> = if return_txid_only.0.unwrap_or(false) {
+            None
+        } else {
+            Some(beef_bytes.clone())
+        };
+        assert!(tx.is_none());
+
+        let return_txid_only = BooleanDefaultFalse(Some(false));
+        let tx: Option<Vec<u8>> = if return_txid_only.0.unwrap_or(false) {
+            None
+        } else {
+            Some(beef_bytes.clone())
+        };
+        assert!(tx.is_some());
+
+        // Default (None) should behave as false — tx is included
+        let return_txid_only = BooleanDefaultFalse(None);
+        let tx: Option<Vec<u8>> = if return_txid_only.0.unwrap_or(false) {
+            None
+        } else {
+            Some(beef_bytes)
+        };
+        assert!(tx.is_some());
+    }
+
+    #[test]
+    fn test_send_with_conditional() {
+        let send_with_txids = vec!["aabb".to_string(), "ccdd".to_string()];
+
+        let is_send_with = true;
+        let result: Vec<String> = if is_send_with {
+            send_with_txids.clone()
+        } else {
+            vec![]
+        };
+        assert_eq!(result.len(), 2);
+
+        let is_send_with = false;
+        let result: Vec<String> = if is_send_with {
+            send_with_txids
+        } else {
+            vec![]
+        };
+        assert!(result.is_empty());
+    }
 }

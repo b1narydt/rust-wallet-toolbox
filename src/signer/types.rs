@@ -7,8 +7,8 @@
 use serde::{Deserialize, Serialize};
 
 use bsv::wallet::interfaces::{
-    CreateActionOptions, CreateActionOutput, InternalizeOutput, SendWithResult, SignActionOptions,
-    SignActionSpend,
+    CreateActionOptions, CreateActionOutput, InternalizeOutput, ReviewActionResult, SendWithResult,
+    SignActionOptions, SignActionSpend,
 };
 use bsv::wallet::types::{
     DescriptionString5to50Bytes, LabelStringUnder300Bytes, OutpointString, TXIDHexString,
@@ -92,12 +92,12 @@ pub struct ValidSignActionArgs {
     pub options: SignActionOptions,
     /// Whether this is a new transaction.
     pub is_new_tx: bool,
-    /// Whether the transaction should not be broadcast.
-    pub is_no_send: bool,
-    /// Whether broadcasting should be deferred.
-    pub is_delayed: bool,
-    /// Whether this is a send-with batch operation.
-    pub is_send_with: bool,
+    /// Whether the transaction should not be broadcast. None = not specified by caller.
+    pub is_no_send: Option<bool>,
+    /// Whether broadcasting should be deferred. None = not specified by caller.
+    pub is_delayed: Option<bool>,
+    /// Whether this is a send-with batch operation. None = not specified by caller.
+    pub is_send_with: Option<bool>,
 }
 
 /// Validated internalize action arguments.
@@ -181,6 +181,8 @@ pub struct SignerCreateActionResult {
     pub send_with_results: Vec<SendWithResult>,
     /// If isSignAction, the signable transaction for deferred signing.
     pub signable_transaction: Option<SignableTransactionRef>,
+    /// Results from non-delayed broadcast review.
+    pub not_delayed_results: Option<Vec<ReviewActionResult>>,
 }
 
 /// Reference to a signable transaction for delayed signing.
@@ -201,6 +203,8 @@ pub struct SignerSignActionResult {
     pub tx: Option<Vec<u8>>,
     /// Results of sending batched transactions.
     pub send_with_results: Vec<SendWithResult>,
+    /// Results from non-delayed broadcast review.
+    pub not_delayed_results: Option<Vec<ReviewActionResult>>,
 }
 
 /// Result from signer internalizeAction.
@@ -216,4 +220,6 @@ pub struct SignerInternalizeActionResult {
     pub satoshis: i64,
     /// Send-with results if broadcast was attempted.
     pub send_with_results: Option<Vec<SendWithResult>>,
+    /// Results from non-delayed broadcast review.
+    pub not_delayed_results: Option<Vec<ReviewActionResult>>,
 }

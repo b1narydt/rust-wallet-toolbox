@@ -14,7 +14,7 @@ pub mod tasks;
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
 use tracing::{error, info, warn};
@@ -164,6 +164,11 @@ pub struct Monitor {
     /// Flag to nudge proof checking (set by processNewBlockHeader).
     /// Shared with TaskCheckForProofs.
     pub check_now: Arc<AtomicBool>,
+
+    /// Shared last header height for max acceptable height guard.
+    /// u32::MAX is the sentinel for "no height known".
+    /// Shared with TaskCheckForProofs and updated in process_new_block_header.
+    pub last_new_header_height: Arc<AtomicU32>,
 
     /// The last new block header received.
     pub last_new_header: Option<BlockHeader>,
@@ -383,6 +388,9 @@ impl Monitor {
     ///
     /// Stores the header and nudges the proof checker to try again.
     pub fn process_new_block_header(&mut self, header: BlockHeader) {
+        // Update the shared last header height for the max acceptable height guard.
+        self.last_new_header_height
+            .store(header.height, Ordering::SeqCst);
         self.last_new_header = Some(header);
         self.last_new_header_when = Some(now_msecs());
         // Nudge the proof checker to try again.
@@ -629,6 +637,7 @@ impl MonitorBuilder {
 
         // Shared state for task coordination
         let check_now = Arc::new(AtomicBool::new(false));
+        let last_new_header_height = Arc::new(AtomicU32::new(u32::MAX));
         let deactivated_headers: Arc<tokio::sync::Mutex<Vec<DeactivatedHeader>>> =
             Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
@@ -677,6 +686,7 @@ impl MonitorBuilder {
                     check_now.clone(),
                     unproven_limit,
                     self.options.on_tx_proven.clone(),
+                    last_new_header_height.clone(),
                 ),
             ));
             tasks.push(Box::new(tasks::task_check_no_sends::TaskCheckNoSends::new(
@@ -684,6 +694,7 @@ impl MonitorBuilder {
                 services.clone(),
                 chain.clone(),
                 unproven_limit,
+                last_new_header_height.clone(),
             )));
             tasks.push(Box::new(
                 tasks::task_fail_abandoned::TaskFailAbandoned::new(
@@ -739,6 +750,7 @@ impl MonitorBuilder {
             other_tasks: Vec::new(),
             running: Arc::new(AtomicBool::new(false)),
             check_now,
+            last_new_header_height,
             last_new_header: None,
             last_new_header_when: None,
             deactivated_headers,

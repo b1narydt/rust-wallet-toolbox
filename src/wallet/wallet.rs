@@ -1021,16 +1021,34 @@ impl WalletInterface for Wallet {
         bsv::wallet::validation::validate_sign_action_args(&args)?;
 
         let reference = String::from_utf8_lossy(&args.reference).to_string();
-        let options = args.options.clone().unwrap_or_default();
+        let raw_options = &args.options;
+        let options = raw_options.clone().unwrap_or_default();
+
+        // Derive Option<bool> flags from raw options, preserving None when the
+        // caller didn't specify a value.  This enables mergePriorOptions in
+        // sign_action.rs: None means "inherit from createAction", Some(v) means
+        // "caller explicitly set this".
+        let (is_no_send, is_delayed, is_send_with) = match raw_options {
+            Some(opts) => (
+                opts.no_send.0,
+                opts.accept_delayed_broadcast.0.map(|abd| !abd),
+                if opts.send_with.is_empty() {
+                    None
+                } else {
+                    Some(true)
+                },
+            ),
+            None => (None, None, None),
+        };
 
         let valid_args = crate::signer::types::ValidSignActionArgs {
             reference: reference.clone(),
             spends: args.spends,
             options,
             is_new_tx: true,
-            is_no_send: false,
-            is_delayed: false,
-            is_send_with: false,
+            is_no_send,
+            is_delayed,
+            is_send_with,
         };
 
         let signer_result = self

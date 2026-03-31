@@ -50,9 +50,8 @@ pub async fn signer_internalize_action(
     // -----------------------------------------------------------------------
     // 1. Parse AtomicBEEF to get the subject transaction
     // -----------------------------------------------------------------------
-    let beef = Beef::from_binary(&mut Cursor::new(&args.tx)).map_err(|e| {
-        WalletError::Internal(format!("Failed to parse AtomicBEEF: {}", e))
-    })?;
+    let beef = Beef::from_binary(&mut Cursor::new(&args.tx))
+        .map_err(|e| WalletError::Internal(format!("Failed to parse AtomicBEEF: {}", e)))?;
 
     let tx = beef.into_transaction().map_err(|e| {
         WalletError::Internal(format!(
@@ -87,10 +86,8 @@ pub async fn signer_internalize_action(
             let actual_script = tx.outputs[oi].locking_script.to_binary();
 
             // Build the key ID: "{derivation_prefix} {derivation_suffix}"
-            let derivation_prefix =
-                String::from_utf8_lossy(&payment.derivation_prefix).to_string();
-            let derivation_suffix =
-                String::from_utf8_lossy(&payment.derivation_suffix).to_string();
+            let derivation_prefix = String::from_utf8_lossy(&payment.derivation_prefix).to_string();
+            let derivation_suffix = String::from_utf8_lossy(&payment.derivation_suffix).to_string();
             let key_id = format!("{} {}", derivation_prefix, derivation_suffix);
 
             // The sender's identity key is the counterparty for derivation
@@ -159,5 +156,6 @@ pub async fn signer_internalize_action(
         txid: result.txid,
         satoshis: result.satoshis,
         send_with_results: result.send_with_results,
+        not_delayed_results: result.not_delayed_results,
     })
 }

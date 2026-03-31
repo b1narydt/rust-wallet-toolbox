@@ -31,16 +31,40 @@ fn test_storage_create_action_args_camel_case() {
         random_vals: None,
     };
     let json = serde_json::to_value(&args).unwrap();
-    assert!(json.get("lockTime").is_some(), "expected camelCase 'lockTime', got: {json}");
-    assert!(json.get("isNoSend").is_some(), "expected camelCase 'isNoSend', got: {json}");
-    assert!(json.get("isDelayed").is_some(), "expected camelCase 'isDelayed', got: {json}");
-    assert!(json.get("isSignAction").is_some(), "expected camelCase 'isSignAction', got: {json}");
+    assert!(
+        json.get("lockTime").is_some(),
+        "expected camelCase 'lockTime', got: {json}"
+    );
+    assert!(
+        json.get("isNoSend").is_some(),
+        "expected camelCase 'isNoSend', got: {json}"
+    );
+    assert!(
+        json.get("isDelayed").is_some(),
+        "expected camelCase 'isDelayed', got: {json}"
+    );
+    assert!(
+        json.get("isSignAction").is_some(),
+        "expected camelCase 'isSignAction', got: {json}"
+    );
     // None fields should be omitted
-    assert!(json.get("inputBeef").is_none(), "inputBeef should be omitted when None");
-    assert!(json.get("inputBEEF").is_none(), "inputBEEF should be omitted when None");
+    assert!(
+        json.get("inputBeef").is_none(),
+        "inputBeef should be omitted when None"
+    );
+    assert!(
+        json.get("inputBEEF").is_none(),
+        "inputBEEF should be omitted when None"
+    );
     // Must NOT have snake_case
-    assert!(json.get("lock_time").is_none(), "snake_case 'lock_time' must not appear");
-    assert!(json.get("is_no_send").is_none(), "snake_case 'is_no_send' must not appear");
+    assert!(
+        json.get("lock_time").is_none(),
+        "snake_case 'lock_time' must not appear"
+    );
+    assert!(
+        json.get("is_no_send").is_none(),
+        "snake_case 'is_no_send' must not appear"
+    );
 
     // Add a second test instance with input_beef = Some
     let args_with_beef = StorageCreateActionArgs {
@@ -63,9 +87,18 @@ fn test_storage_create_action_args_camel_case() {
         random_vals: None,
     };
     let json2 = serde_json::to_value(&args_with_beef).unwrap();
-    assert!(json2.get("inputBEEF").is_some(), "must serialize as 'inputBEEF' (uppercase), got: {json2}");
-    assert!(json2.get("inputBeef").is_none(), "'inputBeef' (camelCase) must not appear");
-    assert!(json2.get("input_beef").is_none(), "'input_beef' (snake_case) must not appear");
+    assert!(
+        json2.get("inputBEEF").is_some(),
+        "must serialize as 'inputBEEF' (uppercase), got: {json2}"
+    );
+    assert!(
+        json2.get("inputBeef").is_none(),
+        "'inputBeef' (camelCase) must not appear"
+    );
+    assert!(
+        json2.get("input_beef").is_none(),
+        "'input_beef' (snake_case) must not appear"
+    );
 }
 
 #[test]
@@ -86,9 +119,18 @@ fn test_storage_create_transaction_sdk_input_type_field() {
         sender_identity_key: None,
     };
     let json = serde_json::to_value(&input).unwrap();
-    assert!(json.get("type").is_some(), "field must serialize as 'type', got: {json}");
-    assert!(json.get("outputType").is_none(), "'outputType' must not appear");
-    assert!(json.get("output_type").is_none(), "'output_type' must not appear");
+    assert!(
+        json.get("type").is_some(),
+        "field must serialize as 'type', got: {json}"
+    );
+    assert!(
+        json.get("outputType").is_none(),
+        "'outputType' must not appear"
+    );
+    assert!(
+        json.get("output_type").is_none(),
+        "'output_type' must not appear"
+    );
 }
 
 #[test]
@@ -106,9 +148,18 @@ fn test_storage_process_action_args_camel_case() {
     let json = serde_json::to_value(&args).unwrap();
     assert!(json.get("isNewTx").is_some(), "expected 'isNewTx'");
     assert!(json.get("isSendWith").is_some(), "expected 'isSendWith'");
-    assert!(json.get("reference").is_some(), "reference should be present when Some");
-    assert!(json.get("txid").is_none(), "txid should be omitted when None");
-    assert!(json.get("rawTx").is_none(), "rawTx should be omitted when None");
+    assert!(
+        json.get("reference").is_some(),
+        "reference should be present when Some"
+    );
+    assert!(
+        json.get("txid").is_none(),
+        "txid should be omitted when None"
+    );
+    assert!(
+        json.get("rawTx").is_none(),
+        "rawTx should be omitted when None"
+    );
 }
 
 #[test]
@@ -119,10 +170,17 @@ fn test_storage_internalize_action_result_camel_case() {
         txid: "ab".repeat(32),
         satoshis: 5000,
         send_with_results: None,
+        not_delayed_results: None,
     };
     let json = serde_json::to_value(&result).unwrap();
-    assert!(json.get("isMerge").is_some(), "expected camelCase 'isMerge'");
-    assert!(json.get("sendWithResults").is_none(), "sendWithResults should be omitted when None");
+    assert!(
+        json.get("isMerge").is_some(),
+        "expected camelCase 'isMerge'"
+    );
+    assert!(
+        json.get("sendWithResults").is_none(),
+        "sendWithResults should be omitted when None"
+    );
 }
 
 #[test]
@@ -176,19 +234,31 @@ fn test_output_none_fields_omitted() {
     };
     let json = serde_json::to_value(&output).unwrap();
     // None fields must be OMITTED, not present as null
-    assert!(json.get("basketId").is_none(), "None basketId must be omitted, not null");
+    assert!(
+        json.get("basketId").is_none(),
+        "None basketId must be omitted, not null"
+    );
     assert!(json.get("txid").is_none(), "None txid must be omitted");
-    assert!(json.get("lockingScript").is_none(), "None lockingScript must be omitted");
-    assert!(json.get("spentBy").is_none(), "None spentBy must be omitted");
-    assert!(json.get("outputDescription").is_none(), "None outputDescription must be omitted");
+    assert!(
+        json.get("lockingScript").is_none(),
+        "None lockingScript must be omitted"
+    );
+    assert!(
+        json.get("spentBy").is_none(),
+        "None spentBy must be omitted"
+    );
+    assert!(
+        json.get("outputDescription").is_none(),
+        "None outputDescription must be omitted"
+    );
     // Required fields must still be present
     assert!(json.get("outputId").is_some());
     assert!(json.get("satoshis").is_some());
     assert!(json.get("spendable").is_some());
 }
 
-use bsv_wallet_toolbox::tables::Transaction;
 use bsv_wallet_toolbox::status::TransactionStatus;
+use bsv_wallet_toolbox::tables::Transaction;
 
 #[test]
 fn test_transaction_none_fields_omitted() {
@@ -210,12 +280,24 @@ fn test_transaction_none_fields_omitted() {
         updated_at: chrono::NaiveDateTime::default(),
     };
     let json = serde_json::to_value(&tx).unwrap();
-    assert!(json.get("version").is_none(), "None version must be omitted");
-    assert!(json.get("lockTime").is_none(), "None lockTime must be omitted");
+    assert!(
+        json.get("version").is_none(),
+        "None version must be omitted"
+    );
+    assert!(
+        json.get("lockTime").is_none(),
+        "None lockTime must be omitted"
+    );
     assert!(json.get("txid").is_none(), "None txid must be omitted");
-    assert!(json.get("inputBEEF").is_none(), "None inputBEEF must be omitted");
+    assert!(
+        json.get("inputBEEF").is_none(),
+        "None inputBEEF must be omitted"
+    );
     assert!(json.get("rawTx").is_none(), "None rawTx must be omitted");
-    assert!(json.get("provenTxId").is_none(), "None provenTxId must be omitted");
+    assert!(
+        json.get("provenTxId").is_none(),
+        "None provenTxId must be omitted"
+    );
     // Required fields present
     assert!(json.get("transactionId").is_some());
     assert!(json.get("status").is_some());
@@ -298,7 +380,10 @@ fn test_create_action_args_wire_format_matches_ts() {
     assert!(json.get("lock_time").is_none());
 
     // Negative assertion: camelCase "inputBeef" must NOT appear (we use "inputBEEF")
-    assert!(json.get("inputBeef").is_none(), "'inputBeef' (camelCase) must not appear");
+    assert!(
+        json.get("inputBeef").is_none(),
+        "'inputBeef' (camelCase) must not appear"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -346,10 +431,7 @@ fn test_internalize_action_wire_format_matches_ts() {
     assert_eq!(json["seekPermission"], true);
 
     // Verify camelCase field names
-    assert!(
-        json.get("tx").is_some(),
-        "must have tx field"
-    );
+    assert!(json.get("tx").is_some(), "must have tx field");
     assert!(
         json.get("description").is_some(),
         "must have description field"
@@ -457,7 +539,7 @@ fn test_internalize_action_seek_permission_roundtrip() {
 
 #[test]
 fn test_status_enum_serialization_matches_ts_brc100() {
-    use bsv_wallet_toolbox::status::{TransactionStatus, ProvenTxReqStatus, SyncStatus};
+    use bsv_wallet_toolbox::status::{ProvenTxReqStatus, SyncStatus, TransactionStatus};
 
     let cases: Vec<(TransactionStatus, &str)> = vec![
         (TransactionStatus::Completed, "completed"),
@@ -472,8 +554,11 @@ fn test_status_enum_serialization_matches_ts_brc100() {
     ];
     for (status, expected) in &cases {
         assert_eq!(
-            serde_json::to_value(status).unwrap(), *expected,
-            "TransactionStatus::{:?} must serialize as '{}'", status, expected
+            serde_json::to_value(status).unwrap(),
+            *expected,
+            "TransactionStatus::{:?} must serialize as '{}'",
+            status,
+            expected
         );
     }
 
@@ -492,8 +577,11 @@ fn test_status_enum_serialization_matches_ts_brc100() {
     ];
     for (status, expected) in &sync_cases {
         assert_eq!(
-            serde_json::to_value(status).unwrap(), *expected,
-            "SyncStatus::{:?} must serialize as '{}'", status, expected
+            serde_json::to_value(status).unwrap(),
+            *expected,
+            "SyncStatus::{:?} must serialize as '{}'",
+            status,
+            expected
         );
     }
 }
@@ -503,7 +591,10 @@ fn test_storage_provided_by_enum_matches_ts() {
     use bsv_wallet_toolbox::types::StorageProvidedBy;
 
     assert_eq!(serde_json::to_value(StorageProvidedBy::You).unwrap(), "you");
-    assert_eq!(serde_json::to_value(StorageProvidedBy::Storage).unwrap(), "storage");
+    assert_eq!(
+        serde_json::to_value(StorageProvidedBy::Storage).unwrap(),
+        "storage"
+    );
     assert_eq!(
         serde_json::to_value(StorageProvidedBy::YouAndStorage).unwrap(),
         "you-and-storage",

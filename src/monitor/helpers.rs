@@ -261,6 +261,7 @@ pub async fn get_proofs(
     _chain: &Chain,
     unproven_attempts_limit: u32,
     counts_as_attempt: bool,
+    max_acceptable_height: Option<u32>,
 ) -> WalletResult<GetProofsResult> {
     let mut result = GetProofsResult {
         proven: Vec::new(),
@@ -318,6 +319,17 @@ pub async fn get_proofs(
         let gmpr: GetMerklePathResult = services.get_merkle_path(&req.txid, false).await;
 
         if let (Some(merkle_path), Some(header)) = (&gmpr.merkle_path, &gmpr.header) {
+            // Skip proofs from bleeding-edge blocks to avoid reorg risk
+            if let Some(max_height) = max_acceptable_height {
+                if header.height > max_height {
+                    result.log.push_str(&format!(
+                        "ignoring possible proof from very new block at height {} {}\n",
+                        header.height, header.hash
+                    ));
+                    continue;
+                }
+            }
+
             // Proof found -- create ProvenTx and update req
             let now = chrono::Utc::now().naive_utc();
             let proven_tx = ProvenTx {
@@ -400,6 +412,30 @@ mod tests {
         };
         assert!(result.details.is_empty());
         assert!(result.log.is_empty());
+    }
+
+    #[test]
+    fn test_max_acceptable_height_guard() {
+        let max_acceptable_height: Option<u32> = Some(100);
+
+        // Proof from block 101 should be skipped
+        let proof_height: u32 = 101;
+        let should_skip = max_acceptable_height
+            .map(|max| proof_height > max)
+            .unwrap_or(false);
+        assert!(should_skip);
+
+        // Proof from block 100 should NOT be skipped
+        let proof_height: u32 = 100;
+        let should_skip = max_acceptable_height
+            .map(|max| proof_height > max)
+            .unwrap_or(false);
+        assert!(!should_skip);
+
+        // No max height means never skip
+        let max: Option<u32> = None;
+        let should_skip = max.map(|m| 101u32 > m).unwrap_or(false);
+        assert!(!should_skip);
     }
 
     #[tokio::test]

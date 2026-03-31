@@ -48,7 +48,11 @@ pub struct SyncState {
     /// JSON-encoded sync map tracking per-entity sync positions.
     pub sync_map: String,
     /// Timestamp of last successful sync.
-    #[serde(default, with = "crate::serde_datetime::option", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        with = "crate::serde_datetime::option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub when: Option<NaiveDateTime>,
     /// Net satoshi delta from last sync.
     #[serde(skip_serializing_if = "Option::is_none")]

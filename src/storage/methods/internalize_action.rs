@@ -386,12 +386,8 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                 payment,
             } => {
                 let sender_key = Some(payment.sender_identity_key.to_der_hex());
-                let prefix = Some(
-                    String::from_utf8_lossy(&payment.derivation_prefix).to_string(),
-                );
-                let suffix = Some(
-                    String::from_utf8_lossy(&payment.derivation_suffix).to_string(),
-                );
+                let prefix = Some(String::from_utf8_lossy(&payment.derivation_prefix).to_string());
+                let suffix = Some(String::from_utf8_lossy(&payment.derivation_suffix).to_string());
 
                 if is_merge {
                     let find_out = FindOutputsArgs {
@@ -598,6 +594,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
         txid,
         satoshis,
         send_with_results: None,
+        not_delayed_results: None,
     })
 }
 
@@ -720,8 +717,8 @@ mod tests {
     use bsv::script::LockingScript;
     use bsv::transaction::chain_tracker::ChainTracker;
     use bsv::transaction::error::TransactionError;
-    use bsv::wallet::interfaces::{BasketInsertion, Payment};
     use bsv::transaction::{Transaction as BsvTransaction, TransactionInput, TransactionOutput};
+    use bsv::wallet::interfaces::{BasketInsertion, Payment};
 
     // Mock chain tracker that accepts all proofs
     struct MockChainTracker;
@@ -959,10 +956,7 @@ mod tests {
         let services = MockWalletServices;
         let (beef_bytes, txid) = create_test_atomic_beef();
 
-        let sender_key = PublicKey::from_string(
-            &("02".to_owned() + &"ab".repeat(32)),
-        )
-        .unwrap();
+        let sender_key = PublicKey::from_string(&("02".to_owned() + &"ab".repeat(32))).unwrap();
 
         let args = StorageInternalizeActionArgs {
             tx: beef_bytes,
@@ -1117,10 +1111,7 @@ mod tests {
         let services = MockWalletServices;
         let (beef_bytes, txid) = create_test_atomic_beef();
 
-        let sender_key = PublicKey::from_string(
-            &("02".to_owned() + &"ab".repeat(32)),
-        )
-        .unwrap();
+        let sender_key = PublicKey::from_string(&("02".to_owned() + &"ab".repeat(32))).unwrap();
 
         let args = StorageInternalizeActionArgs {
             tx: beef_bytes,

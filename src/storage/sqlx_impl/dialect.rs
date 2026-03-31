@@ -304,7 +304,14 @@ mod tests {
     fn sqlite_subquery_in() {
         let mut wb = WhereBuilder::new(Dialect::Sqlite);
         wb.add_eq("userId");
-        wb.add_subquery_in("transactions", "status", "transactionId", "outputs", "transactionId", 2);
+        wb.add_subquery_in(
+            "transactions",
+            "status",
+            "transactionId",
+            "outputs",
+            "transactionId",
+            2,
+        );
         assert_eq!(
             wb.build_where(),
             " WHERE `userId` = ? AND (SELECT `status` FROM `transactions` WHERE `transactions`.`transactionId` = `outputs`.`transactionId`) IN (?, ?)"
@@ -315,7 +322,14 @@ mod tests {
     #[test]
     fn postgres_subquery_in() {
         let mut wb = WhereBuilder::new(Dialect::Postgres);
-        wb.add_subquery_in("transactions", "status", "transactionId", "outputs", "transactionId", 2);
+        wb.add_subquery_in(
+            "transactions",
+            "status",
+            "transactionId",
+            "outputs",
+            "transactionId",
+            2,
+        );
         assert_eq!(
             wb.build_where(),
             " WHERE (SELECT \"status\" FROM \"transactions\" WHERE \"transactions\".\"transactionId\" = \"outputs\".\"transactionId\") IN ($1, $2)"

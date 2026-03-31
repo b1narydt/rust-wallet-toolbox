@@ -267,6 +267,15 @@ fn wallet_error_object_serde_roundtrip() {
         parameter: Some("txid".to_string()),
         total_satoshis_needed: Some(100),
         more_satoshis_needed: Some(50),
+        review_action_results: None,
+        send_with_results: None,
+        txid: None,
+        tx: None,
+        no_send_change: None,
+        block_hash: None,
+        block_height: None,
+        merkle_root: None,
+        key: None,
     };
     let json = serde_json::to_string(&obj).unwrap();
     let parsed: WalletErrorObject = serde_json::from_str(&json).unwrap();

@@ -6,6 +6,7 @@
 //! transactions which have not been processed by the wallet. This task periodically
 //! checks if any 'nosend' transaction has managed to get mined externally.
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -31,6 +32,8 @@ pub struct TaskCheckNoSends {
     unproven_attempts_limit: u32,
     /// Manual trigger flag.
     pub check_now: bool,
+    /// Shared last header height (u32::MAX = unknown). Same as TaskCheckForProofs.
+    last_new_header_height: Arc<AtomicU32>,
 }
 
 impl TaskCheckNoSends {
@@ -40,6 +43,7 @@ impl TaskCheckNoSends {
         services: Arc<dyn WalletServices>,
         chain: Chain,
         unproven_attempts_limit: u32,
+        last_new_header_height: Arc<AtomicU32>,
     ) -> Self {
         Self {
             storage,
@@ -49,6 +53,7 @@ impl TaskCheckNoSends {
             last_run_msecs: 0,
             unproven_attempts_limit,
             check_now: false,
+            last_new_header_height,
         }
     }
 
@@ -77,6 +82,14 @@ impl WalletMonitorTask for TaskCheckNoSends {
 
         let mut log = String::new();
 
+        // Match TS: skip proof checking when no header height is known.
+        let raw_height = self.last_new_header_height.load(Ordering::SeqCst);
+        let max_acceptable_height = if raw_height == u32::MAX {
+            return Ok(log);
+        } else {
+            Some(raw_height)
+        };
+
         let limit = 100i64;
         let mut offset = 0i64;
         loop {
@@ -104,6 +117,7 @@ impl WalletMonitorTask for TaskCheckNoSends {
                 &self.chain,
                 self.unproven_attempts_limit,
                 counts_as_attempt,
+                max_acceptable_height,
             )
             .await?;
             log.push_str(&r.log);

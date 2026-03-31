@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use bsv::wallet::interfaces::{InternalizeOutput, SendWithResult};
+use bsv::wallet::interfaces::{InternalizeOutput, ReviewActionResult, SendWithResult};
 use bsv::wallet::types::{BooleanDefaultFalse, BooleanDefaultTrue, TXIDHexString};
 
 use crate::types::StorageProvidedBy;
@@ -415,6 +415,12 @@ pub struct StorageProcessActionResult {
     /// Results from batch sending.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub send_with_results: Option<Vec<SendWithResult>>,
+    /// Results from non-delayed broadcast review.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_delayed_results: Option<Vec<ReviewActionResult>>,
+    /// Processing log.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -464,4 +470,66 @@ pub struct StorageInternalizeActionResult {
     /// Send-with results if broadcast was attempted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub send_with_results: Option<Vec<SendWithResult>>,
+    /// Results from non-delayed broadcast review.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_delayed_results: Option<Vec<ReviewActionResult>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bsv::wallet::interfaces::{ReviewActionResult, ReviewActionResultStatus};
+
+    #[test]
+    fn test_process_action_result_not_delayed_results_serde() {
+        let r = StorageProcessActionResult {
+            send_with_results: None,
+            not_delayed_results: Some(vec![ReviewActionResult {
+                txid: "aabb".to_string(),
+                status: ReviewActionResultStatus::Success,
+                competing_txs: None,
+                competing_beef: None,
+            }]),
+            log: Some("test log".to_string()),
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(json.contains("\"notDelayedResults\""));
+        assert!(json.contains("\"log\""));
+        let r2: StorageProcessActionResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(r2.not_delayed_results.unwrap().len(), 1);
+        assert_eq!(r2.log.unwrap(), "test log");
+    }
+
+    #[test]
+    fn test_process_action_result_omits_none_fields() {
+        let r = StorageProcessActionResult {
+            send_with_results: None,
+            not_delayed_results: None,
+            log: None,
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(!json.contains("notDelayedResults"));
+        assert!(!json.contains("log"));
+    }
+
+    #[test]
+    fn test_internalize_action_result_not_delayed_results() {
+        let r = StorageInternalizeActionResult {
+            accepted: true,
+            is_merge: false,
+            txid: "aabb".to_string(),
+            satoshis: 1000,
+            send_with_results: None,
+            not_delayed_results: Some(vec![ReviewActionResult {
+                txid: "ccdd".to_string(),
+                status: ReviewActionResultStatus::DoubleSpend,
+                competing_txs: Some(vec!["eeff".to_string()]),
+                competing_beef: None,
+            }]),
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(json.contains("\"notDelayedResults\""));
+        let r2: StorageInternalizeActionResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(r2.not_delayed_results.unwrap()[0].txid, "ccdd");
+    }
 }

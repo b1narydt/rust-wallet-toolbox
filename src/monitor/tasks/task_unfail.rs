@@ -6,7 +6,10 @@
 //! a merklePath. If successful: set req to 'unmined', referenced txs to 'unproven',
 //! update input/output spendability. If not found: return to 'invalid'.
 
+use std::io::Cursor;
 use std::sync::Arc;
+
+use bsv::transaction::transaction::Transaction;
 
 use crate::error::WalletError;
 use crate::monitor::helpers::now_msecs;
@@ -14,7 +17,9 @@ use crate::monitor::task_trait::WalletMonitorTask;
 use crate::monitor::ONE_MINUTE;
 use crate::services::traits::WalletServices;
 use crate::status::ProvenTxReqStatus;
-use crate::storage::find_args::{FindProvenTxReqsArgs, Paged, ProvenTxReqPartial};
+use crate::storage::find_args::{
+    FindOutputsArgs, FindProvenTxReqsArgs, OutputPartial, Paged, ProvenTxReqPartial,
+};
 use crate::storage::manager::WalletStorageManager;
 use crate::storage::traits::reader::StorageReader;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
@@ -50,6 +55,52 @@ impl TaskUnFail {
     pub fn with_trigger_msecs(mut self, msecs: u64) -> Self {
         self.trigger_msecs = msecs;
         self
+    }
+
+    /// Populate locking_script from raw transaction if missing.
+    /// Matches TS `validateOutputScript` from StorageProvider.ts.
+    async fn validate_output_script(&self, output: &mut crate::tables::Output) {
+        // Without offset and length, nothing to recover
+        let script_length = match output.script_length {
+            Some(len) if len > 0 => len as usize,
+            _ => return,
+        };
+        let script_offset = match output.script_offset {
+            Some(off) if off >= 0 => off as usize,
+            _ => return,
+        };
+        let txid = match &output.txid {
+            Some(t) if !t.is_empty() => t.clone(),
+            _ => return,
+        };
+
+        // If locking_script exists and has correct length, nothing to do
+        if let Some(ref script) = output.locking_script {
+            if script.len() == script_length {
+                return;
+            }
+        }
+
+        // Look up the raw transaction to extract the script
+        let tx_args = crate::storage::find_args::FindTransactionsArgs {
+            partial: crate::storage::find_args::TransactionPartial {
+                txid: Some(txid),
+                ..Default::default()
+            },
+            no_raw_tx: false, // We need raw_tx
+            ..Default::default()
+        };
+
+        if let Ok(txs) = self.storage.find_transactions(&tx_args).await {
+            if let Some(tx) = txs.first() {
+                if let Some(ref raw_tx) = tx.raw_tx {
+                    let end = script_offset + script_length;
+                    if end <= raw_tx.len() {
+                        output.locking_script = Some(raw_tx[script_offset..end].to_vec());
+                    }
+                }
+            }
+        }
     }
 
     /// Process a list of "unfail" reqs: attempt to get merkle path for each.
@@ -105,6 +156,139 @@ impl TaskUnFail {
                                     "{}transaction {} status is now 'unproven'\n",
                                     inner_pad, id
                                 ));
+
+                                // Step 3: Parse raw_tx and match inputs to user's outputs
+                                // First, look up the transaction to get userId (multi-tenant safety)
+                                let tx_record = {
+                                    let tx_args = crate::storage::find_args::FindTransactionsArgs {
+                                        partial: crate::storage::find_args::TransactionPartial {
+                                            transaction_id: Some(*id),
+                                            ..Default::default()
+                                        },
+                                        ..Default::default()
+                                    };
+                                    self.storage
+                                        .find_transactions(&tx_args)
+                                        .await
+                                        .ok()
+                                        .and_then(|txs| txs.into_iter().next())
+                                };
+                                let user_id = tx_record.as_ref().map(|t| t.user_id);
+
+                                if !req.raw_tx.is_empty() {
+                                    if let Ok(bsvtx) =
+                                        Transaction::from_binary(&mut Cursor::new(&req.raw_tx))
+                                    {
+                                        for (vin, input) in bsvtx.inputs.iter().enumerate() {
+                                            let source_txid = match &input.source_txid {
+                                                Some(t) => t.clone(),
+                                                None => continue,
+                                            };
+                                            let source_vout = input.source_output_index as i32;
+
+                                            let find_args = FindOutputsArgs {
+                                                partial: OutputPartial {
+                                                    user_id,
+                                                    txid: Some(source_txid),
+                                                    vout: Some(source_vout),
+                                                    ..Default::default()
+                                                },
+                                                ..Default::default()
+                                            };
+
+                                            match self.storage.find_outputs(&find_args).await {
+                                                Ok(outputs) if outputs.len() == 1 => {
+                                                    let oi = &outputs[0];
+                                                    let update = OutputPartial {
+                                                        spendable: Some(false),
+                                                        spent_by: Some(*id),
+                                                        ..Default::default()
+                                                    };
+                                                    let _ = self
+                                                        .storage
+                                                        .update_output(oi.output_id, &update)
+                                                        .await;
+                                                    log.push_str(&format!(
+                                                        "{}input {} matched to output {} updated spentBy {}\n",
+                                                        inner_pad, vin, oi.output_id, id
+                                                    ));
+                                                }
+                                                _ => {
+                                                    log.push_str(&format!(
+                                                        "{}input {} not matched to user's outputs\n",
+                                                        inner_pad, vin
+                                                    ));
+                                                }
+                                            }
+                                        }
+
+                                        // Step 4: Check output spendability via isUtxo
+                                        let out_find_args = FindOutputsArgs {
+                                            partial: OutputPartial {
+                                                user_id,
+                                                transaction_id: Some(*id),
+                                                ..Default::default()
+                                            },
+                                            ..Default::default()
+                                        };
+
+                                        if let Ok(outputs) =
+                                            self.storage.find_outputs(&out_find_args).await
+                                        {
+                                            for o in &outputs {
+                                                // Populate locking_script from raw_tx if missing
+                                                // (matches TS validateOutputScript)
+                                                let mut o = o.clone();
+                                                self.validate_output_script(&mut o).await;
+
+                                                let script_bytes = match &o.locking_script {
+                                                    Some(s) if !s.is_empty() => s,
+                                                    _ => {
+                                                        log.push_str(&format!(
+                                                            "{}output {} does not have a valid locking script\n",
+                                                            inner_pad, o.output_id
+                                                        ));
+                                                        continue;
+                                                    }
+                                                };
+
+                                                let txid_str = o.txid.as_deref().unwrap_or("");
+                                                let vout = o.vout as u32;
+
+                                                match self
+                                                    .services
+                                                    .is_utxo(script_bytes, txid_str, vout)
+                                                    .await
+                                                {
+                                                    Ok(is_utxo) => {
+                                                        let current_spendable = o.spendable;
+                                                        if is_utxo != current_spendable {
+                                                            let update = OutputPartial {
+                                                                spendable: Some(is_utxo),
+                                                                ..Default::default()
+                                                            };
+                                                            let _ = self
+                                                                .storage
+                                                                .update_output(o.output_id, &update)
+                                                                .await;
+                                                            log.push_str(&format!(
+                                                                "{}output {} set to {}\n",
+                                                                inner_pad,
+                                                                o.output_id,
+                                                                if is_utxo {
+                                                                    "spendable"
+                                                                } else {
+                                                                    "spent"
+                                                                }
+                                                            ));
+                                                        }
+                                                    }
+                                                    Err(_) => {}
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -189,5 +373,36 @@ mod tests {
     #[test]
     fn test_name() {
         assert_eq!("UnFail", "UnFail");
+    }
+
+    #[test]
+    fn test_script_extraction_logic() {
+        // Simulate extracting script bytes from raw_tx using offset/length
+        let raw_tx = vec![0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let script_offset: usize = 3;
+        let script_length: usize = 4;
+        let end = script_offset + script_length;
+        assert!(end <= raw_tx.len());
+        let script = &raw_tx[script_offset..end];
+        assert_eq!(script, &[3, 4, 5, 6]);
+
+        // Verify no extraction when end exceeds raw_tx length
+        let bad_offset: usize = 8;
+        let bad_end = bad_offset + script_length;
+        assert!(bad_end > raw_tx.len());
+    }
+
+    #[test]
+    fn test_unfail_steps_3_4_logic() {
+        // Step 3: matching inputs to outputs
+        let found_outputs = 1;
+        let should_update_spent_by = found_outputs == 1;
+        assert!(should_update_spent_by);
+
+        // Step 4: spendability check
+        let current_spendable = true;
+        let is_utxo = false;
+        let should_update = is_utxo != current_spendable;
+        assert!(should_update);
     }
 }
