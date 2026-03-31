@@ -14,20 +14,26 @@ use crate::types::Chain;
 
 const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
+/// Inner state protected by a single `RwLock` to eliminate lock-ordering issues.
+struct Inner {
+    headers: HashMap<u64, LiveBlockHeader>,
+    hash_to_id: HashMap<String, u64>,
+    height_to_id: HashMap<u32, u64>,
+    merkle_to_id: HashMap<String, u64>,
+    next_id: u64,
+    tip_id: Option<u64>,
+}
+
 /// In-memory storage backend implementing the full `ChaintracksStorage` trait.
 ///
-/// Uses `std::sync::RwLock` internally -- safe for use from async contexts since
-/// HashMap operations are fast and never block for long.
+/// Uses a single `std::sync::RwLock` internally -- safe for use from async
+/// contexts since HashMap operations are fast and never block for long.
+/// The single-lock design eliminates lock-ordering deadlocks and TOCTOU races.
 pub struct MemoryStorage {
     chain: Chain,
     live_height_threshold: u32,
     reorg_height_threshold: u32,
-    headers: RwLock<HashMap<u64, LiveBlockHeader>>,
-    hash_to_id: RwLock<HashMap<String, u64>>,
-    height_to_id: RwLock<HashMap<u32, u64>>,
-    merkle_to_id: RwLock<HashMap<String, u64>>,
-    next_id: RwLock<u64>,
-    tip_id: RwLock<Option<u64>>,
+    inner: RwLock<Inner>,
 }
 
 impl MemoryStorage {
@@ -42,12 +48,14 @@ impl MemoryStorage {
             chain,
             live_height_threshold: live_threshold,
             reorg_height_threshold: reorg_threshold,
-            headers: RwLock::new(HashMap::new()),
-            hash_to_id: RwLock::new(HashMap::new()),
-            height_to_id: RwLock::new(HashMap::new()),
-            merkle_to_id: RwLock::new(HashMap::new()),
-            next_id: RwLock::new(1),
-            tip_id: RwLock::new(None),
+            inner: RwLock::new(Inner {
+                headers: HashMap::new(),
+                hash_to_id: HashMap::new(),
+                height_to_id: HashMap::new(),
+                merkle_to_id: HashMap::new(),
+                next_id: 1,
+                tip_id: None,
+            }),
         }
     }
 
@@ -57,13 +65,14 @@ impl MemoryStorage {
 
     /// Returns the number of headers currently stored.
     pub fn header_count(&self) -> usize {
-        self.headers.read().unwrap().len()
+        self.inner.read().unwrap().headers.len()
     }
 
     /// Returns all headers at the given height.
     pub fn get_headers_at_height(&self, height: u32) -> Vec<LiveBlockHeader> {
-        let headers = self.headers.read().unwrap();
-        headers
+        let inner = self.inner.read().unwrap();
+        inner
+            .headers
             .values()
             .filter(|h| h.height == height)
             .cloned()
@@ -72,8 +81,9 @@ impl MemoryStorage {
 
     /// Returns all active headers.
     pub fn get_active_headers(&self) -> Vec<LiveBlockHeader> {
-        let headers = self.headers.read().unwrap();
-        headers
+        let inner = self.inner.read().unwrap();
+        inner
+            .headers
             .values()
             .filter(|h| h.is_active)
             .cloned()
@@ -82,8 +92,9 @@ impl MemoryStorage {
 
     /// Returns all fork (inactive) headers.
     pub fn get_fork_headers(&self) -> Vec<LiveBlockHeader> {
-        let headers = self.headers.read().unwrap();
-        headers
+        let inner = self.inner.read().unwrap();
+        inner
+            .headers
             .values()
             .filter(|h| !h.is_active)
             .cloned()
@@ -92,8 +103,9 @@ impl MemoryStorage {
 
     /// Returns all headers whose `previous_hash` matches `parent_hash`.
     pub fn find_children(&self, parent_hash: &str) -> Vec<LiveBlockHeader> {
-        let headers = self.headers.read().unwrap();
-        headers
+        let inner = self.inner.read().unwrap();
+        inner
+            .headers
             .values()
             .filter(|h| h.previous_hash == parent_hash)
             .cloned()
@@ -116,29 +128,23 @@ impl MemoryStorage {
     // Private helpers
     // ------------------------------------------------------------------
 
-    /// Allocate the next unique ID.
-    fn alloc_id(&self) -> u64 {
-        let mut next = self.next_id.write().unwrap();
-        let id = *next;
-        *next += 1;
-        id
-    }
-
     /// Handle a reorg: deactivate the old chain branch and activate the new one.
     ///
-    /// This is a synchronous method that operates on the maps directly so we
-    /// don't have to hold RwLock guards across async boundaries.
+    /// Operates on the already-locked `Inner` to avoid re-acquiring the lock.
     fn handle_reorg(
         &self,
-        headers: &mut HashMap<u64, LiveBlockHeader>,
-        hash_to_id: &HashMap<String, u64>,
-        height_to_id: &mut HashMap<u32, u64>,
-        merkle_to_id: &mut HashMap<String, u64>,
+        inner: &mut Inner,
         old_tip_id: u64,
         new_tip_id: u64,
     ) -> (u32, Vec<BlockHeader>) {
         // Find common ancestor
-        let ancestor = self.find_common_ancestor_sync(headers, hash_to_id, old_tip_id, new_tip_id);
+        let ancestor = Self::find_common_ancestor_sync(
+            self.reorg_height_threshold,
+            &inner.headers,
+            &inner.hash_to_id,
+            old_tip_id,
+            new_tip_id,
+        );
 
         let ancestor_hash = match &ancestor {
             Some(a) => a.hash.clone(),
@@ -150,7 +156,7 @@ impl MemoryStorage {
         // Deactivate old chain: walk from old_tip back to ancestor
         let mut current_id = Some(old_tip_id);
         while let Some(cid) = current_id {
-            let header = match headers.get(&cid) {
+            let header = match inner.headers.get(&cid) {
                 Some(h) => h.clone(),
                 None => break,
             };
@@ -158,16 +164,16 @@ impl MemoryStorage {
                 break;
             }
             // Deactivate
-            if let Some(h) = headers.get_mut(&cid) {
+            if let Some(h) = inner.headers.get_mut(&cid) {
                 h.is_active = false;
-                height_to_id.remove(&h.height);
-                merkle_to_id.remove(&h.merkle_root);
+                inner.height_to_id.remove(&h.height);
+                inner.merkle_to_id.remove(&h.merkle_root);
                 deactivated.push(BlockHeader::from(h.clone()));
             }
             // Walk back
-            current_id = headers.get(&cid).and_then(|h| {
+            current_id = inner.headers.get(&cid).and_then(|h| {
                 h.previous_header_id
-                    .and_then(|pid| if headers.contains_key(&pid) { Some(pid) } else { None })
+                    .and_then(|pid| if inner.headers.contains_key(&pid) { Some(pid) } else { None })
             });
         }
 
@@ -176,7 +182,7 @@ impl MemoryStorage {
         // Activate new chain: walk from new_tip back to ancestor
         let mut current_id = Some(new_tip_id);
         while let Some(cid) = current_id {
-            let header = match headers.get(&cid) {
+            let header = match inner.headers.get(&cid) {
                 Some(h) => h.clone(),
                 None => break,
             };
@@ -184,15 +190,15 @@ impl MemoryStorage {
                 break;
             }
             // Activate
-            if let Some(h) = headers.get_mut(&cid) {
+            if let Some(h) = inner.headers.get_mut(&cid) {
                 h.is_active = true;
-                height_to_id.insert(h.height, cid);
-                merkle_to_id.insert(h.merkle_root.clone(), cid);
+                inner.height_to_id.insert(h.height, cid);
+                inner.merkle_to_id.insert(h.merkle_root.clone(), cid);
             }
             // Walk back
-            current_id = headers.get(&cid).and_then(|h| {
+            current_id = inner.headers.get(&cid).and_then(|h| {
                 h.previous_header_id
-                    .and_then(|pid| if headers.contains_key(&pid) { Some(pid) } else { None })
+                    .and_then(|pid| if inner.headers.contains_key(&pid) { Some(pid) } else { None })
             });
         }
 
@@ -201,7 +207,7 @@ impl MemoryStorage {
 
     /// Synchronous common ancestor finding. Walks back from both tips until hashes match.
     fn find_common_ancestor_sync(
-        &self,
+        reorg_height_threshold: u32,
         headers: &HashMap<u64, LiveBlockHeader>,
         hash_to_id: &HashMap<String, u64>,
         id1: u64,
@@ -241,7 +247,7 @@ impl MemoryStorage {
         }
 
         // Walk back in parallel until hashes match
-        let max_steps = self.reorg_height_threshold;
+        let max_steps = reorg_height_threshold;
         for _ in 0..max_steps {
             if cur1.hash == cur2.hash {
                 return Some(cur1);
@@ -297,12 +303,9 @@ impl ChaintracksStorageQuery for MemoryStorage {
     }
 
     async fn find_chain_tip_header(&self) -> WalletResult<Option<LiveBlockHeader>> {
-        let tip_id = self.tip_id.read().unwrap();
-        match *tip_id {
-            Some(id) => {
-                let headers = self.headers.read().unwrap();
-                Ok(headers.get(&id).cloned())
-            }
+        let inner = self.inner.read().unwrap();
+        match inner.tip_id {
+            Some(id) => Ok(inner.headers.get(&id).cloned()),
             None => Ok(None),
         }
     }
@@ -313,12 +316,9 @@ impl ChaintracksStorageQuery for MemoryStorage {
     }
 
     async fn find_header_for_height(&self, height: u32) -> WalletResult<Option<BlockHeader>> {
-        let height_to_id = self.height_to_id.read().unwrap();
-        match height_to_id.get(&height) {
-            Some(&id) => {
-                let headers = self.headers.read().unwrap();
-                Ok(headers.get(&id).cloned().map(BlockHeader::from))
-            }
+        let inner = self.inner.read().unwrap();
+        match inner.height_to_id.get(&height) {
+            Some(&id) => Ok(inner.headers.get(&id).cloned().map(BlockHeader::from)),
             None => Ok(None),
         }
     }
@@ -327,12 +327,9 @@ impl ChaintracksStorageQuery for MemoryStorage {
         &self,
         hash: &str,
     ) -> WalletResult<Option<LiveBlockHeader>> {
-        let hash_to_id = self.hash_to_id.read().unwrap();
-        match hash_to_id.get(hash) {
-            Some(&id) => {
-                let headers = self.headers.read().unwrap();
-                Ok(headers.get(&id).cloned())
-            }
+        let inner = self.inner.read().unwrap();
+        match inner.hash_to_id.get(hash) {
+            Some(&id) => Ok(inner.headers.get(&id).cloned()),
             None => Ok(None),
         }
     }
@@ -341,24 +338,20 @@ impl ChaintracksStorageQuery for MemoryStorage {
         &self,
         merkle_root: &str,
     ) -> WalletResult<Option<LiveBlockHeader>> {
-        let merkle_to_id = self.merkle_to_id.read().unwrap();
-        match merkle_to_id.get(merkle_root) {
-            Some(&id) => {
-                let headers = self.headers.read().unwrap();
-                Ok(headers.get(&id).cloned())
-            }
+        let inner = self.inner.read().unwrap();
+        match inner.merkle_to_id.get(merkle_root) {
+            Some(&id) => Ok(inner.headers.get(&id).cloned()),
             None => Ok(None),
         }
     }
 
     async fn get_headers_bytes(&self, height: u32, count: u32) -> WalletResult<Vec<u8>> {
         let mut result = Vec::with_capacity(count as usize * 80);
-        let height_to_id = self.height_to_id.read().unwrap();
-        let headers = self.headers.read().unwrap();
+        let inner = self.inner.read().unwrap();
 
         for h in height..height + count {
-            if let Some(&id) = height_to_id.get(&h) {
-                if let Some(header) = headers.get(&id) {
+            if let Some(&id) = inner.height_to_id.get(&h) {
+                if let Some(header) = inner.headers.get(&id) {
                     let base = BaseBlockHeader {
                         version: header.version,
                         previous_hash: header.previous_hash.clone(),
@@ -376,8 +369,8 @@ impl ChaintracksStorageQuery for MemoryStorage {
     }
 
     async fn get_live_headers(&self) -> WalletResult<Vec<LiveBlockHeader>> {
-        let headers = self.headers.read().unwrap();
-        let mut all: Vec<LiveBlockHeader> = headers.values().cloned().collect();
+        let inner = self.inner.read().unwrap();
+        let mut all: Vec<LiveBlockHeader> = inner.headers.values().cloned().collect();
         all.sort_by(|a, b| b.height.cmp(&a.height));
         Ok(all)
     }
@@ -388,7 +381,8 @@ impl ChaintracksStorageQuery for MemoryStorage {
     }
 
     async fn find_live_height_range(&self) -> WalletResult<Option<HeightRange>> {
-        let headers = self.headers.read().unwrap();
+        let inner = self.inner.read().unwrap();
+        let headers = &inner.headers;
         if headers.is_empty() {
             return Ok(None);
         }
@@ -410,25 +404,30 @@ impl ChaintracksStorageQuery for MemoryStorage {
         h1: &LiveBlockHeader,
         h2: &LiveBlockHeader,
     ) -> WalletResult<Option<LiveBlockHeader>> {
-        let headers = self.headers.read().unwrap();
-        let hash_to_id = self.hash_to_id.read().unwrap();
+        let inner = self.inner.read().unwrap();
 
         let id1 = match h1.header_id {
             Some(id) => id,
-            None => match hash_to_id.get(&h1.hash) {
+            None => match inner.hash_to_id.get(&h1.hash) {
                 Some(&id) => id,
                 None => return Ok(None),
             },
         };
         let id2 = match h2.header_id {
             Some(id) => id,
-            None => match hash_to_id.get(&h2.hash) {
+            None => match inner.hash_to_id.get(&h2.hash) {
                 Some(&id) => id,
                 None => return Ok(None),
             },
         };
 
-        Ok(self.find_common_ancestor_sync(&headers, &hash_to_id, id1, id2))
+        Ok(Self::find_common_ancestor_sync(
+            self.reorg_height_threshold,
+            &inner.headers,
+            &inner.hash_to_id,
+            id1,
+            id2,
+        ))
     }
 
     async fn find_reorg_depth(&self, new_header: &LiveBlockHeader) -> WalletResult<u32> {
@@ -457,54 +456,40 @@ impl ChaintracksStorageQuery for MemoryStorage {
 #[async_trait]
 impl ChaintracksStorageIngest for MemoryStorage {
     async fn insert_header(&self, mut header: LiveBlockHeader) -> WalletResult<InsertHeaderResult> {
-        let mut result = InsertHeaderResult::default();
-
-        // 1. Check duplicate by hash
-        {
-            let hash_to_id = self.hash_to_id.read().unwrap();
-            if hash_to_id.contains_key(&header.hash) {
-                result.dupe = true;
-                return Ok(result);
-            }
-        }
-
-        // 2. Allocate ID
-        let id = self.alloc_id();
-        header.header_id = Some(id);
-
-        // 3. Calculate chain_work if empty
+        // Calculate chain_work before acquiring the lock (pure computation).
         if header.chain_work.is_empty() {
             header.chain_work = calculate_work(header.bits);
         }
 
-        // 4. Find previous header
-        let prev_header_info = {
-            let hash_to_id = self.hash_to_id.read().unwrap();
-            let headers = self.headers.read().unwrap();
-            match hash_to_id.get(&header.previous_hash) {
-                Some(&prev_id) => headers.get(&prev_id).map(|h| (prev_id, h.clone())),
-                None => None,
-            }
-        };
+        let mut inner = self.inner.write().unwrap();
+        let mut result = InsertHeaderResult::default();
 
-        match &prev_header_info {
-            Some((prev_id, _prev)) => {
-                header.previous_header_id = Some(*prev_id);
+        // 1. Check duplicate by hash (atomic with insertion -- no TOCTOU race)
+        if inner.hash_to_id.contains_key(&header.hash) {
+            result.dupe = true;
+            return Ok(result);
+        }
+
+        // 2. Allocate ID
+        let id = inner.next_id;
+        inner.next_id += 1;
+        header.header_id = Some(id);
+
+        // 3. Find previous header and link
+        match inner.hash_to_id.get(&header.previous_hash).copied() {
+            Some(prev_id) => {
+                header.previous_header_id = Some(prev_id);
             }
             None => {
-                // 5. If prev not found and not genesis
                 if header.previous_hash != ZERO_HASH {
                     result.no_prev = true;
                 }
             }
         }
 
-        // 6. Get current tip
-        let old_tip_id = *self.tip_id.read().unwrap();
-        let old_tip = {
-            let headers = self.headers.read().unwrap();
-            old_tip_id.and_then(|tid| headers.get(&tid).cloned())
-        };
+        // 4. Determine if this header becomes the new tip
+        let old_tip_id = inner.tip_id;
+        let old_tip = old_tip_id.and_then(|tid| inner.headers.get(&tid).cloned());
 
         let mut becomes_tip = false;
 
@@ -515,7 +500,6 @@ impl ChaintracksStorageIngest for MemoryStorage {
                 }
             }
             None => {
-                // No tip yet -- this header becomes tip
                 becomes_tip = true;
                 result.no_tip = true;
             }
@@ -537,53 +521,35 @@ impl ChaintracksStorageIngest for MemoryStorage {
             // Unmark old tip
             if let Some(ref tip) = old_tip {
                 let old_id = old_tip_id.unwrap();
-                let mut headers = self.headers.write().unwrap();
-                if let Some(old) = headers.get_mut(&old_id) {
+                if let Some(old) = inner.headers.get_mut(&old_id) {
                     old.is_chain_tip = false;
                 }
                 result.prior_tip = Some(BlockHeader::from(tip.clone()));
             }
 
             // Insert the new header into all indexes
-            {
-                let mut headers = self.headers.write().unwrap();
-                let mut hash_to_id = self.hash_to_id.write().unwrap();
-                let mut height_to_id = self.height_to_id.write().unwrap();
-                let mut merkle_to_id = self.merkle_to_id.write().unwrap();
+            inner.headers.insert(id, header.clone());
+            inner.hash_to_id.insert(header.hash.clone(), id);
+            inner.height_to_id.insert(header.height, id);
+            inner.merkle_to_id.insert(header.merkle_root.clone(), id);
 
-                headers.insert(id, header.clone());
-                hash_to_id.insert(header.hash.clone(), id);
-                height_to_id.insert(header.height, id);
-                merkle_to_id.insert(header.merkle_root.clone(), id);
-
-                // Handle reorg
-                if is_reorg {
-                    if let Some(old_id) = old_tip_id {
-                        let (depth, deactivated) = self.handle_reorg(
-                            &mut headers,
-                            &hash_to_id,
-                            &mut height_to_id,
-                            &mut merkle_to_id,
-                            old_id,
-                            id,
-                        );
-                        result.reorg_depth = depth;
-                        result.deactivated_headers = deactivated;
-                    }
+            // Handle reorg
+            if is_reorg {
+                if let Some(old_id) = old_tip_id {
+                    let (depth, deactivated) = self.handle_reorg(&mut inner, old_id, id);
+                    result.reorg_depth = depth;
+                    result.deactivated_headers = deactivated;
                 }
             }
 
             // Update tip
-            *self.tip_id.write().unwrap() = Some(id);
+            inner.tip_id = Some(id);
         } else {
             result.added = true;
 
             // Insert into indexes (not active, not tip)
-            let mut headers = self.headers.write().unwrap();
-            let mut hash_to_id = self.hash_to_id.write().unwrap();
-
-            headers.insert(id, header.clone());
-            hash_to_id.insert(header.hash.clone(), id);
+            inner.headers.insert(id, header.clone());
+            inner.hash_to_id.insert(header.hash.clone(), id);
             // Don't add to height_to_id or merkle_to_id since not active
         }
 
@@ -592,12 +558,10 @@ impl ChaintracksStorageIngest for MemoryStorage {
 
     async fn prune_live_block_headers(&self, active_tip_height: u32) -> WalletResult<u32> {
         let threshold = active_tip_height.saturating_sub(self.live_height_threshold);
-        let mut headers = self.headers.write().unwrap();
-        let mut hash_to_id = self.hash_to_id.write().unwrap();
-        let mut height_to_id = self.height_to_id.write().unwrap();
-        let mut merkle_to_id = self.merkle_to_id.write().unwrap();
+        let mut inner = self.inner.write().unwrap();
 
-        let to_remove: Vec<u64> = headers
+        let to_remove: Vec<u64> = inner
+            .headers
             .iter()
             .filter(|(_, h)| !h.is_active && h.height < threshold)
             .map(|(&id, _)| id)
@@ -605,10 +569,10 @@ impl ChaintracksStorageIngest for MemoryStorage {
 
         let count = to_remove.len() as u32;
         for id in to_remove {
-            if let Some(h) = headers.remove(&id) {
-                hash_to_id.remove(&h.hash);
-                height_to_id.remove(&h.height);
-                merkle_to_id.remove(&h.merkle_root);
+            if let Some(h) = inner.headers.remove(&id) {
+                inner.hash_to_id.remove(&h.hash);
+                inner.height_to_id.remove(&h.height);
+                inner.merkle_to_id.remove(&h.merkle_root);
             }
         }
 
@@ -620,12 +584,10 @@ impl ChaintracksStorageIngest for MemoryStorage {
     }
 
     async fn delete_older_live_block_headers(&self, max_height: u32) -> WalletResult<u32> {
-        let mut headers = self.headers.write().unwrap();
-        let mut hash_to_id = self.hash_to_id.write().unwrap();
-        let mut height_to_id = self.height_to_id.write().unwrap();
-        let mut merkle_to_id = self.merkle_to_id.write().unwrap();
+        let mut inner = self.inner.write().unwrap();
 
-        let to_remove: Vec<u64> = headers
+        let to_remove: Vec<u64> = inner
+            .headers
             .iter()
             .filter(|(_, h)| h.height <= max_height)
             .map(|(&id, _)| id)
@@ -633,21 +595,17 @@ impl ChaintracksStorageIngest for MemoryStorage {
 
         let count = to_remove.len() as u32;
         for id in to_remove {
-            if let Some(h) = headers.remove(&id) {
-                hash_to_id.remove(&h.hash);
-                height_to_id.remove(&h.height);
-                merkle_to_id.remove(&h.merkle_root);
+            if let Some(h) = inner.headers.remove(&id) {
+                inner.hash_to_id.remove(&h.hash);
+                inner.height_to_id.remove(&h.height);
+                inner.merkle_to_id.remove(&h.merkle_root);
             }
         }
 
         // If deleted headers included the tip, clear it
-        {
-            let tip = self.tip_id.read().unwrap();
-            if let Some(tid) = *tip {
-                if !headers.contains_key(&tid) {
-                    drop(tip);
-                    *self.tip_id.write().unwrap() = None;
-                }
+        if let Some(tid) = inner.tip_id {
+            if !inner.headers.contains_key(&tid) {
+                inner.tip_id = None;
             }
         }
 
@@ -663,12 +621,13 @@ impl ChaintracksStorageIngest for MemoryStorage {
     }
 
     async fn drop_all_data(&self) -> WalletResult<()> {
-        self.headers.write().unwrap().clear();
-        self.hash_to_id.write().unwrap().clear();
-        self.height_to_id.write().unwrap().clear();
-        self.merkle_to_id.write().unwrap().clear();
-        *self.next_id.write().unwrap() = 1;
-        *self.tip_id.write().unwrap() = None;
+        let mut inner = self.inner.write().unwrap();
+        inner.headers.clear();
+        inner.hash_to_id.clear();
+        inner.height_to_id.clear();
+        inner.merkle_to_id.clear();
+        inner.next_id = 1;
+        inner.tip_id = None;
         Ok(())
     }
 
@@ -1022,11 +981,11 @@ mod tests {
 
         // Prune with active tip height 4, threshold 2 => remove inactive below height 2
         let pruned = storage.prune_live_block_headers(4).await.unwrap();
-        // The fork header at height 2 is inactive and height < (4-2)=2, so height 2 is NOT below 2
-        // Actually threshold = tip - live_height_threshold = 4 - 2 = 2, remove inactive below 2
-        // The fork at height 2 is not below 2, so it stays
-        // No inactive headers below height 2 in this case
-        assert!(pruned == 0 || storage.header_count() <= 6);
+        // threshold = tip - live_height_threshold = 4 - 2 = 2.
+        // Pruning removes inactive headers with height < 2.
+        // All main-chain headers (heights 0-4) are active; the fork at height 2 is
+        // inactive but height 2 is NOT below the threshold of 2, so nothing is pruned.
+        assert_eq!(pruned, 0);
     }
 
     #[tokio::test]
@@ -1119,5 +1078,74 @@ mod tests {
 
         let at_99 = storage.get_headers_at_height(99);
         assert!(at_99.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_reorg_execution() {
+        let storage = MemoryStorage::new(Chain::Test);
+
+        // Build main chain: genesis -> A -> B
+        let genesis = create_test_header(0, &"0".repeat(64), "hash_0");
+        storage.insert_header(genesis).await.unwrap();
+        let a = create_test_header(1, "hash_0", "hash_a");
+        storage.insert_header(a).await.unwrap();
+        let b = create_test_header(2, "hash_a", "hash_b");
+        storage.insert_header(b).await.unwrap();
+
+        // Verify tip is B at height 2
+        let tip = storage.find_chain_tip_header().await.unwrap().unwrap();
+        assert_eq!(tip.hash, "hash_b");
+
+        // Build competing fork from genesis: genesis -> C -> D -> E (longer)
+        let c = create_test_header(1, "hash_0", "hash_c");
+        storage.insert_header(c).await.unwrap();
+        let d = create_test_header(2, "hash_c", "hash_d");
+        storage.insert_header(d).await.unwrap();
+        let e = create_test_header(3, "hash_d", "hash_e");
+        let r = storage.insert_header(e).await.unwrap();
+
+        // Verify reorg happened
+        assert!(r.added);
+        assert!(r.is_active_tip);
+        assert!(
+            r.reorg_depth > 0,
+            "Expected reorg_depth > 0, got {}",
+            r.reorg_depth
+        );
+        assert!(
+            !r.deactivated_headers.is_empty(),
+            "Expected deactivated headers"
+        );
+
+        // New tip should be E at height 3
+        let tip = storage.find_chain_tip_header().await.unwrap().unwrap();
+        assert_eq!(tip.hash, "hash_e");
+        assert_eq!(tip.height, 3);
+
+        // Old chain headers (A, B) should be inactive
+        let a_header = storage
+            .find_live_header_for_block_hash("hash_a")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            !a_header.is_active,
+            "hash_a should be inactive after reorg"
+        );
+        let b_header = storage
+            .find_live_header_for_block_hash("hash_b")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            !b_header.is_active,
+            "hash_b should be inactive after reorg"
+        );
+
+        // New chain headers should be active and findable by height
+        let h1 = storage.find_header_for_height(1).await.unwrap().unwrap();
+        assert_eq!(h1.hash, "hash_c");
+        let h2 = storage.find_header_for_height(2).await.unwrap().unwrap();
+        assert_eq!(h2.hash, "hash_d");
     }
 }
