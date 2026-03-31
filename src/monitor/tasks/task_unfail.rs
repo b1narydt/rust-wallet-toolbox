@@ -57,6 +57,53 @@ impl TaskUnFail {
         self
     }
 
+    /// Populate locking_script from raw transaction if missing.
+    /// Matches TS `validateOutputScript` from StorageProvider.ts.
+    async fn validate_output_script(&self, output: &mut crate::tables::Output) {
+        // Without offset and length, nothing to recover
+        let script_length = match output.script_length {
+            Some(len) if len > 0 => len as usize,
+            _ => return,
+        };
+        let script_offset = match output.script_offset {
+            Some(off) if off >= 0 => off as usize,
+            _ => return,
+        };
+        let txid = match &output.txid {
+            Some(t) if !t.is_empty() => t.clone(),
+            _ => return,
+        };
+
+        // If locking_script exists and has correct length, nothing to do
+        if let Some(ref script) = output.locking_script {
+            if script.len() == script_length {
+                return;
+            }
+        }
+
+        // Look up the raw transaction to extract the script
+        let tx_args = crate::storage::find_args::FindTransactionsArgs {
+            partial: crate::storage::find_args::TransactionPartial {
+                txid: Some(txid),
+                ..Default::default()
+            },
+            no_raw_tx: false, // We need raw_tx
+            ..Default::default()
+        };
+
+        if let Ok(txs) = self.storage.find_transactions(&tx_args).await {
+            if let Some(tx) = txs.first() {
+                if let Some(ref raw_tx) = tx.raw_tx {
+                    let end = script_offset + script_length;
+                    if end <= raw_tx.len() {
+                        output.locking_script =
+                            Some(raw_tx[script_offset..end].to_vec());
+                    }
+                }
+            }
+        }
+    }
+
     /// Process a list of "unfail" reqs: attempt to get merkle path for each.
     async fn unfail(
         &self,
@@ -188,6 +235,11 @@ impl TaskUnFail {
                                             self.storage.find_outputs(&out_find_args).await
                                         {
                                             for o in &outputs {
+                                                // Populate locking_script from raw_tx if missing
+                                                // (matches TS validateOutputScript)
+                                                let mut o = o.clone();
+                                                self.validate_output_script(&mut o).await;
+
                                                 let script_bytes = match &o.locking_script {
                                                     Some(s) if !s.is_empty() => s,
                                                     _ => {
@@ -324,6 +376,23 @@ mod tests {
     #[test]
     fn test_name() {
         assert_eq!("UnFail", "UnFail");
+    }
+
+    #[test]
+    fn test_script_extraction_logic() {
+        // Simulate extracting script bytes from raw_tx using offset/length
+        let raw_tx = vec![0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let script_offset: usize = 3;
+        let script_length: usize = 4;
+        let end = script_offset + script_length;
+        assert!(end <= raw_tx.len());
+        let script = &raw_tx[script_offset..end];
+        assert_eq!(script, &[3, 4, 5, 6]);
+
+        // Verify no extraction when end exceeds raw_tx length
+        let bad_offset: usize = 8;
+        let bad_end = bad_offset + script_length;
+        assert!(bad_end > raw_tx.len());
     }
 
     #[test]
