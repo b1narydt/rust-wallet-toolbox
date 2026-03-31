@@ -9,6 +9,7 @@ pub mod default_signer;
 pub mod methods;
 pub mod traits;
 pub mod types;
+pub mod verify_unlock_scripts;
 
 // Re-export key items
 pub use build_signable::build_signable_transaction;

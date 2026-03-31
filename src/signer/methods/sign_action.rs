@@ -58,8 +58,10 @@ pub async fn signer_sign_action(
         .id()
         .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {}", e)))?;
 
-    // --- Step 3: Build BEEF ---
-    let beef_bytes = super::create_action::build_beef_bytes(&tx, &pending.dcr.input_beef)?;
+    // --- Step 3: Build BEEF, verify unlock scripts, then serialize ---
+    let beef = super::create_action::build_beef(&tx, &pending.dcr.input_beef)?;
+    crate::signer::verify_unlock_scripts::verify_unlock_scripts(&txid, &beef)?;
+    let beef_bytes = super::create_action::serialize_beef_atomic(&beef, &txid)?;
 
     // --- Step 4: Process action in storage ---
     let process_args = StorageProcessActionArgs {

@@ -212,8 +212,10 @@ pub async fn signer_create_action(
         .id()
         .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {}", e)))?;
 
-    // Build BEEF with signed transaction
-    let beef_bytes = build_beef_bytes(&tx, &dcr.input_beef)?;
+    // Build BEEF, verify unlock scripts, then serialize
+    let beef = build_beef(&tx, &dcr.input_beef)?;
+    crate::signer::verify_unlock_scripts::verify_unlock_scripts(&txid, &beef)?;
+    let beef_bytes = serialize_beef_atomic(&beef, &txid)?;
 
     let no_send_change = if args.is_no_send {
         dcr.no_send_change_output_vouts
@@ -254,21 +256,15 @@ pub async fn signer_create_action(
     Ok((result, None))
 }
 
-/// Build Atomic BEEF bytes containing the transaction and its input proofs.
+/// Build a Beef object containing the transaction and its input proofs.
 ///
 /// Constructs a Beef by:
 /// 1. Merging input_beef if available (contains source txs with proofs)
 /// 2. Merging the signed/unsigned transaction via merge_raw_tx
-/// 3. Serializing as Atomic BEEF via to_binary_atomic
-pub(crate) fn build_beef_bytes(
+pub(crate) fn build_beef(
     tx: &bsv::transaction::transaction::Transaction,
     input_beef: &Option<Vec<u8>>,
-) -> WalletResult<Vec<u8>> {
-    let txid = tx
-        .id()
-        .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {}", e)))?;
-
-    // Start with a fresh V1 BEEF and merge input_beef if available
+) -> WalletResult<Beef> {
     let mut beef = Beef::new(bsv::transaction::beef::BEEF_V1);
     if let Some(ref input_beef_bytes) = input_beef {
         if !input_beef_bytes.is_empty() {
@@ -277,16 +273,35 @@ pub(crate) fn build_beef_bytes(
         }
     }
 
-    // Serialize the transaction to raw bytes and merge via merge_raw_tx
     let mut raw_tx = Vec::new();
     tx.to_binary(&mut raw_tx)
         .map_err(|e| WalletError::Internal(format!("Failed to serialize tx: {}", e)))?;
     beef.merge_raw_tx(&raw_tx, None)
         .map_err(|e| WalletError::Internal(format!("Failed to merge raw tx: {}", e)))?;
 
-    // Serialize as Atomic BEEF targeting our transaction
-    beef.to_binary_atomic(&txid)
+    Ok(beef)
+}
+
+/// Serialize a Beef as Atomic BEEF bytes targeting a specific txid.
+pub(crate) fn serialize_beef_atomic(beef: &Beef, txid: &str) -> WalletResult<Vec<u8>> {
+    beef.to_binary_atomic(txid)
         .map_err(|e| WalletError::Internal(format!("Failed to serialize Atomic BEEF: {}", e)))
+}
+
+/// Build Atomic BEEF bytes containing the transaction and its input proofs.
+///
+/// Convenience wrapper around `build_beef` + `serialize_beef_atomic`.
+/// Used for the signable BEEF path (delayed signing) where verification
+/// is NOT done since the tx is unsigned.
+pub(crate) fn build_beef_bytes(
+    tx: &bsv::transaction::transaction::Transaction,
+    input_beef: &Option<Vec<u8>>,
+) -> WalletResult<Vec<u8>> {
+    let txid = tx
+        .id()
+        .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {}", e)))?;
+    let beef = build_beef(tx, input_beef)?;
+    serialize_beef_atomic(&beef, &txid)
 }
 
 #[cfg(test)]
