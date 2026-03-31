@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.13] - 2026-03-31
+
+### Added
+
+- **11 runnable examples** (`examples/`) demonstrating the full wallet lifecycle:
+  - `setup_wallet` — Fund a Rust wallet via BRC-42 payment from a local
+    BRC-100 desktop wallet (`HttpWalletJson`). Generates keys, persists
+    config to `examples/.env`, internalizes the payment as `WalletPayment`.
+  - `chaintracks_sync` — Sync block headers from WhatsOnChain into local
+    `MemoryStorage`, display chain tip.
+  - `chaintracks_validate` — SPV merkle root validation (real vs bogus root).
+  - `p2pkh_transfer` — P2PKH transfer between two wallets.
+  - `brc29_transfer` — BRC-29 key-derived transfer with receiver
+    internalization.
+  - `list_balance` — Query balance and list UTXOs via `balance_and_utxos()`.
+  - `list_actions` — List transaction history with pagination.
+  - `pushdrop_tokens` — Mint a PushDrop data-bearing token.
+  - `nosend_batch` — Create 3 noSend transactions and batch send via
+    `sendWith`.
+  - `internalize_payment` — Receive and internalize an external BRC-29
+    payment.
+  - `backup_wallet` — Demonstrate backup sync architecture.
+
+- New dev-dependency `dotenvy` for `.env` file loading in examples.
+
+### Fixed
+
+- **Transaction status not updated after broadcast** — `create_action`'s
+  signer now updates Transaction status to `unproven` and ProvenTxReq status
+  to `unmined` after calling `post_beef`. Previously, transactions stayed in
+  `unprocessed` status permanently after broadcast, making their change
+  outputs invisible to balance queries and UTXO selection. The TS
+  implementation handles this in `shareReqsWithWorld`; the Rust
+  implementation was missing this post-broadcast status transition.
+
+- **UTXO selection excluded internalized outputs** — Removed erroneous
+  `change: Some(true)` filter from `create_action`'s available change query.
+  The TS `countChangeInputs`/`allocateChangeInput` query by `(userId,
+  spendable, basketId)` without a `change` flag. The Rust filter excluded
+  legitimately spendable outputs that entered the wallet via
+  `internalizeAction` with `BasketInsertion`.
+
 ## [0.2.12] - 2026-03-30
 
 ### Added

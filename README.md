@@ -78,7 +78,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-bsv-wallet-toolbox = "0.2.12"
+bsv-wallet-toolbox = "0.2.13"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -132,7 +132,7 @@ MySQL and PostgreSQL are opt-in and require disabling default features.
 
 ```toml
 [dependencies]
-bsv-wallet-toolbox = "0.2.12"
+bsv-wallet-toolbox = "0.2.13"
 ```
 
 **MySQL** -- requires a running MySQL server and connection URL:
@@ -154,7 +154,7 @@ header tracking (adds `tokio-tungstenite` and `url` dependencies):
 
 ```toml
 [dependencies]
-bsv-wallet-toolbox = { version = "0.2.12", features = ["chaintracks-ws"] }
+bsv-wallet-toolbox = { version = "0.2.13", features = ["chaintracks-ws"] }
 ```
 
 When using MySQL or PostgreSQL, pass the connection URL to the builder:
