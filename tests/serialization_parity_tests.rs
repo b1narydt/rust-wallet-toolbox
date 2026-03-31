@@ -119,6 +119,7 @@ fn test_storage_internalize_action_result_camel_case() {
         txid: "ab".repeat(32),
         satoshis: 5000,
         send_with_results: None,
+        not_delayed_results: None,
     };
     let json = serde_json::to_value(&result).unwrap();
     assert!(json.get("isMerge").is_some(), "expected camelCase 'isMerge'");

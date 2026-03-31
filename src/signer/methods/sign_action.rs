@@ -83,6 +83,7 @@ pub async fn signer_sign_action(
         txid: Some(txid),
         tx: Some(beef_bytes),
         send_with_results: process_result.send_with_results.unwrap_or_default(),
+        not_delayed_results: process_result.not_delayed_results,
     };
 
     Ok(result)

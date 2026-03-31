@@ -598,6 +598,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
         txid,
         satoshis,
         send_with_results: None,
+        not_delayed_results: None,
     })
 }
 

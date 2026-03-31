@@ -193,6 +193,7 @@ pub async fn signer_create_action(
                 reference: reference.clone(),
                 tx: signable_beef,
             }),
+            not_delayed_results: None,
         };
 
         return Ok((result, Some(pending)));
@@ -247,6 +248,7 @@ pub async fn signer_create_action(
         no_send_change,
         send_with_results: process_result.send_with_results.unwrap_or_default(),
         signable_transaction: None,
+        not_delayed_results: process_result.not_delayed_results,
     };
 
     Ok((result, None))

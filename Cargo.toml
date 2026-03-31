@@ -45,3 +45,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+
+[patch.crates-io]
+bsv-sdk = { path = "../bsv-rust-sdk" }

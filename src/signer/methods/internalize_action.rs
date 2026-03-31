@@ -159,5 +159,6 @@ pub async fn signer_internalize_action(
         txid: result.txid,
         satoshis: result.satoshis,
         send_with_results: result.send_with_results,
+        not_delayed_results: result.not_delayed_results,
     })
 }

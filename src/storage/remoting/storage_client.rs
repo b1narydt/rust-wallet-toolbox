@@ -600,6 +600,15 @@ mod tests {
                 parameter: None,
                 total_satoshis_needed: None,
                 more_satoshis_needed: None,
+                review_action_results: None,
+                send_with_results: None,
+                txid: None,
+                tx: None,
+                no_send_change: None,
+                block_hash: None,
+                block_height: None,
+                merkle_root: None,
+                key: None,
             }
         }
 
@@ -612,6 +621,15 @@ mod tests {
                 parameter: Some(param.to_string()),
                 total_satoshis_needed: None,
                 more_satoshis_needed: None,
+                review_action_results: None,
+                send_with_results: None,
+                txid: None,
+                tx: None,
+                no_send_change: None,
+                block_hash: None,
+                block_height: None,
+                merkle_root: None,
+                key: None,
             }
         }
 
@@ -667,6 +685,15 @@ mod tests {
             parameter: None,
             total_satoshis_needed: Some(1000),
             more_satoshis_needed: Some(500),
+            review_action_results: None,
+            send_with_results: None,
+            txid: None,
+            tx: None,
+            no_send_change: None,
+            block_hash: None,
+            block_height: None,
+            merkle_root: None,
+            key: None,
         });
         assert!(
             matches!(err, WalletError::InsufficientFunds { message, total_satoshis_needed, more_satoshis_needed }
