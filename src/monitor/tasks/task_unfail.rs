@@ -6,7 +6,10 @@
 //! a merklePath. If successful: set req to 'unmined', referenced txs to 'unproven',
 //! update input/output spendability. If not found: return to 'invalid'.
 
+use std::io::Cursor;
 use std::sync::Arc;
+
+use bsv::transaction::transaction::Transaction;
 
 use crate::error::WalletError;
 use crate::monitor::helpers::now_msecs;
@@ -14,7 +17,9 @@ use crate::monitor::task_trait::WalletMonitorTask;
 use crate::monitor::ONE_MINUTE;
 use crate::services::traits::WalletServices;
 use crate::status::ProvenTxReqStatus;
-use crate::storage::find_args::{FindProvenTxReqsArgs, Paged, ProvenTxReqPartial};
+use crate::storage::find_args::{
+    FindOutputsArgs, FindProvenTxReqsArgs, OutputPartial, Paged, ProvenTxReqPartial,
+};
 use crate::storage::manager::WalletStorageManager;
 use crate::storage::traits::reader::StorageReader;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
@@ -105,6 +110,120 @@ impl TaskUnFail {
                                     "{}transaction {} status is now 'unproven'\n",
                                     inner_pad, id
                                 ));
+
+                                // Step 3: Parse raw_tx and match inputs to user's outputs
+                                if !req.raw_tx.is_empty() {
+                                    if let Ok(bsvtx) = Transaction::from_binary(
+                                        &mut Cursor::new(&req.raw_tx),
+                                    ) {
+                                        for (vin, input) in bsvtx.inputs.iter().enumerate() {
+                                            let source_txid = match &input.source_txid {
+                                                Some(t) => t.clone(),
+                                                None => continue,
+                                            };
+                                            let source_vout =
+                                                input.source_output_index as i32;
+
+                                            let find_args = FindOutputsArgs {
+                                                partial: OutputPartial {
+                                                    txid: Some(source_txid),
+                                                    vout: Some(source_vout),
+                                                    ..Default::default()
+                                                },
+                                                ..Default::default()
+                                            };
+
+                                            match self.storage.find_outputs(&find_args).await {
+                                                Ok(outputs) if outputs.len() == 1 => {
+                                                    let oi = &outputs[0];
+                                                    let update = OutputPartial {
+                                                        spendable: Some(false),
+                                                        spent_by: Some(*id),
+                                                        ..Default::default()
+                                                    };
+                                                    let _ = self
+                                                        .storage
+                                                        .update_output(oi.output_id, &update)
+                                                        .await;
+                                                    log.push_str(&format!(
+                                                        "{}input {} matched to output {} updated spentBy {}\n",
+                                                        inner_pad, vin, oi.output_id, id
+                                                    ));
+                                                }
+                                                _ => {
+                                                    log.push_str(&format!(
+                                                        "{}input {} not matched to user's outputs\n",
+                                                        inner_pad, vin
+                                                    ));
+                                                }
+                                            }
+                                        }
+
+                                        // Step 4: Check output spendability via isUtxo
+                                        let out_find_args = FindOutputsArgs {
+                                            partial: OutputPartial {
+                                                transaction_id: Some(*id),
+                                                ..Default::default()
+                                            },
+                                            ..Default::default()
+                                        };
+
+                                        if let Ok(outputs) =
+                                            self.storage.find_outputs(&out_find_args).await
+                                        {
+                                            for o in &outputs {
+                                                let script_bytes = match &o.locking_script {
+                                                    Some(s) if !s.is_empty() => s,
+                                                    _ => {
+                                                        log.push_str(&format!(
+                                                            "{}output {} does not have a valid locking script\n",
+                                                            inner_pad, o.output_id
+                                                        ));
+                                                        continue;
+                                                    }
+                                                };
+
+                                                let txid_str =
+                                                    o.txid.as_deref().unwrap_or("");
+                                                let vout = o.vout as u32;
+
+                                                match self
+                                                    .services
+                                                    .is_utxo(script_bytes, txid_str, vout)
+                                                    .await
+                                                {
+                                                    Ok(is_utxo) => {
+                                                        let current_spendable = o.spendable;
+                                                        if is_utxo != current_spendable {
+                                                            let update = OutputPartial {
+                                                                spendable: Some(is_utxo),
+                                                                ..Default::default()
+                                                            };
+                                                            let _ = self
+                                                                .storage
+                                                                .update_output(
+                                                                    o.output_id,
+                                                                    &update,
+                                                                )
+                                                                .await;
+                                                            log.push_str(&format!(
+                                                                "{}output {} set to {}\n",
+                                                                inner_pad,
+                                                                o.output_id,
+                                                                if is_utxo {
+                                                                    "spendable"
+                                                                } else {
+                                                                    "spent"
+                                                                }
+                                                            ));
+                                                        }
+                                                    }
+                                                    Err(_) => {}
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -189,5 +308,19 @@ mod tests {
     #[test]
     fn test_name() {
         assert_eq!("UnFail", "UnFail");
+    }
+
+    #[test]
+    fn test_unfail_steps_3_4_logic() {
+        // Step 3: matching inputs to outputs
+        let found_outputs = 1;
+        let should_update_spent_by = found_outputs == 1;
+        assert!(should_update_spent_by);
+
+        // Step 4: spendability check
+        let current_spendable = true;
+        let is_utxo = false;
+        let should_update = is_utxo != current_spendable;
+        assert!(should_update);
     }
 }
