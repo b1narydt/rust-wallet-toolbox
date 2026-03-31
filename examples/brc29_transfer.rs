@@ -141,7 +141,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 labels: vec!["brc29-transfer".to_string()],
                 options: Some(bsv::wallet::interfaces::CreateActionOptions {
                     randomize_outputs: bsv::wallet::types::BooleanDefaultTrue(Some(false)),
-                    accept_delayed_broadcast: bsv::wallet::types::BooleanDefaultTrue(Some(false)),
                     ..Default::default()
                 }),
                 reference: None,
