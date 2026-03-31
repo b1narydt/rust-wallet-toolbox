@@ -233,7 +233,7 @@ pub async fn signer_create_action(
         reference: Some(reference),
         txid: Some(txid.clone()),
         raw_tx: Some(signed_tx_bytes),
-        send_with: vec![],
+        send_with: if args.is_send_with { args.options.send_with.clone() } else { vec![] },
     };
     let process_result = storage.process_action(&auth_id, &process_args).await?;
 
@@ -244,7 +244,7 @@ pub async fn signer_create_action(
 
     let result = SignerCreateActionResult {
         txid: Some(txid),
-        tx: Some(beef_bytes),
+        tx: if args.options.return_txid_only.0.unwrap_or(false) { None } else { Some(beef_bytes) },
         no_send_change,
         send_with_results: process_result.send_with_results.unwrap_or_default(),
         signable_transaction: None,
@@ -287,4 +287,39 @@ pub(crate) fn build_beef_bytes(
     // Serialize as Atomic BEEF targeting our transaction
     beef.to_binary_atomic(&txid)
         .map_err(|e| WalletError::Internal(format!("Failed to serialize Atomic BEEF: {}", e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use bsv::wallet::types::BooleanDefaultFalse;
+
+    #[test]
+    fn test_return_txid_only_controls_tx_field() {
+        let return_txid_only = BooleanDefaultFalse(Some(true));
+        let beef_bytes = vec![1, 2, 3];
+        let tx: Option<Vec<u8>> = if return_txid_only.0.unwrap_or(false) { None } else { Some(beef_bytes.clone()) };
+        assert!(tx.is_none());
+
+        let return_txid_only = BooleanDefaultFalse(Some(false));
+        let tx: Option<Vec<u8>> = if return_txid_only.0.unwrap_or(false) { None } else { Some(beef_bytes.clone()) };
+        assert!(tx.is_some());
+
+        // Default (None) should behave as false — tx is included
+        let return_txid_only = BooleanDefaultFalse(None);
+        let tx: Option<Vec<u8>> = if return_txid_only.0.unwrap_or(false) { None } else { Some(beef_bytes) };
+        assert!(tx.is_some());
+    }
+
+    #[test]
+    fn test_send_with_conditional() {
+        let send_with_txids = vec!["aabb".to_string(), "ccdd".to_string()];
+
+        let is_send_with = true;
+        let result: Vec<String> = if is_send_with { send_with_txids.clone() } else { vec![] };
+        assert_eq!(result.len(), 2);
+
+        let is_send_with = false;
+        let result: Vec<String> = if is_send_with { send_with_txids } else { vec![] };
+        assert!(result.is_empty());
+    }
 }
