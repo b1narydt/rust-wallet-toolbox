@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.12] - 2026-03-30
+
+### Added
+
+- **Chaintracks module** — Full local block header management system ported from
+  reference implementation (~7,500 lines, 152 tests). Replaces sole dependency on
+  remote Babbage Chaintracks service with a local, embedded alternative.
+
+  - **Two storage backends:** `MemoryStorage` (in-memory with 4 concurrent
+    indexes) and `SqliteStorage` (persistent with partial indexes and batch
+    insert).
+  - **Four ingestors:** `BulkCdnIngestor` (Babbage CDN binary headers),
+    `BulkWocIngestor` (WhatsOnChain API fallback), `LivePollingIngestor`
+    (WoC REST polling), `LiveWebSocketIngestor` (WoC WebSocket real-time,
+    feature-gated behind `chaintracks-ws`).
+  - **Chaintracks orchestrator:** Background sync (500ms polling), header
+    processing pipeline with double-SHA256 hash computation, chain
+    reorganization detection and handling, subscriber callbacks for new headers
+    and reorgs, readonly mode, chain validation.
+  - **Trait hierarchy:** `ChaintracksStorageQuery` / `ChaintracksStorageIngest` /
+    `ChaintracksStorage` for pluggable storage; `ChaintracksClient` /
+    `ChaintracksManagement` for the orchestrator API; `BulkIngestor` /
+    `LiveIngestor` for pluggable header sources.
+  - **Services integration:** `ChaintracksChainTracker` now supports both
+    `Remote` (existing HTTP client, default) and `Local` (new embedded
+    chaintracks) backends via `ChaintracksBackend` enum. Existing behavior
+    unchanged; local mode opt-in via `ChaintracksChainTracker::with_local()`.
+
+- New feature flag `chaintracks-ws` for WebSocket live ingestor dependencies
+  (`tokio-tungstenite`, `url`).
+
+- New dependencies: `sha2`, `hex`, `uuid` (non-optional, used by chaintracks
+  hash computation and subscription IDs).
+
 ## [0.2.11] - 2026-03-30
 
 ### Fixed

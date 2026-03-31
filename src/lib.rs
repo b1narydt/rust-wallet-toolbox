@@ -56,6 +56,8 @@ pub mod utility;
 pub mod wab_client;
 /// High-level wallet implementation.
 pub mod wallet;
+/// Block header tracking, storage, and chain reorganization detection.
+pub mod chaintracks;
 
 /// Database migration helpers (feature-gated by database backend).
 #[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgres"))]
