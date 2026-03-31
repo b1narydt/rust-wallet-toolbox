@@ -4,6 +4,9 @@
 //! P2PKH key derivation. The receiver internalizes the payment via
 //! `internalize_action` with derivation metadata.
 //!
+//! Reads configuration from `examples/.env` (created by `setup_wallet`).
+//! You can also set env vars directly.
+//!
 //! # Usage
 //!
 //! ```bash
@@ -44,6 +47,8 @@ fn random_base64(n: usize) -> String {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::from_filename("examples/.env").ok();
+
     let chain = get_chain();
     println!("Chain: {}", chain);
 

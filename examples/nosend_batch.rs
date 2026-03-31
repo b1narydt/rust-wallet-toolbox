@@ -3,6 +3,9 @@
 //! Demonstrates constructing multiple transactions without broadcasting them,
 //! then sending them all at once using the `send_with` batching mechanism.
 //!
+//! Reads configuration from `examples/.env` (created by `setup_wallet`).
+//! You can also set env vars directly.
+//!
 //! The noSend flow:
 //! 1. Create transaction with `no_send: true` -- wallet builds and signs it
 //!    but does NOT broadcast. Returns `no_send_change` outpoints.
@@ -53,6 +56,8 @@ fn make_p2pkh_lock(key: &PrivateKey) -> Result<Vec<u8>, Box<dyn std::error::Erro
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::from_filename("examples/.env").ok();
+
     let chain = get_chain();
     println!("Chain: {}", chain);
 

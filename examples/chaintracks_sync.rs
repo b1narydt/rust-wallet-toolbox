@@ -3,6 +3,9 @@
 //! Demonstrates local block header synchronization using the Chaintracks
 //! engine with in-memory storage and the WhatsOnChain bulk ingestor.
 //!
+//! Reads configuration from `examples/.env` (created by `setup_wallet`).
+//! You can also set env vars directly.
+//!
 //! 1. Creates a `MemoryStorage` + `Chaintracks` instance
 //! 2. Fetches recent headers from WhatsOnChain
 //! 3. Feeds each header into chaintracks as a `BaseBlockHeader`
@@ -40,6 +43,8 @@ fn get_chain() -> Chain {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::from_filename("examples/.env").ok();
+
     let chain = get_chain();
     println!("Chain: {}", chain);
 

@@ -3,6 +3,10 @@
 //! Generates or imports a private key, builds a wallet with SQLite storage,
 //! displays a P2PKH address for faucet funding, and checks the balance.
 //!
+//! Creates an `examples/.env` file with `BSV_CHAIN`, `BSV_PRIVATE_KEY`, and
+//! `BSV_PRIVATE_KEY_2` so that other examples can read configuration
+//! automatically without manually exporting environment variables.
+//!
 //! # Usage
 //!
 //! ```bash
@@ -38,6 +42,9 @@ fn get_chain() -> Chain {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load any existing .env so re-running picks up previous values.
+    dotenvy::from_filename("examples/.env").ok();
+
     let chain = get_chain();
     println!("Chain: {}", chain);
 
@@ -60,6 +67,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             key
         }
     };
+
+    // -----------------------------------------------------------------------
+    // 1b. Second private key — read from env or generate
+    // -----------------------------------------------------------------------
+    let private_key_2 = match std::env::var("BSV_PRIVATE_KEY_2") {
+        Ok(hex) => {
+            let key = PrivateKey::from_hex(&hex)?;
+            println!("Loaded second private key from BSV_PRIVATE_KEY_2");
+            key
+        }
+        Err(_) => {
+            let key = PrivateKey::from_random()?;
+            println!("Generated second private key (for two-wallet examples).");
+            key
+        }
+    };
+
+    // -----------------------------------------------------------------------
+    // 1c. Write examples/.env so other examples pick up these values
+    // -----------------------------------------------------------------------
+    let chain_str = match chain {
+        Chain::Main => "main",
+        Chain::Test => "test",
+    };
+    let env_content = format!(
+        "BSV_CHAIN={}\nBSV_PRIVATE_KEY={}\nBSV_PRIVATE_KEY_2={}\n",
+        chain_str,
+        private_key.to_hex(),
+        private_key_2.to_hex()
+    );
+    std::fs::write("examples/.env", &env_content)?;
+    println!();
+    println!("Wrote examples/.env (other examples will read this automatically).");
 
     // -----------------------------------------------------------------------
     // 2. Build the wallet

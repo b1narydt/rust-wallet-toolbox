@@ -2,6 +2,9 @@
 //!
 //! Demonstrates SPV merkle root validation using the Chaintracks engine.
 //!
+//! Reads configuration from `examples/.env` (created by `setup_wallet`).
+//! You can also set env vars directly.
+//!
 //! 1. Syncs recent headers (same setup as `chaintracks_sync`)
 //! 2. Retrieves the chain tip header
 //! 3. Validates the real merkle root against its height (should be true)
@@ -39,6 +42,8 @@ fn get_chain() -> Chain {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::from_filename("examples/.env").ok();
+
     let chain = get_chain();
     println!("Chain: {}", chain);
 

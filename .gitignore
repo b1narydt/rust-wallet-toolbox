@@ -3,3 +3,4 @@ target/
 .planning/
 .claude/
 docs/
+examples/.env
