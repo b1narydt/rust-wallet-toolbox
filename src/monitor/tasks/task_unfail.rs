@@ -112,6 +112,20 @@ impl TaskUnFail {
                                 ));
 
                                 // Step 3: Parse raw_tx and match inputs to user's outputs
+                                // First, look up the transaction to get userId (multi-tenant safety)
+                                let tx_record = {
+                                    let tx_args = crate::storage::find_args::FindTransactionsArgs {
+                                        partial: crate::storage::find_args::TransactionPartial {
+                                            transaction_id: Some(*id),
+                                            ..Default::default()
+                                        },
+                                        ..Default::default()
+                                    };
+                                    self.storage.find_transactions(&tx_args).await.ok()
+                                        .and_then(|txs| txs.into_iter().next())
+                                };
+                                let user_id = tx_record.as_ref().map(|t| t.user_id);
+
                                 if !req.raw_tx.is_empty() {
                                     if let Ok(bsvtx) = Transaction::from_binary(
                                         &mut Cursor::new(&req.raw_tx),
@@ -126,6 +140,7 @@ impl TaskUnFail {
 
                                             let find_args = FindOutputsArgs {
                                                 partial: OutputPartial {
+                                                    user_id,
                                                     txid: Some(source_txid),
                                                     vout: Some(source_vout),
                                                     ..Default::default()
@@ -162,6 +177,7 @@ impl TaskUnFail {
                                         // Step 4: Check output spendability via isUtxo
                                         let out_find_args = FindOutputsArgs {
                                             partial: OutputPartial {
+                                                user_id,
                                                 transaction_id: Some(*id),
                                                 ..Default::default()
                                             },

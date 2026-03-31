@@ -129,6 +129,15 @@ impl WalletMonitorTask for TaskCheckForProofs {
         // Reset the check_now flag
         self.check_now.store(false, Ordering::SeqCst);
 
+        // Read the shared last header height; u32::MAX is the sentinel for "unknown".
+        // Match TS behavior: skip proof checking entirely when no header height is known.
+        let raw_height = self.last_new_header_height.load(Ordering::SeqCst);
+        let max_acceptable_height = if raw_height == u32::MAX {
+            return Ok(log);
+        } else {
+            Some(raw_height)
+        };
+
         let limit = 100i64;
         let mut offset = 0i64;
 
@@ -160,14 +169,6 @@ impl WalletMonitorTask for TaskCheckForProofs {
                 "{} reqs with status 'callback', 'unmined', 'sending', 'unknown', or 'unconfirmed'\n",
                 reqs.len()
             ));
-
-            // Read the shared last header height; u32::MAX is the sentinel for "unknown".
-            let raw_height = self.last_new_header_height.load(Ordering::SeqCst);
-            let max_acceptable_height = if raw_height == u32::MAX {
-                None
-            } else {
-                Some(raw_height)
-            };
 
             let r = get_proofs(
                 &self.storage,

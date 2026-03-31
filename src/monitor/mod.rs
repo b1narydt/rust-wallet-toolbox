@@ -694,6 +694,7 @@ impl MonitorBuilder {
                 services.clone(),
                 chain.clone(),
                 unproven_limit,
+                last_new_header_height.clone(),
             )));
             tasks.push(Box::new(
                 tasks::task_fail_abandoned::TaskFailAbandoned::new(
