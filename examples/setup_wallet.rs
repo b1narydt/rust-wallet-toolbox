@@ -263,7 +263,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         outputs: vec![InternalizeOutput::BasketInsertion {
                             output_index,
                             insertion: BasketInsertion {
-                                basket: "change taker".to_string(),
+                                basket: "default".to_string(),
                                 custom_instructions: None,
                                 tags: vec![],
                             },
