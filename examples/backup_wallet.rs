@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let db_path = "backup_example.db";
+    let db_path = "examples/data/backup_example.db";
     println!("Building wallet with SQLite storage at '{}'...", db_path);
 
     let setup = WalletBuilder::new()

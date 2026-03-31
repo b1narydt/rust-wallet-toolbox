@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let setup = WalletBuilder::new()
         .chain(chain)
         .root_key(private_key.clone())
-        .with_sqlite("wallet.db")
+        .with_sqlite("examples/data/wallet.db")
         .with_default_services()
         .build()
         .await?;

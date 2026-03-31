@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sender_setup = WalletBuilder::new()
         .chain(chain.clone())
         .root_key(sender_key.clone())
-        .with_sqlite("wallet.db")
+        .with_sqlite("examples/data/wallet.db")
         .with_default_services()
         .build()
         .await?;
@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let receiver_setup = WalletBuilder::new()
         .chain(chain.clone())
         .root_key(receiver_key.clone())
-        .with_sqlite("receiver.db")
+        .with_sqlite("examples/data/receiver.db")
         .with_default_services()
         .build()
         .await?;
