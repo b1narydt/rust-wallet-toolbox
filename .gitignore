@@ -3,3 +3,8 @@ target/
 .planning/
 .claude/
 docs/
+examples/.env
+examples/data/
+*.db
+*.db-shm
+*.db-wal

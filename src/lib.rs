@@ -87,3 +87,4 @@ pub use status::TransactionStatus;
 pub use wallet::setup::SetupWallet;
 /// Builder for constructing configured Wallet instances.
 pub use wallet::setup::WalletBuilder;
+#[cfg(test)] #[path = "/tmp/test_opts.rs"] mod test_opts;

@@ -1,6 +1,6 @@
 [package]
 name = "bsv-wallet-toolbox"
-version = "0.2.12"
+version = "0.2.13"
 edition = "2021"
 rust-version = "1.87"
 description = "Pure Rust BSV wallet-toolbox implementation"
@@ -51,3 +51,4 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+dotenvy = "0.15"

@@ -325,13 +325,17 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         .collect();
 
     // --- Query available change UTXOs ---
-    // Find spendable outputs in the default basket, ordered by satoshis ASC
+    // Find spendable outputs in the default basket, ordered by satoshis ASC.
+    // Note: we do NOT filter by change=true here. The TS implementation's
+    // countChangeInputs and allocateChangeInput query by (userId, spendable,
+    // basketId) without a change flag. Filtering on change=true would exclude
+    // legitimately spendable outputs that entered the wallet via
+    // internalizeAction with BasketInsertion into the default basket.
     let change_find_args = FindOutputsArgs {
         partial: OutputPartial {
             user_id: Some(user_id),
             basket_id: Some(change_basket.basket_id),
             spendable: Some(true),
-            change: Some(true),
             ..Default::default()
         },
         ..Default::default()
