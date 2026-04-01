@@ -146,7 +146,7 @@ bsv-wallet-toolbox = { version = "0.2.11", default-features = false, features = 
 
 ```toml
 [dependencies]
-bsv-wallet-toolbox = { version = "0.2.11", default-features = false, features = ["postgres"] }
+bsv-wallet-toolbox = { version = "0.2.14", default-features = false, features = ["postgres"] }
 ```
 
 **Chaintracks WebSocket** -- enables the real-time WebSocket live ingestor for local block
@@ -154,7 +154,7 @@ header tracking (adds `tokio-tungstenite` and `url` dependencies):
 
 ```toml
 [dependencies]
-bsv-wallet-toolbox = { version = "0.2.13", features = ["chaintracks-ws"] }
+bsv-wallet-toolbox = { version = "0.2.14", features = ["chaintracks-ws"] }
 ```
 
 When using MySQL or PostgreSQL, pass the connection URL to the builder:
