@@ -60,8 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("BSV_PRIVATE_KEY env var required (sender, must be funded)"),
     )?;
     let receiver_key = PrivateKey::from_hex(
-        &std::env::var("BSV_PRIVATE_KEY_2")
-            .expect("BSV_PRIVATE_KEY_2 env var required (receiver)"),
+        &std::env::var("BSV_PRIVATE_KEY_2").expect("BSV_PRIVATE_KEY_2 env var required (receiver)"),
     )?;
 
     println!("\nBuilding sender wallet...");

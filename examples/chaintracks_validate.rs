@@ -125,9 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. Validate a BOGUS merkle root (all zeros)
     // -----------------------------------------------------------------------
     let bogus_root = "0".repeat(64);
-    let invalid = ct
-        .is_valid_root_for_height(&bogus_root, tip.height)
-        .await?;
+    let invalid = ct.is_valid_root_for_height(&bogus_root, tip.height).await?;
     println!(
         "is_valid_root_for_height(\"0000...0000\", {}) => {}",
         tip.height, invalid

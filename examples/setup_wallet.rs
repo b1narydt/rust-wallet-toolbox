@@ -156,7 +156,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
     let sender_identity_key = sender_result.public_key.clone();
-    println!("  Desktop wallet identity: {}", sender_identity_key.to_der_hex());
+    println!(
+        "  Desktop wallet identity: {}",
+        sender_identity_key.to_der_hex()
+    );
 
     // Receiver = our Rust wallet's identity key
     let receiver_pub_key = PublicKey::from_string(&setup.identity_key)?;
@@ -167,7 +170,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate random derivation parameters
     let derivation_prefix = base64_random(10);
     let derivation_suffix = base64_random(10);
-    println!("\n  Derivation: {} / {}", derivation_prefix, derivation_suffix);
+    println!(
+        "\n  Derivation: {} / {}",
+        derivation_prefix, derivation_suffix
+    );
 
     // Desktop wallet derives key for our Rust wallet as counterparty
     let derived_result = desktop
@@ -216,13 +222,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     satoshis: amount,
                     output_description: "BRC-42 payment to Rust wallet".to_string(),
                     basket: None,
-                    custom_instructions: Some(serde_json::to_string(
-                        &serde_json::json!({
-                            "derivationPrefix": derivation_prefix,
-                            "derivationSuffix": derivation_suffix,
-                            "payee": setup.identity_key,
-                        }),
-                    )?),
+                    custom_instructions: Some(serde_json::to_string(&serde_json::json!({
+                        "derivationPrefix": derivation_prefix,
+                        "derivationSuffix": derivation_suffix,
+                        "payee": setup.identity_key,
+                    }))?),
                     tags: vec![],
                 }],
                 inputs: vec![],

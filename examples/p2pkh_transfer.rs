@@ -48,8 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("BSV_PRIVATE_KEY env var required (sender, must be funded)"),
     )?;
     let receiver_key = PrivateKey::from_hex(
-        &std::env::var("BSV_PRIVATE_KEY_2")
-            .expect("BSV_PRIVATE_KEY_2 env var required (receiver)"),
+        &std::env::var("BSV_PRIVATE_KEY_2").expect("BSV_PRIVATE_KEY_2 env var required (receiver)"),
     )?;
 
     // -----------------------------------------------------------------------
@@ -89,7 +88,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if sender_balance < 42 {
         eprintln!("\nSender balance too low. Fund the sender wallet first.");
-        eprintln!("Run `cargo run --example setup_wallet` with BSV_PRIVATE_KEY to get a funding address.");
+        eprintln!(
+            "Run `cargo run --example setup_wallet` with BSV_PRIVATE_KEY to get a funding address."
+        );
         return Ok(());
     }
 

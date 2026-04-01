@@ -75,16 +75,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if wallet_balance.utxos.is_empty() {
         println!("  (no spendable outputs found)");
     } else {
-        println!(
-            "\n  {:<68}  {:>10}",
-            "Outpoint", "Satoshis"
-        );
+        println!("\n  {:<68}  {:>10}", "Outpoint", "Satoshis");
         println!("  {}", "-".repeat(80));
         for utxo in &wallet_balance.utxos {
-            println!(
-                "  {:<68}  {:>10}",
-                utxo.outpoint, utxo.satoshis,
-            );
+            println!("  {:<68}  {:>10}", utxo.outpoint, utxo.satoshis,);
         }
     }
 

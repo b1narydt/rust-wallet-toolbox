@@ -82,8 +82,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The data fields are arbitrary byte arrays. In a real application these
     // could be JSON metadata, file hashes, protocol identifiers, etc.
     let data_fields: Vec<Vec<u8>> = vec![
-        vec![1, 2, 3],       // Field 0: some identifier
-        vec![4, 5, 6],       // Field 1: some payload
+        vec![1, 2, 3],           // Field 0: some identifier
+        vec![4, 5, 6],           // Field 1: some payload
         b"hello token".to_vec(), // Field 2: human-readable label
     ];
 
@@ -93,10 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nMinting PushDrop token...");
     println!("  Data fields: {} fields", data_fields.len());
-    println!(
-        "  Signing key (save to redeem): {}",
-        signing_key.to_hex()
-    );
+    println!("  Signing key (save to redeem): {}", signing_key.to_hex());
 
     let pushdrop = PushDrop::new(data_fields.clone(), signing_key.clone());
     let locking_script = pushdrop.lock()?;
@@ -156,10 +153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Redemption Info ---");
     println!("To redeem this token in a future transaction:");
     println!("  1. Reference outpoint: {}.0", txid);
-    println!(
-        "  2. Use signing key: {}",
-        signing_key.to_hex()
-    );
+    println!("  2. Use signing key: {}", signing_key.to_hex());
     println!("  3. Create a transaction input spending that outpoint");
     println!("  4. The PushDrop template will produce the unlocking script");
 

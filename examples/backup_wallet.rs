@@ -103,7 +103,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if db_file.exists() {
         let metadata = std::fs::metadata(db_file)?;
         println!("\nDatabase file: {}", db_path);
-        println!("  Size: {} bytes ({:.1} KB)", metadata.len(), metadata.len() as f64 / 1024.0);
+        println!(
+            "  Size: {} bytes ({:.1} KB)",
+            metadata.len(),
+            metadata.len() as f64 / 1024.0
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -117,8 +121,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  //");
     println!("  // use bsv_wallet_toolbox::storage::manager::WalletStorageManager;");
     println!("  //");
-    println!("  // let primary = Arc::new(SqliteStorage::new_sqlite(primary_config, chain).await?);");
-    println!("  // let backup  = Arc::new(SqliteStorage::new_sqlite(backup_config, chain).await?);");
+    println!(
+        "  // let primary = Arc::new(SqliteStorage::new_sqlite(primary_config, chain).await?);"
+    );
+    println!(
+        "  // let backup  = Arc::new(SqliteStorage::new_sqlite(backup_config, chain).await?);"
+    );
     println!("  //");
     println!("  // let manager = WalletStorageManager::new(");
     println!("  //     identity_key,");

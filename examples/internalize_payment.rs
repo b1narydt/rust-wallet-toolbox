@@ -64,8 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("BSV_PRIVATE_KEY env var required (sender, must be funded)"),
     )?;
     let receiver_key = PrivateKey::from_hex(
-        &std::env::var("BSV_PRIVATE_KEY_2")
-            .expect("BSV_PRIVATE_KEY_2 env var required (receiver)"),
+        &std::env::var("BSV_PRIVATE_KEY_2").expect("BSV_PRIVATE_KEY_2 env var required (receiver)"),
     )?;
 
     println!("\nBuilding sender wallet...");
@@ -205,7 +204,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let receiver_balance_after = receiver_setup.wallet.balance(None).await?;
 
     println!("\n--- Results ---");
-    println!("Sender balance:   {} -> {} satoshis", sender_balance, sender_balance_after);
+    println!(
+        "Sender balance:   {} -> {} satoshis",
+        sender_balance, sender_balance_after
+    );
     println!(
         "Receiver balance: {} satoshis (gained from internalized payment)",
         receiver_balance_after
