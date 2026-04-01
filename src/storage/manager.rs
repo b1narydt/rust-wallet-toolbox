@@ -25,9 +25,9 @@ use crate::storage::action_types::{
     StorageInternalizeActionResult, StorageProcessActionArgs, StorageProcessActionResult,
 };
 use crate::storage::find_args::{
-    FindCertificateFieldsArgs, FindCertificatesArgs, FindOutputBasketsArgs, FindOutputsArgs,
-    FindProvenTxReqsArgs, FindProvenTxsArgs, FindTransactionsArgs, OutputPartial, ProvenTxPartial,
-    ProvenTxReqPartial, PurgeParams, TransactionPartial,
+    FindCertificateFieldsArgs, FindCertificatesArgs, FindMonitorEventsArgs, FindOutputBasketsArgs,
+    FindOutputsArgs, FindProvenTxReqsArgs, FindProvenTxsArgs, FindTransactionsArgs, OutputPartial,
+    ProvenTxPartial, ProvenTxReqPartial, PurgeParams, TransactionPartial,
 };
 use crate::storage::sync::request_args::{RequestSyncChunkArgs, SyncChunkOffset};
 use crate::storage::sync::sync_map::SyncMap;
@@ -1133,6 +1133,22 @@ impl WalletStorageManager {
     pub async fn insert_monitor_event(&self, event: &MonitorEvent) -> WalletResult<i64> {
         let active = self.get_active().await?;
         active.insert_monitor_event(event).await
+    }
+
+    pub async fn find_monitor_events(
+        &self,
+        args: &FindMonitorEventsArgs,
+    ) -> WalletResult<Vec<MonitorEvent>> {
+        let active = self.get_active().await?;
+        active.find_monitor_events(args).await
+    }
+
+    pub async fn count_monitor_events(
+        &self,
+        args: &FindMonitorEventsArgs,
+    ) -> WalletResult<i64> {
+        let active = self.get_active().await?;
+        active.count_monitor_events(args).await
     }
 
     pub async fn admin_stats(&self, auth_id: &str) -> WalletResult<AdminStatsResult> {

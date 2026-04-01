@@ -35,10 +35,10 @@ use crate::storage::action_types::{
 };
 use crate::storage::find_args::{
     CertificateFieldPartial, CertificatePartial, FindCertificateFieldsArgs, FindCertificatesArgs,
-    FindOutputBasketsArgs, FindOutputsArgs, FindProvenTxReqsArgs, FindProvenTxsArgs,
-    FindSettingsArgs, FindSyncStatesArgs, FindTransactionsArgs, OutputPartial, ProvenTxPartial,
-    ProvenTxReqPartial, PurgeParams, SettingsPartial, SyncStatePartial, TransactionPartial,
-    UserPartial,
+    FindMonitorEventsArgs, FindOutputBasketsArgs, FindOutputsArgs, FindProvenTxReqsArgs,
+    FindProvenTxsArgs, FindSettingsArgs, FindSyncStatesArgs, FindTransactionsArgs, OutputPartial,
+    ProvenTxPartial, ProvenTxReqPartial, PurgeParams, SettingsPartial, SyncStatePartial,
+    TransactionPartial, UserPartial,
 };
 use crate::storage::sync::get_sync_chunk::{GetSyncChunkArgs, SyncChunkOffsets};
 use crate::storage::sync::request_args::{RequestSyncChunkArgs, SyncChunkOffset};
@@ -495,6 +495,21 @@ pub trait WalletStorageProvider: Send + Sync {
     async fn insert_monitor_event(&self, event: &MonitorEvent) -> WalletResult<i64> {
         let _ = event;
         Err(WalletError::NotImplemented("insert_monitor_event".into()))
+    }
+
+    /// Find monitor events matching the given filter.
+    async fn find_monitor_events(
+        &self,
+        args: &FindMonitorEventsArgs,
+    ) -> WalletResult<Vec<MonitorEvent>> {
+        let _ = args;
+        Err(WalletError::NotImplemented("find_monitor_events".into()))
+    }
+
+    /// Count monitor events matching the given filter.
+    async fn count_monitor_events(&self, args: &FindMonitorEventsArgs) -> WalletResult<i64> {
+        let _ = args;
+        Err(WalletError::NotImplemented("count_monitor_events".into()))
     }
 
     /// Returns aggregate deployment statistics.
@@ -1119,6 +1134,17 @@ impl<T: StorageProvider> WalletStorageProvider for T {
 
     async fn insert_monitor_event(&self, event: &MonitorEvent) -> WalletResult<i64> {
         StorageReaderWriter::insert_monitor_event(self, event, None).await
+    }
+
+    async fn find_monitor_events(
+        &self,
+        args: &FindMonitorEventsArgs,
+    ) -> WalletResult<Vec<MonitorEvent>> {
+        StorageReader::find_monitor_events(self, args, None).await
+    }
+
+    async fn count_monitor_events(&self, args: &FindMonitorEventsArgs) -> WalletResult<i64> {
+        StorageReader::count_monitor_events(self, args, None).await
     }
 
     async fn admin_stats(&self, auth_id: &str) -> WalletResult<AdminStatsResult> {
