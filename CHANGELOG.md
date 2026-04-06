@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.15] - 2026-04-06
+
+### Fixed
+
+- **ProvenTxReq status for internalized transactions** — `internalize_action` now
+  sets ProvenTxReq status to `Unmined` instead of `Unsent` for externally received
+  transactions, correctly reflecting that the transaction has already been broadcast
+  by the sender.
+
+### Changed
+
+- `setup_wallet` example: `for_self` field now explicitly set to `Some(false)` in
+  `create_action` call; `beef_bytes` cloned for reuse after internalization.
+
+### Added
+
+- **BEEF broadcast step in `setup_wallet` example** — After internalizing a
+  payment, the example now broadcasts the BEEF to miners via `post_beef`,
+  displaying per-miner broadcast status.
+
+## [0.2.14] - 2026-04-04
+
+### Changed
+
+- Storage manager and wallet_provider trait updates.
+- Merged examples feature branch (PR #10).
+- Ran clippy and resolved all warnings.
+
 ## [0.2.13] - 2026-03-31
 
 ### Added
