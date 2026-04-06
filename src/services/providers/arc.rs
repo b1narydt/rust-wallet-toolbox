@@ -7,12 +7,13 @@
 use async_trait::async_trait;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::Deserialize;
+use serde_json;
 use tracing;
 
 use crate::services::traits::PostBeefProvider;
 use crate::services::types::{ArcConfig, PostBeefResult, PostTxResultForTxid};
 
-/// ARC API JSON response structure.
+/// ARC API JSON response structure for POST /v1/tx.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ArcResponse {
@@ -23,6 +24,26 @@ struct ArcResponse {
     tx_status: Option<String>,
     #[serde(default)]
     competing_txs: Option<Vec<String>>,
+}
+
+/// ARC API JSON response structure for GET /v1/tx/{txid}.
+///
+/// Matches TS SDK's `ArcMinerGetTxData` interface.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ArcGetTxData {
+    #[serde(default)]
+    txid: String,
+    #[serde(default)]
+    tx_status: Option<String>,
+    #[serde(default)]
+    block_hash: Option<String>,
+    #[serde(default)]
+    block_height: Option<u32>,
+    #[serde(default)]
+    competing_txs: Option<Vec<String>>,
+    #[serde(default)]
+    extra_info: Option<String>,
 }
 
 /// ARC transaction broadcaster.
@@ -53,6 +74,27 @@ impl ArcProvider {
     pub fn build_headers(&self) -> HeaderMap {
         build_arc_headers(&self.config)
     }
+
+    /// Query ARC for the status of a recently submitted transaction.
+    ///
+    /// Matches TS SDK's `getTxData(txid)` — calls `GET /v1/tx/{txid}`.
+    /// Only works for recently submitted txids (ARC doesn't keep full history).
+    async fn get_tx_data(&self, txid: &str) -> Option<ArcGetTxData> {
+        let url = format!("{}/v1/tx/{}", self.base_url, txid);
+        let headers = self.build_headers();
+
+        match self.client.get(&url).headers(headers).timeout(std::time::Duration::from_secs(15)).send().await {
+            Ok(resp) if resp.status().is_success() => resp.json::<ArcGetTxData>().await.ok(),
+            Ok(resp) => {
+                tracing::debug!(txid = txid, status = %resp.status(), "get_tx_data: non-success status");
+                None
+            }
+            Err(e) => {
+                tracing::debug!(txid = txid, error = %e, "get_tx_data: request failed");
+                None
+            }
+        }
+    }
 }
 
 /// Build the HTTP headers for an ARC request from the given config.
@@ -63,7 +105,7 @@ pub fn build_arc_headers(config: &ArcConfig) -> HeaderMap {
 
     headers.insert(
         "Content-Type",
-        HeaderValue::from_static("application/octet-stream"),
+        HeaderValue::from_static("application/json"),
     );
 
     headers.insert(
@@ -92,6 +134,17 @@ pub fn build_arc_headers(config: &ArcConfig) -> HeaderMap {
         if !callback_token.is_empty() {
             if let Ok(val) = HeaderValue::from_str(callback_token) {
                 headers.insert("X-CallbackToken", val);
+            }
+        }
+    }
+
+    // Additional custom headers (matches TS SDK's `headers` field).
+    if let Some(ref custom_headers) = config.headers {
+        for (key, value) in custom_headers {
+            if let Ok(val) = HeaderValue::from_str(value) {
+                if let Ok(name) = reqwest::header::HeaderName::from_bytes(key.as_bytes()) {
+                    headers.insert(name, val);
+                }
             }
         }
     }
@@ -159,6 +212,19 @@ pub fn maybe_downgrade_beef_v2(beef: &[u8]) -> Vec<u8> {
     }
 }
 
+/// Build the JSON body for an ARC `POST /v1/tx` request.
+///
+/// Returns `{ "rawTx": "<hex>" }` matching TS SDK's `postRawTx` data format.
+/// The TS wallet-toolbox sends BEEF as hex inside JSON with
+/// `Content-Type: application/json`, NOT as binary with `application/octet-stream`.
+pub fn build_arc_post_body(beef_bytes: &[u8]) -> serde_json::Value {
+    let beef_hex = beef_bytes
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    serde_json::json!({ "rawTx": beef_hex })
+}
+
 #[async_trait]
 impl PostBeefProvider for ArcProvider {
     fn name(&self) -> &str {
@@ -166,8 +232,11 @@ impl PostBeefProvider for ArcProvider {
     }
 
     async fn post_beef(&self, beef: &[u8], txids: &[String]) -> PostBeefResult {
-        // Attempt BEEF V2 -> V1 downgrade
+        // Attempt BEEF V2 -> V1 downgrade (matches TS wallet-toolbox pattern)
         let beef_bytes = maybe_downgrade_beef_v2(beef);
+
+        // Build JSON body { "rawTx": <hex> } matching TS SDK postRawTx.
+        let json_body = build_arc_post_body(&beef_bytes);
 
         let url = format!("{}/v1/tx", self.base_url);
         let headers = self.build_headers();
@@ -176,7 +245,7 @@ impl PostBeefProvider for ArcProvider {
             .client
             .post(&url)
             .headers(headers)
-            .body(beef_bytes)
+            .json(&json_body)
             .timeout(std::time::Duration::from_secs(30))
             .send()
             .await;
@@ -192,8 +261,8 @@ impl PostBeefProvider for ArcProvider {
                         let is_double_spend = tx_status == "DOUBLE_SPEND_ATTEMPTED"
                             || tx_status == "SEEN_IN_ORPHAN_MEMPOOL";
 
-                        let tx_result = PostTxResultForTxid {
-                            txid: arc_resp.txid,
+                        let primary_result = PostTxResultForTxid {
+                            txid: arc_resp.txid.clone(),
                             status: if status_code.is_success() && !is_double_spend {
                                 "success".to_string()
                             } else {
@@ -211,21 +280,60 @@ impl PostBeefProvider for ArcProvider {
                             },
                         };
 
-                        let overall_status = if tx_result.status == "success" {
-                            "success"
-                        } else {
-                            "error"
-                        };
+                        let mut overall_status = primary_result.status.clone();
+                        let mut txid_results = vec![primary_result];
+
+                        // For additional txids (multi-tx BEEF), query ARC for their status.
+                        // Matches TS SDK's postBeef pattern: postRawTx for first, getTxData for rest.
+                        for txid in txids {
+                            if *txid == arc_resp.txid {
+                                continue;
+                            }
+                            let extra_result = if let Some(data) = self.get_tx_data(txid).await {
+                                let status = match data.tx_status.as_deref() {
+                                    Some("SEEN_ON_NETWORK" | "STORED") => "success",
+                                    _ => "error",
+                                };
+                                if status == "error" && overall_status == "success" {
+                                    overall_status = "error".to_string();
+                                }
+                                PostTxResultForTxid {
+                                    txid: txid.clone(),
+                                    status: status.to_string(),
+                                    already_known: None,
+                                    double_spend: None,
+                                    block_hash: data.block_hash,
+                                    block_height: data.block_height,
+                                    competing_txs: data.competing_txs,
+                                    service_error: if status == "error" { Some(true) } else { None },
+                                }
+                            } else {
+                                overall_status = "error".to_string();
+                                PostTxResultForTxid {
+                                    txid: txid.clone(),
+                                    status: "error".to_string(),
+                                    already_known: None,
+                                    double_spend: None,
+                                    block_hash: None,
+                                    block_height: None,
+                                    competing_txs: None,
+                                    service_error: Some(true),
+                                }
+                            };
+                            txid_results.push(extra_result);
+                        }
 
                         PostBeefResult {
                             name: self.name.clone(),
-                            status: overall_status.to_string(),
-                            error: if overall_status == "error" {
+                            status: overall_status,
+                            error: if tx_status != "success" && !tx_status.is_empty()
+                                && (is_double_spend || !status_code.is_success())
+                            {
                                 Some(format!("{} {}", tx_status, extra_info))
                             } else {
                                 None
                             },
-                            txid_results: vec![tx_result],
+                            txid_results,
                         }
                     }
                     Err(e) => {
