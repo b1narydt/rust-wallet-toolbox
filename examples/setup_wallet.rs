@@ -191,7 +191,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }),
                 privileged: false,
                 privileged_reason: None,
-                for_self: None,
+                for_self: Some(false),
                 seek_permission: None,
             },
             None,
@@ -258,7 +258,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .wallet
         .internalize_action(
             InternalizeActionArgs {
-                tx: beef_bytes,
+                tx: beef_bytes.clone(),
                 description: "Funding from desktop wallet".to_string(),
                 labels: vec!["funding".to_string()],
                 seek_permission: BooleanDefaultTrue(Some(false)),
@@ -276,6 +276,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     println!("  Accepted: {}", internalize_result.accepted);
+
+    // -----------------------------------------------------------------------
+    // 7b. Broadcast the BEEF to miners
+    // -----------------------------------------------------------------------
+    println!("\n  Broadcasting to miners...");
+    if let Some(ref services) = setup.services {
+        use bsv_wallet_toolbox::services::traits::WalletServices;
+        let results = services
+            .post_beef(&beef_bytes, &[txid.to_string()])
+            .await;
+        for r in &results {
+            let status_msg = if let Some(ref err) = r.error {
+                format!("{} ({})", r.status, err)
+            } else {
+                r.status.clone()
+            };
+            println!("    {}: {}", r.name, status_msg);
+        }
+    }
 
     // -----------------------------------------------------------------------
     // 8. Verify balance

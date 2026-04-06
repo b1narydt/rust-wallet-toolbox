@@ -566,7 +566,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
             updated_at: now,
             proven_tx_req_id: 0,
             proven_tx_id: None,
-            status: crate::status::ProvenTxReqStatus::Unsent,
+            status: crate::status::ProvenTxReqStatus::Unmined,
             attempts: 0,
             notified: false,
             txid: txid.clone(),
@@ -1031,7 +1031,7 @@ mod tests {
             .await
             .expect("find reqs");
         assert_eq!(reqs.len(), 1);
-        assert_eq!(reqs[0].status, crate::status::ProvenTxReqStatus::Unsent);
+        assert_eq!(reqs[0].status, crate::status::ProvenTxReqStatus::Unmined);
     }
 
     #[tokio::test]
