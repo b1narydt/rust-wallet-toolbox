@@ -493,9 +493,8 @@ impl WalletStorageManager {
     /// returns `WERR_NOT_ACTIVE`.
     pub async fn get_auth(&self, must_be_active: bool) -> WalletResult<AuthId> {
         if must_be_active && !self.is_available() {
-            return Err(WalletError::NotActive(
-                "Storage manager is not yet available — call make_available() first".to_string(),
-            ));
+            // Auto-initialize if not yet available (same pattern as acquire_reader)
+            self.make_available().await?;
         }
 
         let state = self.state.lock().await;
