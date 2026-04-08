@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.16] - 2026-04-08
+
+### Fixed
+
+- **signAction broadcast results discarded** — `sign_action` was silently dropping
+  `post_beef` results with `let _post_results`, leaving transactions stuck as
+  `unprocessed` forever. Now mirrors `create_action`'s post-broadcast status updates
+  (`unproven`/`unmined`), matching the TS shared `processAction` → `shareReqsWithWorld`
+  code path.
+
+- **UTXOs permanently locked after failed transactions** — When releasing UTXOs on
+  tx failure, `spent_by` was set to `Some(0)` which wrote `spentBy = 0` to the DB,
+  but UTXO selection filtered with `spent_by.is_none()`, permanently excluding released
+  UTXOs. Fix: `spent_by = 0` now emits `spentBy = NULL` in SQL, and the secondary
+  `spent_by.is_none()` filter was removed, matching TS which uses `spendable = true`
+  as the sole availability gate.
+
+- **`is_delayed` inversion** — `is_delayed` was set to `!accept_delayed`, but the TS
+  reference assigns `isDelayed = acceptDelayedBroadcast` (no negation). With default
+  `acceptDelayedBroadcast = true`, the inversion caused immediate broadcast instead of
+  deferring to `TaskSendWaiting`.
+
+- **Derivation prefix/suffix now base64** — Changed `random_hex_string()` from hex to
+  base64 encoding (8 random bytes via `rand`), matching TS `randomBytesBase64(8)`.
+  Fixes "derivationPrefix must be valid base64" BRC-42 validation errors.
+
+- **`WalletStorageManager.get_auth()` auto-initializes** — Now calls `make_available()`
+  instead of returning `WERR_NOT_ACTIVE`, matching TS and preventing "not yet available"
+  errors from monitor tasks.
+
+- **Monitor storage initialization** — Polling loop now calls `storage.make_available()`
+  before tasks run, ensuring task storage clones are initialized on first iteration.
+
+### Added
+
+- **`ArcConfig.headers` field** — `headers: Option<HashMap<String, String>>` matching
+  TS SDK's `headers?: Record<string, string>`. Custom headers (e.g.,
+  `X-SkipScriptValidation`) are injected into all TX submissions.
+
+- **ARC BEEF as JSON hex format** — `post_beef` now sends `{ "rawTx": "<hex>" }` with
+  `Content-Type: application/json` instead of raw binary with `application/octet-stream`,
+  matching the TS SDK's `postRawTx` pattern.
+
+- **`get_tx_data` for multi-txid BEEF** — After posting BEEF, queries
+  `GET /v1/tx/{txid}` for additional txids, matching TS SDK's `postBeef` pattern.
+
+- **Random `deployment_id` default** — `default_deployment_id()` generates
+  `rust-sdk-{16 hex chars}` matching TS SDK's `ts-sdk-{Random(16) as hex}` pattern.
+
+- 4 new ARC integration tests: JSON content-type, custom headers, post body format,
+  and serialization verification.
+
 ## [0.2.15] - 2026-04-06
 
 ### Fixed
