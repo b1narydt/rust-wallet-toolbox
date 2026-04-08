@@ -234,6 +234,13 @@ impl Monitor {
         );
 
         let handle = tokio::spawn(async move {
+            // Ensure the monitor's storage manager is initialized before tasks run.
+            // Tasks created by the builder get fresh WalletStorageManager clones that
+            // need make_available() before they can query the database.
+            if let Err(e) = storage.make_available().await {
+                warn!("Monitor storage make_available failed: {e}");
+            }
+
             // First iteration: run async_setup on all tasks
             for task in tasks.iter_mut() {
                 if !running.load(Ordering::SeqCst) {

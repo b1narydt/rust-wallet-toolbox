@@ -341,8 +341,10 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         ..Default::default()
     };
     let mut available_change_outputs = storage.find_outputs(&change_find_args, trx_opt).await?;
-    // Filter out any that already have a spentBy value
-    available_change_outputs.retain(|o| o.spent_by.is_none());
+    // TS reference uses `spendable = true` as the primary gate for UTXO availability
+    // (the find_outputs query already filters on spendable=true). Filtering on
+    // spent_by.is_none() incorrectly excluded UTXOs released after failed transactions
+    // (where spent_by was set to 0 rather than NULL due to OutputPartial limitations).
     // Sort by satoshis ascending (prefer smaller)
     available_change_outputs.sort_by(|a, b| a.satoshis.cmp(&b.satoshis));
 

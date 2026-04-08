@@ -624,16 +624,14 @@ fn parse_counterparty(counterparty: &str) -> WalletResult<Counterparty> {
     }
 }
 
-/// Generate a random hex string for derivation prefixes/suffixes.
+/// Generate a random base64 string for derivation prefixes/suffixes.
+/// BRC-42 requires these to be valid base64 (matching TS `randomBytesBase64(8)`).
 fn random_hex_string() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    let nanos = now.as_nanos();
-    // Combine timestamp nanos with a simple counter for uniqueness
-    let random_val: u64 = (nanos as u64) ^ (nanos.wrapping_shr(64) as u64);
-    format!("{:016x}", random_val)
+    use base64::Engine;
+    use rand::RngCore;
+    let mut buf = [0u8; 8];
+    rand::thread_rng().fill_bytes(&mut buf);
+    base64::engine::general_purpose::STANDARD.encode(buf)
 }
 
 // ---------------------------------------------------------------------------
@@ -770,6 +768,10 @@ mod tests {
     #[test]
     fn test_random_hex_string_length() {
         let s = random_hex_string();
-        assert_eq!(s.len(), 16);
+        // 8 random bytes → base64 = 12 chars
+        assert_eq!(s.len(), 12);
+        // Must be valid base64
+        use base64::Engine;
+        assert!(base64::engine::general_purpose::STANDARD.decode(&s).is_ok());
     }
 }

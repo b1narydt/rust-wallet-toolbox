@@ -87,9 +87,55 @@ pub async fn signer_sign_action(
     };
     let process_result = storage.process_action(&auth_id, &process_args).await?;
 
-    // --- Step 5: Broadcast if needed ---
+    // --- Step 5: Broadcast and update status ---
+    // Must mirror create_action's post-broadcast handling. In the TS reference
+    // implementation, signAction and createAction share the same processAction →
+    // shareReqsWithWorld → attemptToPostReqsToNetwork code path. Without status
+    // updates here, transactions stay stuck as unprocessed and outputs remain
+    // invisible to balance/UTXO queries.
     if !is_no_send && !is_delayed {
-        let _post_results = services.post_beef(&beef_bytes, &[txid.clone()]).await;
+        let post_results = services.post_beef(&beef_bytes, &[txid.clone()]).await;
+        for pr in &post_results {
+            if pr.status != "success" {
+                tracing::warn!(
+                    provider = %pr.name,
+                    status = %pr.status,
+                    error = ?pr.error,
+                    txid = %txid,
+                    "signAction post_beef broadcast failed"
+                );
+            } else {
+                tracing::info!(provider = %pr.name, txid = %txid, "signAction post_beef broadcast success");
+            }
+        }
+
+        // Update Transaction status to unproven (broadcast attempted)
+        let _ = storage
+            .update_transaction_status(&txid, crate::status::TransactionStatus::Unproven)
+            .await;
+
+        // Update ProvenTxReq status to unmined
+        let reqs = storage
+            .find_proven_tx_reqs(&crate::storage::find_args::FindProvenTxReqsArgs {
+                partial: crate::storage::find_args::ProvenTxReqPartial {
+                    txid: Some(txid.clone()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .await
+            .unwrap_or_default();
+        for req in &reqs {
+            let _ = storage
+                .update_proven_tx_req(
+                    req.proven_tx_req_id,
+                    &crate::storage::find_args::ProvenTxReqPartial {
+                        status: Some(crate::status::ProvenTxReqStatus::Unmined),
+                        ..Default::default()
+                    },
+                )
+                .await;
+        }
     }
 
     // returnTXIDOnly: check signAction's own option, falling back to createAction's

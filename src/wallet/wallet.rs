@@ -960,7 +960,7 @@ impl WalletInterface for Wallet {
             is_new_tx: true,
             is_sign_action: !sign_and_process,
             is_no_send: no_send,
-            is_delayed: !accept_delayed,
+            is_delayed: accept_delayed,
             is_send_with: !options.send_with.is_empty(),
         };
 

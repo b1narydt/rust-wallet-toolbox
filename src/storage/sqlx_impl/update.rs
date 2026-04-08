@@ -370,8 +370,14 @@ mod sqlite_impl {
                 binds.push(BindVal::String(v.clone()));
             }
             if let Some(v) = &update.spent_by {
-                sets.push("spentBy = ?");
-                binds.push(BindVal::Int64(*v));
+                if *v == 0 {
+                    // Convention: spent_by=0 means "clear to NULL" (TS sets spentBy=undefined→NULL).
+                    // Transaction IDs are auto-incrementing from 1, so 0 is never valid.
+                    sets.push("spentBy = NULL");
+                } else {
+                    sets.push("spentBy = ?");
+                    binds.push(BindVal::Int64(*v));
+                }
             }
             sets.push("updated_at = datetime('now')");
             let sql = format!("UPDATE outputs SET {} WHERE outputId = ?", sets.join(", "));
@@ -841,7 +847,14 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.output_type { idx += 1; sets.push(format!("{} = {}", qc("type"), ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.txid { idx += 1; sets.push(format!("txid = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.sender_identity_key { idx += 1; sets.push(format!("senderIdentityKey = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.spent_by { idx += 1; sets.push(format!("spentBy = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
+                    if let Some(v) = &update.spent_by {
+                        if *v == 0 {
+                            // Convention: spent_by=0 means "clear to NULL" (matches TS spentBy=undefined→NULL)
+                            sets.push("spentBy = NULL".to_string());
+                        } else {
+                            idx += 1; sets.push(format!("spentBy = {}", ph(idx))); binds.push(BindVal::Int64(*v));
+                        }
+                    }
                     sets.push(format!("updated_at = {}", $now_expr));
                     idx += 1; let sql = format!("UPDATE outputs SET {} WHERE outputId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
