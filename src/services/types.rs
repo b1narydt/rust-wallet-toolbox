@@ -499,16 +499,38 @@ pub struct ArcConfig {
     /// Optional HTTP client identifier.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub http_client: Option<String>,
+    /// Additional headers to be attached to all tx submissions.
+    /// Matches TS SDK's `headers?: Record<string, string>` field.
+    /// Use for `X-SkipScriptValidation`, `X-SkipTxValidation`, etc.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<std::collections::HashMap<String, String>>,
+}
+
+/// Generate a default deployment ID matching TS SDK pattern: `rust-sdk-{16 random hex chars}`.
+///
+/// TS SDK uses `ts-sdk-{Random(16) as hex}` so each deployment is uniquely
+/// traceable in ARC's request logs. Rust uses the same pattern with `rust-sdk-` prefix.
+fn default_deployment_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    // 16 hex chars derived from timestamp + process id for uniqueness without rand dependency.
+    let pid = std::process::id() as u128;
+    let mixed = nanos.wrapping_mul(0x9E3779B97F4A7C15).wrapping_add(pid);
+    format!("rust-sdk-{:016x}", mixed as u64)
 }
 
 impl Default for ArcConfig {
     fn default() -> Self {
         Self {
             api_key: None,
-            deployment_id: "wallet-toolbox".to_string(),
+            deployment_id: default_deployment_id(),
             callback_url: None,
             callback_token: None,
             http_client: None,
+            headers: None,
         }
     }
 }

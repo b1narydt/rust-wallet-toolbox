@@ -112,12 +112,16 @@ fn test_beef_v1_unchanged() {
 
 #[test]
 fn test_arc_headers_with_full_config() {
+    let mut custom_headers = std::collections::HashMap::new();
+    custom_headers.insert("X-SkipScriptValidation".to_string(), "true".to_string());
+
     let config = ArcConfig {
         api_key: Some("test-key-123".to_string()),
         deployment_id: "test-deploy-1".to_string(),
         callback_url: Some("https://example.com/callback".to_string()),
         callback_token: Some("cb-token-456".to_string()),
         http_client: None,
+        headers: Some(custom_headers),
     };
 
     let headers = bsv_wallet_toolbox::services::providers::arc::build_arc_headers(&config);
@@ -138,9 +142,15 @@ fn test_arc_headers_with_full_config() {
         headers.get("X-CallbackToken").unwrap().to_str().unwrap(),
         "cb-token-456"
     );
+    // Updated: TS SDK parity — Content-Type is application/json (not octet-stream).
     assert_eq!(
         headers.get("Content-Type").unwrap().to_str().unwrap(),
-        "application/octet-stream"
+        "application/json"
+    );
+    // New: custom headers from ArcConfig.headers field.
+    assert_eq!(
+        headers.get("X-SkipScriptValidation").unwrap().to_str().unwrap(),
+        "true"
     );
 }
 
@@ -156,6 +166,72 @@ fn test_arc_headers_minimal_config() {
     assert!(headers.get("Authorization").is_none());
     assert!(headers.get("X-CallbackUrl").is_none());
     assert!(headers.get("X-CallbackToken").is_none());
+    // Default config has no custom headers.
+    assert!(headers.get("X-SkipScriptValidation").is_none());
+}
+
+#[test]
+fn test_arc_headers_content_type_is_json() {
+    // Regression test: Content-Type must be application/json to match TS SDK.
+    // Previously application/octet-stream which TAAL ARC rejected.
+    let config = ArcConfig::default();
+    let headers = bsv_wallet_toolbox::services::providers::arc::build_arc_headers(&config);
+    assert_eq!(
+        headers.get("Content-Type").unwrap().to_str().unwrap(),
+        "application/json",
+    );
+}
+
+#[test]
+fn test_arc_custom_headers_multiple() {
+    // Verify multiple custom headers all flow through.
+    let mut custom = std::collections::HashMap::new();
+    custom.insert("X-SkipScriptValidation".to_string(), "true".to_string());
+    custom.insert("X-SkipFeeValidation".to_string(), "true".to_string());
+    custom.insert("X-SkipTxValidation".to_string(), "true".to_string());
+
+    let config = ArcConfig {
+        api_key: None,
+        deployment_id: "test".to_string(),
+        callback_url: None,
+        callback_token: None,
+        http_client: None,
+        headers: Some(custom),
+    };
+
+    let headers = bsv_wallet_toolbox::services::providers::arc::build_arc_headers(&config);
+    assert_eq!(headers.get("X-SkipScriptValidation").unwrap().to_str().unwrap(), "true");
+    assert_eq!(headers.get("X-SkipFeeValidation").unwrap().to_str().unwrap(), "true");
+    assert_eq!(headers.get("X-SkipTxValidation").unwrap().to_str().unwrap(), "true");
+}
+
+#[test]
+fn test_arc_post_body_is_json_with_rawtx_hex() {
+    // Verify the request body matches TS SDK's postRawTx data format:
+    // { "rawTx": "<hex>" }
+    let beef_bytes: Vec<u8> = vec![0x01, 0x02, 0xab, 0xcd, 0xef];
+    let body = bsv_wallet_toolbox::services::providers::arc::build_arc_post_body(&beef_bytes);
+
+    // Must be a JSON object.
+    assert!(body.is_object(), "body must be a JSON object");
+
+    // Must have exactly one field: rawTx.
+    let obj = body.as_object().unwrap();
+    assert_eq!(obj.len(), 1, "body must contain exactly one field");
+    assert!(obj.contains_key("rawTx"), "body must contain rawTx field");
+
+    // rawTx value must be lowercase hex of the input bytes.
+    let raw_tx = obj.get("rawTx").unwrap().as_str().unwrap();
+    assert_eq!(raw_tx, "0102abcdef", "rawTx must be lowercase hex of input");
+}
+
+#[test]
+fn test_arc_post_body_serializes_to_expected_string() {
+    // Regression: serialized body must be exactly { "rawTx": "<hex>" }
+    let beef_bytes: Vec<u8> = vec![0xde, 0xad, 0xbe, 0xef];
+    let body = bsv_wallet_toolbox::services::providers::arc::build_arc_post_body(&beef_bytes);
+    let serialized = serde_json::to_string(&body).unwrap();
+    assert_eq!(serialized, r#"{"rawTx":"deadbeef"}"#);
 }
 
 // ---------------------------------------------------------------------------
