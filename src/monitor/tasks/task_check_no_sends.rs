@@ -66,6 +66,10 @@ impl TaskCheckNoSends {
 
 #[async_trait]
 impl WalletMonitorTask for TaskCheckNoSends {
+    fn storage_manager(&self) -> Option<&WalletStorageManager> {
+        Some(&self.storage)
+    }
+
     fn name(&self) -> &str {
         "CheckNoSends"
     }

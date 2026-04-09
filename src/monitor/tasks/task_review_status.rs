@@ -49,6 +49,10 @@ impl TaskReviewStatus {
 
 #[async_trait]
 impl WalletMonitorTask for TaskReviewStatus {
+    fn storage_manager(&self) -> Option<&WalletStorageManager> {
+        Some(&self.storage)
+    }
+
     fn name(&self) -> &str {
         "ReviewStatus"
     }

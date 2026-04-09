@@ -89,6 +89,10 @@ impl TaskReorg {
 
 #[async_trait]
 impl WalletMonitorTask for TaskReorg {
+    fn storage_manager(&self) -> Option<&WalletStorageManager> {
+        Some(&self.storage)
+    }
+
     fn name(&self) -> &str {
         "Reorg"
     }

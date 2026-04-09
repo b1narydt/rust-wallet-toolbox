@@ -386,8 +386,31 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                 payment,
             } => {
                 let sender_key = Some(payment.sender_identity_key.to_der_hex());
-                let prefix = Some(String::from_utf8_lossy(&payment.derivation_prefix).to_string());
-                let suffix = Some(String::from_utf8_lossy(&payment.derivation_suffix).to_string());
+                // BRC-29/BRC-42 derivation params come in as raw bytes on
+                // the wire but MUST be stored as base64 text — the signer
+                // pipeline (and TS wallet-toolbox) expects base64 strings
+                // when reading back to derive the spending key.
+                //
+                // Previously this used `String::from_utf8_lossy` which
+                // corrupted the binary bytes into Unicode replacement
+                // characters; the stored garbage then caused the signer
+                // to derive a different key than the one used to lock the
+                // output, producing OP_EQUALVERIFY failures at broadcast
+                // (ARC error 461).
+                //
+                // Matches the intent of `c0f4b1a` ("fix: derivation
+                // prefix/suffix must be base64, not hex") but for the
+                // receive side of the storage path — `c0f4b1a` only
+                // fixed the random-generator side in `setup.rs`.
+                use base64::Engine as _;
+                let prefix = Some(
+                    base64::engine::general_purpose::STANDARD
+                        .encode(&payment.derivation_prefix),
+                );
+                let suffix = Some(
+                    base64::engine::general_purpose::STANDARD
+                        .encode(&payment.derivation_suffix),
+                );
 
                 if is_merge {
                     let find_out = FindOutputsArgs {

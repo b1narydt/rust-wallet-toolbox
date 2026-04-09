@@ -102,6 +102,10 @@ impl TaskCheckForProofs {
 
 #[async_trait]
 impl WalletMonitorTask for TaskCheckForProofs {
+    fn storage_manager(&self) -> Option<&WalletStorageManager> {
+        Some(&self.storage)
+    }
+
     fn name(&self) -> &str {
         "CheckForProofs"
     }

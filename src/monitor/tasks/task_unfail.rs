@@ -313,6 +313,10 @@ impl TaskUnFail {
 
 #[async_trait]
 impl WalletMonitorTask for TaskUnFail {
+    fn storage_manager(&self) -> Option<&WalletStorageManager> {
+        Some(&self.storage)
+    }
+
     fn name(&self) -> &str {
         "UnFail"
     }

@@ -420,6 +420,8 @@ mod sqlite_impl {
             proven_tx: &ProvenTx,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
+            use crate::storage::traits::reader::StorageReader;
+
             // Insert the proven tx
             let proven_tx_id = self.insert_proven_tx_impl(proven_tx, trx).await?;
 
@@ -434,6 +436,45 @@ mod sqlite_impl {
                 trx,
             )
             .await?;
+
+            // Cascade the proof to any `transactions` row with a matching
+            // txid. Without this, the transaction row stays stuck at
+            // `unproven` forever even though the tx is mined and the
+            // associated ProvenTxReq is `completed`. The frontend uses
+            // `transactions.status` for balance and listOutputs visibility
+            // (see `TX_STATUS_ALLOWED` in `list_outputs.rs`), so a stuck
+            // `unproven` makes the wallet report incorrect balances (e.g.
+            // confirmed incoming payments appear as unconfirmed, confirmed
+            // change appears as unspendable).
+            //
+            // Matches TS `processProvenTx` which calls
+            // `updateTransaction({ status: 'completed', provenTxId })`
+            // alongside the ProvenTxReq update.
+            let matching_txs = self
+                .find_transactions(
+                    &FindTransactionsArgs {
+                        partial: TransactionPartial {
+                            txid: Some(proven_tx.txid.clone()),
+                            ..Default::default()
+                        },
+                        no_raw_tx: true,
+                        ..Default::default()
+                    },
+                    trx,
+                )
+                .await?;
+            for t in &matching_txs {
+                self.update_transaction_impl(
+                    t.transaction_id,
+                    &TransactionPartial {
+                        status: Some(crate::status::TransactionStatus::Completed),
+                        proven_tx_id: Some(proven_tx_id),
+                        ..Default::default()
+                    },
+                    trx,
+                )
+                .await?;
+            }
 
             Ok(proven_tx_id)
         }

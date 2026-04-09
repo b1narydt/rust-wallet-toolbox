@@ -5,12 +5,18 @@
 //! - wallet-toolbox/src/storage/methods/attemptToPostReqsToNetwork.ts
 //! - wallet-toolbox/src/monitor/tasks/TaskCheckForProofs.ts (getProofs)
 
+use std::collections::HashSet;
+use std::io::Cursor;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use bsv::transaction::beef::{Beef, BEEF_V2};
+use bsv::transaction::transaction::Transaction as BsvTransaction;
 
 use crate::error::WalletResult;
 use crate::services::traits::WalletServices;
 use crate::services::types::GetMerklePathResult;
 use crate::status::ProvenTxReqStatus;
+use crate::storage::beef::{get_valid_beef_for_txid, TrustSelf};
 use crate::storage::find_args::ProvenTxReqPartial;
 use crate::storage::manager::WalletStorageManager;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
@@ -89,15 +95,22 @@ pub struct PostReqsToNetworkResult {
 /// Attempt to post pending transaction requests to the network.
 ///
 /// For each ProvenTxReq:
-/// 1. Validate it has rawTx and inputBEEF data
-/// 2. Post BEEF to the network via services.post_beef()
+/// 1. Rebuild the broadcast BEEF on demand from storage (TS parity with
+///    `StorageProvider.mergeReqToBeefToShareExternally`). The stored
+///    `inputBEEF` is treated as a hint/cache, not the source of truth —
+///    missing source BEEFs are fetched from `proven_txs` at send time.
+/// 2. Post the rebuilt BEEF to the network via `services.post_beef()`
 /// 3. Update req status based on results:
 ///    - success -> unmined
 ///    - double spend -> doubleSpend
 ///    - invalid -> invalid
 ///    - service error -> increment attempts, keep as sending
+/// 4. Cascade the outcome to `transactions.status` so frontend
+///    `listOutputs` (which filters by `TX_STATUS_ALLOWED`) sees the
+///    outputs once broadcast has been attempted.
 ///
 /// Translated from wallet-toolbox/src/storage/methods/attemptToPostReqsToNetwork.ts
+/// (specifically `validateReqsAndMergeBeefs` → `mergeReqToBeefToShareExternally`).
 pub async fn attempt_to_post_reqs_to_network(
     storage: &WalletStorageManager,
     services: &dyn WalletServices,
@@ -113,15 +126,13 @@ pub async fn attempt_to_post_reqs_to_network(
     }
 
     for req in reqs {
-        // Validate the request has the needed data
-        let no_raw_tx = req.raw_tx.is_empty();
-        let no_input_beef = req.input_beef.as_ref().map_or(true, |b| b.is_empty());
-
-        if no_raw_tx || no_input_beef {
-            // Mark as invalid -- missing required data
+        // rawTx is the only field we truly cannot rebuild — if missing,
+        // mark the req invalid. Everything else (including inputBEEF)
+        // can be reconstructed from storage state below.
+        if req.raw_tx.is_empty() {
             result.log.push_str(&format!(
-                "  req {} txid {}: invalid (noRawTx={}, noInputBEEF={})\n",
-                req.proven_tx_req_id, req.txid, no_raw_tx, no_input_beef
+                "  req {} txid {}: invalid (noRawTx=true)\n",
+                req.proven_tx_req_id, req.txid
             ));
             let update = ProvenTxReqPartial {
                 status: Some(ProvenTxReqStatus::Invalid),
@@ -138,12 +149,156 @@ pub async fn attempt_to_post_reqs_to_network(
             continue;
         }
 
-        // Use inputBEEF as the beef data to post
-        let beef_bytes = req.input_beef.as_ref().unwrap();
+        // Rebuild the broadcast BEEF at send time, matching TS
+        // StorageProvider.mergeReqToBeefToShareExternally:
+        //
+        //   1. Start with whatever inputBEEF the req has (may be None,
+        //      empty, or partial — that's fine).
+        //   2. Merge the req's own rawTx into the BEEF so it becomes the
+        //      atomic target.
+        //   3. Walk each tx input; for any source txid not already in the
+        //      BEEF, fetch it via get_valid_beef_for_txid (which chains
+        //      through proven_txs and recovers merkle proofs on demand).
+        //   4. Serialize as plain BEEF (NOT atomic BEEF / BRC-95) — ARC's
+        //      /v1/tx endpoint expects plain BEEF. Atomic BEEF prepends
+        //      a 4-byte `01010101` marker + 32-byte txid which ARC's
+        //      parser doesn't recognize and falls through to raw-tx
+        //      decoding, producing "script(...): got N bytes: unexpected
+        //      EOF" errors.
+        //
+        // This makes delayed broadcast resilient to partial/NULL
+        // inputBEEF in the DB — the complete BEEF is reconstructed
+        // from authoritative storage state at broadcast time.
+        let active = match storage.active() {
+            Some(a) => a.clone(),
+            None => {
+                result.log.push_str(&format!(
+                    "  req {} txid {}: skipped (storage not active)\n",
+                    req.proven_tx_req_id, req.txid
+                ));
+                continue;
+            }
+        };
+
+        let mut beef = Beef::new(BEEF_V2);
+
+        // Step 1: merge any pre-existing inputBEEF (partial source proofs).
+        if let Some(ref ib) = req.input_beef {
+            if !ib.is_empty() {
+                let _ = beef.merge_beef_from_binary(ib);
+            }
+        }
+
+        // Step 2: merge the req's own rawTx so it becomes the atomic target.
+        if let Err(e) = beef.merge_raw_tx(&req.raw_tx, None) {
+            result.log.push_str(&format!(
+                "  req {} txid {}: invalid (mergeRawTxFailed: {})\n",
+                req.proven_tx_req_id, req.txid, e
+            ));
+            let update = ProvenTxReqPartial {
+                status: Some(ProvenTxReqStatus::Invalid),
+                ..Default::default()
+            };
+            let _ = storage
+                .update_proven_tx_req(req.proven_tx_req_id, &update)
+                .await;
+            result.details.push(PostReqDetail {
+                txid: req.txid.clone(),
+                req_id: req.proven_tx_req_id,
+                status: PostReqStatus::Invalid,
+            });
+            continue;
+        }
+
+        // Step 3: parse tx and fetch any missing source BEEFs from storage.
+        let parsed_tx = match BsvTransaction::from_binary(&mut Cursor::new(&req.raw_tx)) {
+            Ok(t) => t,
+            Err(e) => {
+                result.log.push_str(&format!(
+                    "  req {} txid {}: invalid (parseTxFailed: {})\n",
+                    req.proven_tx_req_id, req.txid, e
+                ));
+                let update = ProvenTxReqPartial {
+                    status: Some(ProvenTxReqStatus::Invalid),
+                    ..Default::default()
+                };
+                let _ = storage
+                    .update_proven_tx_req(req.proven_tx_req_id, &update)
+                    .await;
+                result.details.push(PostReqDetail {
+                    txid: req.txid.clone(),
+                    req_id: req.proven_tx_req_id,
+                    status: PostReqStatus::Invalid,
+                });
+                continue;
+            }
+        };
+
+        let known_txids: HashSet<String> = HashSet::new();
+        let mut missing_source = false;
+        for input in &parsed_tx.inputs {
+            let source_txid = match &input.source_txid {
+                Some(t) => t.clone(),
+                None => continue,
+            };
+            if source_txid.is_empty() || beef.find_txid(&source_txid).is_some() {
+                continue;
+            }
+            match get_valid_beef_for_txid(&*active, &source_txid, TrustSelf::No, &known_txids)
+                .await
+            {
+                Ok(Some(src_bytes)) => {
+                    if !src_bytes.is_empty() {
+                        let _ = beef.merge_beef_from_binary(&src_bytes);
+                    }
+                }
+                Ok(None) | Err(_) => {
+                    missing_source = true;
+                    result.log.push_str(&format!(
+                        "  req {} txid {}: missing source BEEF for {}\n",
+                        req.proven_tx_req_id, req.txid, source_txid
+                    ));
+                }
+            }
+        }
+
+        if missing_source {
+            // Don't mark invalid — a later run of TaskSendWaiting may
+            // succeed once the source tx is proven in storage. Leave
+            // status untouched so the monitor retries on the next tick.
+            result.details.push(PostReqDetail {
+                txid: req.txid.clone(),
+                req_id: req.proven_tx_req_id,
+                status: PostReqStatus::Unknown,
+            });
+            continue;
+        }
+
+        // Step 4: serialize as plain BEEF targeted at this req's txid.
+        let mut beef_bytes = Vec::new();
+        if let Err(e) = beef.to_binary(&mut beef_bytes) {
+            result.log.push_str(&format!(
+                "  req {} txid {}: invalid (serializeFailed: {})\n",
+                req.proven_tx_req_id, req.txid, e
+            ));
+            let update = ProvenTxReqPartial {
+                status: Some(ProvenTxReqStatus::Invalid),
+                ..Default::default()
+            };
+            let _ = storage
+                .update_proven_tx_req(req.proven_tx_req_id, &update)
+                .await;
+            result.details.push(PostReqDetail {
+                txid: req.txid.clone(),
+                req_id: req.proven_tx_req_id,
+                status: PostReqStatus::Invalid,
+            });
+            continue;
+        }
         let txids = vec![req.txid.clone()];
 
         // Post BEEF to network
-        let post_results = services.post_beef(beef_bytes, &txids).await;
+        let post_results = services.post_beef(&beef_bytes, &txids).await;
 
         // Aggregate results across providers
         let mut success_count = 0u32;
@@ -197,12 +352,43 @@ pub async fn attempt_to_post_reqs_to_network(
         ));
 
         let update = ProvenTxReqPartial {
-            status: Some(new_req_status),
+            status: Some(new_req_status.clone()),
             ..Default::default()
         };
         let _ = storage
             .update_proven_tx_req(req.proven_tx_req_id, &update)
             .await;
+
+        // Cascade the broadcast outcome to the Transaction row so that
+        // `listOutputs` (which filters on `tx.status` via
+        // `TX_STATUS_ALLOWED`) sees the outputs as usable. Matches TS
+        // `processAction` postStatus semantics:
+        //   success       → tx `unproven`  (broadcast accepted, awaiting proof)
+        //   doubleSpend   → tx `failed`    (will never confirm)
+        //   invalid       → tx `failed`    (permanent reject)
+        //   service error → tx `unproven`  (transient; req stays `sending`
+        //                                   so TaskSendWaiting retries,
+        //                                   but tx advances past
+        //                                   `unprocessed` so outputs are
+        //                                   visible)
+        let new_tx_status = match new_req_status {
+            ProvenTxReqStatus::Unmined => Some(crate::status::TransactionStatus::Unproven),
+            ProvenTxReqStatus::DoubleSpend => Some(crate::status::TransactionStatus::Failed),
+            ProvenTxReqStatus::Invalid => Some(crate::status::TransactionStatus::Failed),
+            ProvenTxReqStatus::Sending => Some(crate::status::TransactionStatus::Unproven),
+            _ => None,
+        };
+        if let Some(tx_status) = new_tx_status {
+            if let Err(e) = storage
+                .update_transaction_status(&req.txid, tx_status)
+                .await
+            {
+                result.log.push_str(&format!(
+                    "  req {} txid {}: warn update_transaction_status: {}\n",
+                    req.proven_tx_req_id, req.txid, e
+                ));
+            }
+        }
 
         result.details.push(PostReqDetail {
             txid: req.txid.clone(),
