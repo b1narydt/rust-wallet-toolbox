@@ -86,8 +86,31 @@ pub async fn signer_internalize_action(
             let actual_script = tx.outputs[oi].locking_script.to_binary();
 
             // Build the key ID: "{derivation_prefix} {derivation_suffix}"
-            let derivation_prefix = String::from_utf8_lossy(&payment.derivation_prefix).to_string();
-            let derivation_suffix = String::from_utf8_lossy(&payment.derivation_suffix).to_string();
+            //
+            // The derivation params arrive as raw `Vec<u8>` on the
+            // `Payment` struct (the BSV SDK deserializes wire-format
+            // base64 into bytes before reaching this code). BRC-42
+            // ECDH derivation expects the `key_id` to be a base64
+            // STRING — matching how the sender constructed the
+            // locking script, which uses the base64 text form of
+            // these params directly as the key_id. Previously this
+            // used `String::from_utf8_lossy` which replaces any
+            // non-UTF-8 sequence with U+FFFD, producing a corrupted
+            // key_id that derived a different pubkey than the sender
+            // used to lock the output. The subsequent P2PKH
+            // script-match check then fails with "Wallet payment
+            // output has locking script that doesn't match BRC-29
+            // derivation".
+            //
+            // This is the twin of the bug fixed in the
+            // storage/methods/internalize_action.rs receive path by
+            // this same PR — both layers must base64-encode the
+            // bytes for the round-trip to work.
+            use base64::Engine as _;
+            let derivation_prefix = base64::engine::general_purpose::STANDARD
+                .encode(&payment.derivation_prefix);
+            let derivation_suffix = base64::engine::general_purpose::STANDARD
+                .encode(&payment.derivation_suffix);
             let key_id = format!("{} {}", derivation_prefix, derivation_suffix);
 
             // The sender's identity key is the counterparty for derivation
