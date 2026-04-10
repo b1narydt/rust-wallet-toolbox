@@ -62,6 +62,10 @@ impl TaskFailAbandoned {
 
 #[async_trait]
 impl WalletMonitorTask for TaskFailAbandoned {
+    fn storage_manager(&self) -> Option<&WalletStorageManager> {
+        Some(&self.storage)
+    }
+
     fn name(&self) -> &str {
         "FailAbandoned"
     }

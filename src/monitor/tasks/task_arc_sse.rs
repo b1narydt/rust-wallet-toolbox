@@ -253,11 +253,20 @@ impl TaskArcSse {
 
 #[async_trait]
 impl WalletMonitorTask for TaskArcSse {
+    fn storage_manager(&self) -> Option<&WalletStorageManager> {
+        Some(&self.storage)
+    }
+
     fn name(&self) -> &str {
         "ArcadeSSE"
     }
 
     async fn async_setup(&mut self) -> Result<(), WalletError> {
+        // Preserve the default `async_setup` behavior (make storage
+        // available) even though we're overriding this method for the
+        // SSE-specific wiring below. `make_available()` is idempotent.
+        self.storage.make_available().await?;
+
         let callback_token = match &self.callback_token {
             Some(t) if !t.is_empty() => t.clone(),
             _ => {

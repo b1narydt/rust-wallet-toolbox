@@ -45,6 +45,10 @@ impl TaskPurge {
 
 #[async_trait]
 impl WalletMonitorTask for TaskPurge {
+    fn storage_manager(&self) -> Option<&WalletStorageManager> {
+        Some(&self.storage)
+    }
+
     fn name(&self) -> &str {
         "Purge"
     }
