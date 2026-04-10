@@ -77,6 +77,13 @@ pub struct PostReqDetail {
     pub req_id: i64,
     /// Resulting status after posting.
     pub status: PostReqStatus,
+    /// Set when the broadcast-outcome → `transactions.status` cascade
+    /// failed. The req's own status is still updated, but the
+    /// matching `transactions` row may be stuck at its previous value
+    /// (e.g. `unprocessed`) so the caller MUST either retry or alert:
+    /// silently ignoring this reintroduces the visibility bug (hidden
+    /// outputs / stale balance) that the cascade was added to fix.
+    pub cascade_update_failed: bool,
 }
 
 /// Result of attempt_to_post_reqs_to_network.
@@ -110,7 +117,7 @@ pub struct PostReqsToNetworkResult {
 ///    outputs once broadcast has been attempted.
 ///
 /// Translated from wallet-toolbox/src/storage/methods/attemptToPostReqsToNetwork.ts
-/// (specifically `validateReqsAndMergeBeefs` → `mergeReqToBeefToShareExternally`).
+/// (specifically `StorageProvider.mergeReqToBeefToShareExternally`).
 pub async fn attempt_to_post_reqs_to_network(
     storage: &WalletStorageManager,
     services: &dyn WalletServices,
@@ -126,6 +133,28 @@ pub async fn attempt_to_post_reqs_to_network(
     }
 
     for req in reqs {
+        // Don't degrade a req that another task already advanced.
+        // `TaskCheckForProofs` and `TaskSendWaiting` share storage and
+        // can run concurrently — if a proof landed between the time
+        // this batch was read and now, the req is already `Completed`
+        // (proof cascaded to the tx row) or `Unmined` (accepted,
+        // awaiting proof), and writing `Unmined`/`Sending`/`Failed`
+        // here would clobber that state and knock the tx row back to
+        // `Unproven`/`Failed`. Matches TS
+        // `attemptToPostReqsToNetwork.ts`:
+        //
+        //   if (['completed', 'unmined'].indexOf(req.status) >= 0) continue
+        if matches!(
+            req.status,
+            ProvenTxReqStatus::Completed | ProvenTxReqStatus::Unmined
+        ) {
+            result.log.push_str(&format!(
+                "  req {} txid {}: skipped (already {:?})\n",
+                req.proven_tx_req_id, req.txid, req.status
+            ));
+            continue;
+        }
+
         // rawTx is the only field we truly cannot rebuild — if missing,
         // mark the req invalid. Everything else (including inputBEEF)
         // can be reconstructed from storage state below.
@@ -138,13 +167,23 @@ pub async fn attempt_to_post_reqs_to_network(
                 status: Some(ProvenTxReqStatus::Invalid),
                 ..Default::default()
             };
-            let _ = storage
+            if let Err(e) = storage
                 .update_proven_tx_req(req.proven_tx_req_id, &update)
-                .await;
+                .await
+            {
+                // Failing to mark invalid means TaskSendWaiting will
+                // loop on this req forever; log so DB issues are
+                // observable.
+                result.log.push_str(&format!(
+                    "  req {} txid {}: warn update_proven_tx_req(Invalid) failed: {}\n",
+                    req.proven_tx_req_id, req.txid, e
+                ));
+            }
             result.details.push(PostReqDetail {
                 txid: req.txid.clone(),
                 req_id: req.proven_tx_req_id,
                 status: PostReqStatus::Invalid,
+                cascade_update_failed: false,
             });
             continue;
         }
@@ -182,10 +221,21 @@ pub async fn attempt_to_post_reqs_to_network(
 
         let mut beef = Beef::new(BEEF_V2);
 
-        // Step 1: merge any pre-existing inputBEEF (partial source proofs).
+        // Step 1: merge any pre-existing inputBEEF (partial source
+        // proofs). Treated as a best-effort hint — if the stored blob
+        // is corrupt or version-mismatched, step 3 below will refetch
+        // the source BEEFs from authoritative storage state, so we
+        // don't need to fail the req here. We DO log so stored
+        // `inputBEEF` decay is observable.
         if let Some(ref ib) = req.input_beef {
             if !ib.is_empty() {
-                let _ = beef.merge_beef_from_binary(ib);
+                if let Err(e) = beef.merge_beef_from_binary(ib) {
+                    result.log.push_str(&format!(
+                        "  req {} txid {}: warn mergeInputBeef failed \
+                         (will refetch from storage): {}\n",
+                        req.proven_tx_req_id, req.txid, e
+                    ));
+                }
             }
         }
 
@@ -199,13 +249,20 @@ pub async fn attempt_to_post_reqs_to_network(
                 status: Some(ProvenTxReqStatus::Invalid),
                 ..Default::default()
             };
-            let _ = storage
+            if let Err(e) = storage
                 .update_proven_tx_req(req.proven_tx_req_id, &update)
-                .await;
+                .await
+            {
+                result.log.push_str(&format!(
+                    "  req {} txid {}: warn update_proven_tx_req(Invalid) failed: {}\n",
+                    req.proven_tx_req_id, req.txid, e
+                ));
+            }
             result.details.push(PostReqDetail {
                 txid: req.txid.clone(),
                 req_id: req.proven_tx_req_id,
                 status: PostReqStatus::Invalid,
+                cascade_update_failed: false,
             });
             continue;
         }
@@ -222,18 +279,30 @@ pub async fn attempt_to_post_reqs_to_network(
                     status: Some(ProvenTxReqStatus::Invalid),
                     ..Default::default()
                 };
-                let _ = storage
+                if let Err(e) = storage
                     .update_proven_tx_req(req.proven_tx_req_id, &update)
-                    .await;
+                    .await
+                {
+                    result.log.push_str(&format!(
+                        "  req {} txid {}: warn update_proven_tx_req(Invalid) failed: {}\n",
+                        req.proven_tx_req_id, req.txid, e
+                    ));
+                }
                 result.details.push(PostReqDetail {
                     txid: req.txid.clone(),
                     req_id: req.proven_tx_req_id,
                     status: PostReqStatus::Invalid,
+                    cascade_update_failed: false,
                 });
                 continue;
             }
         };
 
+        // Intentionally empty — matches TS passing `[]` as
+        // `knownTxids` to `getValidBeefForTxid`. The broadcast path
+        // rebuilds the BEEF from authoritative storage state each
+        // time, so there are no client-provided "already known" txids
+        // to trust.
         let known_txids: HashSet<String> = HashSet::new();
         let mut missing_source = false;
         for input in &parsed_tx.inputs {
@@ -248,15 +317,52 @@ pub async fn attempt_to_post_reqs_to_network(
                 .await
             {
                 Ok(Some(src_bytes)) => {
-                    if !src_bytes.is_empty() {
-                        let _ = beef.merge_beef_from_binary(&src_bytes);
+                    if src_bytes.is_empty() {
+                        // Storage returned an empty blob — treat as
+                        // missing so TaskSendWaiting retries.
+                        missing_source = true;
+                        result.log.push_str(&format!(
+                            "  req {} txid {}: empty source BEEF for {}\n",
+                            req.proven_tx_req_id, req.txid, source_txid
+                        ));
+                    } else if let Err(e) = beef.merge_beef_from_binary(&src_bytes) {
+                        // Bytes came back but the merge failed
+                        // (corrupted stored proof, version mismatch,
+                        // malformed merkle path). Do NOT fall through
+                        // and serialize an incomplete BEEF — ARC will
+                        // reject it with exactly the
+                        // "script(N): got M bytes: unexpected EOF"
+                        // class of error this code path is trying to
+                        // fix, but without a diagnostic trail back to
+                        // the source txid. Mark this req as needing
+                        // retry and log the underlying error.
+                        missing_source = true;
+                        result.log.push_str(&format!(
+                            "  req {} txid {}: mergeSourceBeefFailed for {}: {}\n",
+                            req.proven_tx_req_id, req.txid, source_txid, e
+                        ));
                     }
                 }
-                Ok(None) | Err(_) => {
+                Ok(None) => {
+                    // Source tx legitimately not in storage yet —
+                    // TaskSendWaiting will retry on the next tick once
+                    // the source is proven.
                     missing_source = true;
                     result.log.push_str(&format!(
                         "  req {} txid {}: missing source BEEF for {}\n",
                         req.proven_tx_req_id, req.txid, source_txid
+                    ));
+                }
+                Err(e) => {
+                    // Transient storage error (SQLite busy,
+                    // connection drop, etc.) — distinct from "source
+                    // legitimately not in storage." Retry semantics
+                    // are identical, but the diagnostic needs to be
+                    // honest so DB contention is observable.
+                    missing_source = true;
+                    result.log.push_str(&format!(
+                        "  req {} txid {}: storage error fetching source BEEF for {}: {}\n",
+                        req.proven_tx_req_id, req.txid, source_txid, e
                     ));
                 }
             }
@@ -270,6 +376,7 @@ pub async fn attempt_to_post_reqs_to_network(
                 txid: req.txid.clone(),
                 req_id: req.proven_tx_req_id,
                 status: PostReqStatus::Unknown,
+                cascade_update_failed: false,
             });
             continue;
         }
@@ -285,13 +392,20 @@ pub async fn attempt_to_post_reqs_to_network(
                 status: Some(ProvenTxReqStatus::Invalid),
                 ..Default::default()
             };
-            let _ = storage
+            if let Err(e) = storage
                 .update_proven_tx_req(req.proven_tx_req_id, &update)
-                .await;
+                .await
+            {
+                result.log.push_str(&format!(
+                    "  req {} txid {}: warn update_proven_tx_req(Invalid) failed: {}\n",
+                    req.proven_tx_req_id, req.txid, e
+                ));
+            }
             result.details.push(PostReqDetail {
                 txid: req.txid.clone(),
                 req_id: req.proven_tx_req_id,
                 status: PostReqStatus::Invalid,
+                cascade_update_failed: false,
             });
             continue;
         }
@@ -355,34 +469,52 @@ pub async fn attempt_to_post_reqs_to_network(
             status: Some(new_req_status.clone()),
             ..Default::default()
         };
-        let _ = storage
+        if let Err(e) = storage
             .update_proven_tx_req(req.proven_tx_req_id, &update)
-            .await;
+            .await
+        {
+            result.log.push_str(&format!(
+                "  req {} txid {}: warn update_proven_tx_req({:?}) failed: {}\n",
+                req.proven_tx_req_id, req.txid, new_req_status, e
+            ));
+        }
 
-        // Cascade the broadcast outcome to the Transaction row so that
-        // `listOutputs` (which filters on `tx.status` via
-        // `TX_STATUS_ALLOWED`) sees the outputs as usable. Matches TS
-        // `processAction` postStatus semantics:
-        //   success       → tx `unproven`  (broadcast accepted, awaiting proof)
-        //   doubleSpend   → tx `failed`    (will never confirm)
-        //   invalid       → tx `failed`    (permanent reject)
-        //   service error → tx `unproven`  (transient; req stays `sending`
-        //                                   so TaskSendWaiting retries,
-        //                                   but tx advances past
-        //                                   `unprocessed` so outputs are
-        //                                   visible)
+        // Cascade the broadcast outcome to the Transaction row so
+        // that `listOutputs` (which filters on `tx.status` via
+        // `TX_STATUS_ALLOWED`) sees the outputs as usable. The match
+        // below keys on `ProvenTxReqStatus` (the authoritative post-
+        // broadcast state), matching TS `attemptToPostReqsToNetwork`
+        // `newTxStatus` mapping.
+        //
+        // Why the svcErr → `Sending` arm is correct:
+        //   - No provider actually accepted the broadcast, so
+        //     advancing to `Unproven` would falsely signal "accepted,
+        //     awaiting proof".
+        //   - The req stays `Sending` so TaskSendWaiting retries.
+        //   - `Sending` is already in `TX_STATUS_ALLOWED`
+        //     (`list_outputs.rs`), so output visibility is preserved
+        //     either way — no reason to inflate the status.
         let new_tx_status = match new_req_status {
             ProvenTxReqStatus::Unmined => Some(crate::status::TransactionStatus::Unproven),
             ProvenTxReqStatus::DoubleSpend => Some(crate::status::TransactionStatus::Failed),
             ProvenTxReqStatus::Invalid => Some(crate::status::TransactionStatus::Failed),
-            ProvenTxReqStatus::Sending => Some(crate::status::TransactionStatus::Unproven),
+            ProvenTxReqStatus::Sending => Some(crate::status::TransactionStatus::Sending),
             _ => None,
         };
+        let mut cascade_update_failed = false;
         if let Some(tx_status) = new_tx_status {
             if let Err(e) = storage
                 .update_transaction_status(&req.txid, tx_status)
                 .await
             {
+                // Flag the failure on the structured detail so the
+                // caller (e.g. TaskSendWaiting) can retry or alert.
+                // Logging alone is not enough: nothing downstream
+                // parses `result.log`, so a silently failed cascade
+                // would reintroduce the visibility bug in a narrower
+                // window (req at `unmined` but tx row still at
+                // `unprocessed`, outputs hidden).
+                cascade_update_failed = true;
                 result.log.push_str(&format!(
                     "  req {} txid {}: warn update_transaction_status: {}\n",
                     req.proven_tx_req_id, req.txid, e
@@ -394,6 +526,7 @@ pub async fn attempt_to_post_reqs_to_network(
             txid: req.txid.clone(),
             req_id: req.proven_tx_req_id,
             status: post_status,
+            cascade_update_failed,
         });
     }
 
@@ -585,19 +718,6 @@ mod tests {
     fn test_post_req_status_variants() {
         assert_eq!(PostReqStatus::Success, PostReqStatus::Success);
         assert_ne!(PostReqStatus::Success, PostReqStatus::Invalid);
-    }
-
-    #[tokio::test]
-    async fn test_attempt_to_post_empty_reqs() {
-        // Cannot construct WalletStorageManager without real storage,
-        // but we can verify the function signature and empty-input path
-        // by checking the result type exists.
-        let result = PostReqsToNetworkResult {
-            details: Vec::new(),
-            log: String::new(),
-        };
-        assert!(result.details.is_empty());
-        assert!(result.log.is_empty());
     }
 
     #[test]

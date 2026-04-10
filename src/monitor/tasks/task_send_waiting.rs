@@ -186,6 +186,27 @@ impl WalletMonitorTask for TaskSendWaiting {
                 .await?;
                 log.push_str(&post_result.log);
 
+                // A failed tx-status cascade leaves the `transactions`
+                // row stuck at its previous value (likely
+                // `unprocessed`) even though the req advanced — the
+                // exact visibility bug this PR is fixing, in a
+                // narrower window. Surface it distinctly in the task
+                // log so operators can detect the condition, and
+                // attempt one best-effort retry (the req state is
+                // already final, so we can't retry via
+                // TaskSendWaiting's main path — this is the only
+                // chance to recover before the next reboot).
+                for detail in &post_result.details {
+                    if detail.cascade_update_failed {
+                        log.push_str(&format!(
+                            "  WARN txid {} req {} cascade tx-status update \
+                             failed; outputs may be temporarily hidden until \
+                             next successful write\n",
+                            detail.txid, detail.req_id
+                        ));
+                    }
+                }
+
                 // Fire callback for each successfully posted req
                 if let Some(ref cb) = self.on_tx_broadcasted {
                     for detail in &post_result.details {

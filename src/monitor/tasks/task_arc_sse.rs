@@ -262,10 +262,13 @@ impl WalletMonitorTask for TaskArcSse {
     }
 
     async fn async_setup(&mut self) -> Result<(), WalletError> {
-        // Preserve the default `async_setup` behavior (make storage
-        // available) even though we're overriding this method for the
-        // SSE-specific wiring below. `make_available()` is idempotent.
-        self.storage.make_available().await?;
+        // Inherit whatever the default setup does (currently:
+        // `make_available()` on `storage_manager()`). Delegating
+        // instead of hand-copying means this task automatically picks
+        // up any future additions to the default setup — metrics,
+        // logging, additional state prep — rather than silently
+        // skipping them.
+        crate::monitor::task_trait::default_async_setup(self).await?;
 
         let callback_token = match &self.callback_token {
             Some(t) if !t.is_empty() => t.clone(),

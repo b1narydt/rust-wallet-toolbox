@@ -422,61 +422,137 @@ mod sqlite_impl {
         ) -> WalletResult<i64> {
             use crate::storage::traits::reader::StorageReader;
 
-            // Insert the proven tx
-            let proven_tx_id = self.insert_proven_tx_impl(proven_tx, trx).await?;
-
-            // Update the proven tx req with the proven_tx_id and status=completed
-            self.update_proven_tx_req_impl(
-                req_id,
-                &ProvenTxReqPartial {
-                    proven_tx_id: Some(proven_tx_id),
-                    status: Some(crate::status::ProvenTxReqStatus::Completed),
-                    ..Default::default()
-                },
-                trx,
-            )
-            .await?;
-
-            // Cascade the proof to any `transactions` row with a matching
-            // txid. Without this, the transaction row stays stuck at
-            // `unproven` forever even though the tx is mined and the
-            // associated ProvenTxReq is `completed`. The frontend uses
-            // `transactions.status` for balance and listOutputs visibility
-            // (see `TX_STATUS_ALLOWED` in `list_outputs.rs`), so a stuck
-            // `unproven` makes the wallet report incorrect balances (e.g.
-            // confirmed incoming payments appear as unconfirmed, confirmed
-            // change appears as unspendable).
+            // Run the composite insert/update/cascade inside a storage
+            // transaction so it is atomic: either all three writes
+            // succeed (proven_tx inserted, req → completed, matching
+            // transactions rows → completed) or none do. Matches the
+            // TS wrapper which calls this under a single storage
+            // transaction.
             //
-            // Matches TS `processProvenTx` which calls
-            // `updateTransaction({ status: 'completed', provenTxId })`
-            // alongside the ProvenTxReq update.
-            let matching_txs = self
-                .find_transactions(
-                    &FindTransactionsArgs {
-                        partial: TransactionPartial {
-                            txid: Some(proven_tx.txid.clone()),
+            // If the caller already owns a transaction, reuse it and
+            // leave commit/rollback to the caller. Otherwise open a
+            // fresh one here and commit on success / rollback on any
+            // failure. Without this, a mid-loop failure would leave
+            // `proven_tx_reqs.completed` paired with some
+            // `transactions` rows still at `unproven` — exactly the
+            // bug this cascade was added to fix, reintroduced
+            // non-deterministically with no retry path because the
+            // req is already `completed`.
+            let owned_trx_token: Option<TrxToken> = if trx.is_none() {
+                Some(self.begin_sqlite_transaction().await?)
+            } else {
+                None
+            };
+            let trx_ref: Option<&TrxToken> = trx.or(owned_trx_token.as_ref());
+
+            let result = async {
+                // Find-or-insert semantics on proven_txs. TS uses
+                // `findOrInsertProvenTx` and only cascades when
+                // `isNew === true` — if another concurrent task (e.g.
+                // SPV ingest) already inserted a proven_tx for this
+                // txid, a second plain INSERT here would fail with a
+                // unique-constraint error, and even if it succeeded
+                // the cascade would re-run unnecessarily.
+                let existing = self
+                    .find_proven_txs(
+                        &FindProvenTxsArgs {
+                            partial: ProvenTxPartial {
+                                txid: Some(proven_tx.txid.clone()),
+                                ..Default::default()
+                            },
                             ..Default::default()
                         },
-                        no_raw_tx: true,
-                        ..Default::default()
-                    },
-                    trx,
-                )
-                .await?;
-            for t in &matching_txs {
-                self.update_transaction_impl(
-                    t.transaction_id,
-                    &TransactionPartial {
-                        status: Some(crate::status::TransactionStatus::Completed),
+                        trx_ref,
+                    )
+                    .await?;
+
+                let (proven_tx_id, is_new) = if let Some(ep) = existing.into_iter().next() {
+                    (ep.proven_tx_id, false)
+                } else {
+                    (
+                        self.insert_proven_tx_impl(proven_tx, trx_ref).await?,
+                        true,
+                    )
+                };
+
+                // Always update the proven_tx_req → completed and
+                // link the proven_tx_id (this is correct regardless
+                // of isNew — the req is what drives task state).
+                self.update_proven_tx_req_impl(
+                    req_id,
+                    &ProvenTxReqPartial {
                         proven_tx_id: Some(proven_tx_id),
+                        status: Some(crate::status::ProvenTxReqStatus::Completed),
                         ..Default::default()
                     },
-                    trx,
+                    trx_ref,
                 )
                 .await?;
+
+                if is_new {
+                    // Cascade the proof to any `transactions` row
+                    // with a matching txid. Without this, the
+                    // transaction row stays stuck at `unproven`
+                    // forever even though the tx is mined and the
+                    // associated ProvenTxReq is `completed`. The
+                    // frontend uses `transactions.status` for balance
+                    // and listOutputs visibility (see
+                    // `TX_STATUS_ALLOWED` in `list_outputs.rs`), so a
+                    // stuck `unproven` makes the wallet report
+                    // incorrect balances (e.g. confirmed incoming
+                    // payments appear as unconfirmed, confirmed
+                    // change appears as unspendable).
+                    //
+                    // Matches TS `processProvenTx` which calls
+                    // `updateTransaction({ status: 'completed',
+                    // provenTxId })` alongside the ProvenTxReq update,
+                    // gated on `isNew`.
+                    let matching_txs = self
+                        .find_transactions(
+                            &FindTransactionsArgs {
+                                partial: TransactionPartial {
+                                    txid: Some(proven_tx.txid.clone()),
+                                    ..Default::default()
+                                },
+                                no_raw_tx: true,
+                                ..Default::default()
+                            },
+                            trx_ref,
+                        )
+                        .await?;
+                    for t in &matching_txs {
+                        self.update_transaction_impl(
+                            t.transaction_id,
+                            &TransactionPartial {
+                                status: Some(crate::status::TransactionStatus::Completed),
+                                proven_tx_id: Some(proven_tx_id),
+                                ..Default::default()
+                            },
+                            trx_ref,
+                        )
+                        .await?;
+                    }
+                }
+
+                Ok::<i64, WalletError>(proven_tx_id)
+            }
+            .await;
+
+            // Commit or rollback the locally-owned transaction (if
+            // any). Caller-owned transactions are left alone.
+            match (owned_trx_token, &result) {
+                (Some(token), Ok(_)) => {
+                    StorageReaderWriter::commit_transaction(self, token).await?;
+                }
+                (Some(token), Err(_)) => {
+                    // Best-effort rollback; the original error is the
+                    // one we propagate regardless.
+                    let _ = StorageReaderWriter::rollback_transaction(self, token).await;
+                }
+                (None, _) => {}
             }
 
-            Ok(proven_tx_id)
+            result
         }
 
         async fn review_status(

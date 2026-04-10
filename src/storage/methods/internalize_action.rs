@@ -398,10 +398,11 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                 // output, producing OP_EQUALVERIFY failures at broadcast
                 // (ARC error 461).
                 //
-                // Matches the intent of `c0f4b1a` ("fix: derivation
-                // prefix/suffix must be base64, not hex") but for the
-                // receive side of the storage path — `c0f4b1a` only
-                // fixed the random-generator side in `setup.rs`.
+                // Matches the intent of `c06b415` ("fix: base64
+                // derivation prefix, storage auto-init, monitor
+                // make_available") but for the receive side of the
+                // storage path — `c06b415` only fixed the random-
+                // generator side in `setup.rs`.
                 use base64::Engine as _;
                 let prefix = Some(
                     base64::engine::general_purpose::STANDARD
@@ -1041,6 +1042,22 @@ mod tests {
         assert_eq!(outputs[0].output_type, "P2PKH");
         assert_eq!(outputs[0].purpose, "change");
 
+        // Regression: BRC-29 derivation params arrive as raw bytes
+        // but MUST be stored as base64 text so the signer can
+        // reconstruct the same key_id the sender used to lock the
+        // output. Previously this path used `String::from_utf8_lossy`
+        // which corrupts non-UTF-8 bytes to U+FFFD and makes the
+        // stored output unspendable (ARC error 461 — OP_EQUALVERIFY
+        // failure). Assert the stored value is exactly the base64
+        // encoding of the input bytes.
+        use base64::Engine as _;
+        let expected_prefix =
+            base64::engine::general_purpose::STANDARD.encode(b"prefix1");
+        let expected_suffix =
+            base64::engine::general_purpose::STANDARD.encode(b"suffix1");
+        assert_eq!(outputs[0].derivation_prefix.as_deref(), Some(expected_prefix.as_str()));
+        assert_eq!(outputs[0].derivation_suffix.as_deref(), Some(expected_suffix.as_str()));
+
         // Verify ProvenTxReq was created
         let req_args = FindProvenTxReqsArgs {
             partial: ProvenTxReqPartial {
@@ -1055,6 +1072,117 @@ mod tests {
             .expect("find reqs");
         assert_eq!(reqs.len(), 1);
         assert_eq!(reqs[0].status, crate::status::ProvenTxReqStatus::Unmined);
+    }
+
+    /// Regression test for fix #4 — non-UTF-8 byte sequences in
+    /// BRC-29 derivation params MUST be stored as base64 text, not
+    /// routed through `String::from_utf8_lossy`. The old
+    /// `from_utf8_lossy` path replaced every non-UTF-8 byte with
+    /// U+FFFD, silently corrupting the stored key_id so the signer
+    /// could not reconstruct the spending key. This test exercises
+    /// the corruption-vulnerable code path directly by feeding bytes
+    /// that would have been mangled (0xFF, 0xFE, 0xFD, 0x80 …).
+    #[tokio::test]
+    async fn test_internalize_wallet_payment_non_utf8_derivation_params() {
+        let (storage, user_id) = setup_test_storage().await;
+        let services = MockWalletServices;
+        let (beef_bytes, txid) = create_test_atomic_beef();
+
+        let sender_key = PublicKey::from_string(&("02".to_owned() + &"ab".repeat(32))).unwrap();
+
+        // Every byte here is outside ASCII and most are invalid as
+        // UTF-8 start bytes. `from_utf8_lossy` would produce several
+        // U+FFFD characters; base64 must preserve the exact bytes.
+        let raw_prefix: Vec<u8> = vec![0xFF, 0xFE, 0xFD, 0x80, 0xC0, 0xC1, 0xF5, 0xF6];
+        let raw_suffix: Vec<u8> = vec![0x81, 0x82, 0x83, 0x84, 0xE0, 0xE1, 0xE2, 0xE3];
+
+        let args = StorageInternalizeActionArgs {
+            tx: beef_bytes,
+            description: "non-utf8 derivation".to_string(),
+            labels: vec![],
+            seek_permission: true,
+            outputs: vec![InternalizeOutput::WalletPayment {
+                output_index: 0,
+                payment: Payment {
+                    derivation_prefix: raw_prefix.clone(),
+                    derivation_suffix: raw_suffix.clone(),
+                    sender_identity_key: sender_key,
+                },
+            }],
+        };
+
+        let result = storage_internalize_action(&storage, &services, user_id, &args, None)
+            .await
+            .expect("internalize_action should succeed for non-utf8 derivation bytes");
+        assert!(result.accepted);
+        assert_eq!(result.txid, txid);
+
+        let out_args = FindOutputsArgs {
+            partial: OutputPartial {
+                user_id: Some(user_id),
+                txid: Some(txid.clone()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let outputs = storage
+            .find_outputs(&out_args, None)
+            .await
+            .expect("find outputs");
+        assert_eq!(outputs.len(), 1);
+
+        use base64::Engine as _;
+        let expected_prefix =
+            base64::engine::general_purpose::STANDARD.encode(&raw_prefix);
+        let expected_suffix =
+            base64::engine::general_purpose::STANDARD.encode(&raw_suffix);
+
+        // The stored value must round-trip exactly to the input
+        // bytes. If this ever reverts to `from_utf8_lossy`, the
+        // stored strings will contain U+FFFD sequences and this
+        // assertion will fail.
+        assert_eq!(
+            outputs[0].derivation_prefix.as_deref(),
+            Some(expected_prefix.as_str()),
+            "derivation_prefix must be base64-encoded, not from_utf8_lossy"
+        );
+        assert_eq!(
+            outputs[0].derivation_suffix.as_deref(),
+            Some(expected_suffix.as_str()),
+            "derivation_suffix must be base64-encoded, not from_utf8_lossy"
+        );
+
+        // Explicit guard: the stored text must NOT contain the
+        // Unicode replacement character, which is the signature of
+        // the pre-fix `from_utf8_lossy` corruption path.
+        assert!(
+            !outputs[0]
+                .derivation_prefix
+                .as_deref()
+                .unwrap()
+                .contains('\u{FFFD}'),
+            "derivation_prefix contains U+FFFD — from_utf8_lossy regression"
+        );
+        assert!(
+            !outputs[0]
+                .derivation_suffix
+                .as_deref()
+                .unwrap()
+                .contains('\u{FFFD}'),
+            "derivation_suffix contains U+FFFD — from_utf8_lossy regression"
+        );
+
+        // Round-trip: base64-decode the stored value back to the
+        // original bytes. This is the invariant the signer relies on
+        // to derive the same key the sender used.
+        let decoded_prefix = base64::engine::general_purpose::STANDARD
+            .decode(outputs[0].derivation_prefix.as_deref().unwrap())
+            .expect("stored prefix must be valid base64");
+        let decoded_suffix = base64::engine::general_purpose::STANDARD
+            .decode(outputs[0].derivation_suffix.as_deref().unwrap())
+            .expect("stored suffix must be valid base64");
+        assert_eq!(decoded_prefix, raw_prefix);
+        assert_eq!(decoded_suffix, raw_suffix);
     }
 
     #[tokio::test]
