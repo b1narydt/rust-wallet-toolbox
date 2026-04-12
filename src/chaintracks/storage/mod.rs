@@ -2,7 +2,7 @@ mod memory;
 
 pub use memory::MemoryStorage;
 
-#[cfg(any(feature = "sqlite", feature = "mysql"))]
+#[cfg(feature = "sqlite")]
 mod sqlite;
-#[cfg(any(feature = "sqlite", feature = "mysql"))]
+#[cfg(feature = "sqlite")]
 pub use sqlite::SqliteStorage;
