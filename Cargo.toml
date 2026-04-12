@@ -37,6 +37,8 @@ hex = "0.4"
 uuid = { version = "1", features = ["v4"] }
 tokio-tungstenite = { version = "0.24", features = ["native-tls"], optional = true }
 url = { version = "2", optional = true }
+# Pinned: home >=0.5.12 requires rustc 1.88; we target MSRV 1.87 per `rust-version` above.
+home = "=0.5.11"
 
 [features]
 default = ["sqlite"]
