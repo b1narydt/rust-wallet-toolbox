@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.17] - 2026-04-12
+
+### Fixed
+
+- **Broadcast BEEF rebuild** — `attempt_to_post_reqs_to_network` now rebuilds
+  the broadcast BEEF from authoritative storage state at send time (matching
+  TS `StorageProvider.mergeReqToBeefToShareExternally`) instead of using the
+  stored `input_beef` blob directly. Delayed broadcasts with partial or NULL
+  stored `input_beef` were silently failing ARC with "script(N): got M bytes:
+  unexpected EOF" errors. Source BEEF merge failures now set `missing_source`
+  with a diagnostic log entry so corrupted stored proofs are observable
+  rather than producing incomplete BEEFs that ARC rejects opaquely.
+
+- **Transaction-row cascade on broadcast outcome** — Broadcast outcomes now
+  cascade from `proven_tx_reqs.status` to the `transactions.status` row so
+  that `list_outputs` (which filters on `TX_STATUS_ALLOWED`) sees broadcasted
+  outputs as usable. Previously the tx row stayed at `unprocessed` forever,
+  hiding broadcasted outputs from wallet queries. Service-error status maps
+  to `Sending` (not `Unproven`) to avoid falsely signaling "broadcast
+  accepted". Cascade failures surface via a new structured
+  `cascade_update_failed` field on `PostReqDetail` rather than being buried
+  in free-text logs.
+
+- **Proof cascade to transactions row** — `update_proven_tx_req_with_new_proven_tx`
+  now also updates the matching `transactions` row to `completed` +
+  `provenTxId`, matching TS `processProvenTx`. Wrapped in a storage
+  transaction for atomicity, with find-or-insert semantics on `proven_txs`
+  to handle concurrent SPV ingest races. Without this, confirmed incoming
+  payments were reported as unconfirmed indefinitely and confirmed change
+  appeared unspendable.
+
+- **BRC-29 derivation params base64-encoded in `internalize_action`** —
+  Both the storage-layer and signer-layer paths were passing raw binary
+  derivation bytes through `String::from_utf8_lossy`, corrupting non-UTF-8
+  bytes with U+FFFD. The corrupted `key_id` then derived a different pubkey
+  than the sender used to lock the output, causing BRC-29 P2PKH script
+  matches to fail and subsequent UTXO spends to be rejected by ARC with
+  error 461 "Script failed an OP_EQUALVERIFY operation". Fix mirrors the
+  random-generator fix from 0.2.16 for the receive side of the storage
+  path. Regression tests added for non-UTF-8 derivation byte sequences.
+
+- **Monitor task `make_available` initialization** — Each task's private
+  `WalletStorageManager` was never having `make_available()` called on it,
+  so tasks using methods gated on `is_available_flag` (`TaskFailAbandoned`,
+  `TaskReviewStatus`, `TaskPurge`, `TaskUnFail`) errored every run with
+  "WalletStorageManager not yet available". Added a `storage_manager()`
+  hook to `WalletMonitorTask` with a default `async_setup()` that calls
+  `make_available()` on it — auto-initializes each task's storage on first
+  tick. `make_available()` is idempotent.
+
+- **`TaskSendWaiting` / `TaskCheckForProofs` race** — Added a
+  `['completed', 'unmined']` status guard (matching TS) so `TaskSendWaiting`
+  no longer clobbers state advanced concurrently by `TaskCheckForProofs`,
+  which would knock a `Completed` req back to `Unmined`/`Sending` and a
+  `Completed` tx back to `Unproven`.
+
+### Internal
+
+- GitHub Actions CI (fmt, clippy, test, doc, MSRV 1.87, feature-matrix
+  compile check, `cargo publish --dry-run`) and release workflow (triggered
+  on `v*.*.*` tag push with tag-vs-Cargo.toml version verification).
+- README dependency examples switched from hardcoded versions to
+  `cargo add` commands; the Crates.io badge is now the single source of
+  truth for the current version.
+
 ## [0.2.16] - 2026-04-08
 
 ### Fixed
