@@ -74,12 +74,11 @@ Application
 
 ## Quick Start
 
-Add the dependency to your `Cargo.toml`:
+Add the dependency with `cargo add` (latest version shown in the Crates.io badge above):
 
-```toml
-[dependencies]
-bsv-wallet-toolbox = "0.2.13"
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+```sh
+cargo add bsv-wallet-toolbox
+cargo add tokio --features rt-multi-thread,macros
 ```
 
 Build and use a wallet:
@@ -130,31 +129,27 @@ MySQL and PostgreSQL are opt-in and require disabling default features.
 
 **SQLite (default)** -- no external server required, data stored in a local file:
 
-```toml
-[dependencies]
-bsv-wallet-toolbox = "0.2.13"
+```sh
+cargo add bsv-wallet-toolbox
 ```
 
 **MySQL** -- requires a running MySQL server and connection URL:
 
-```toml
-[dependencies]
-bsv-wallet-toolbox = { version = "0.2.11", default-features = false, features = ["mysql"] }
+```sh
+cargo add bsv-wallet-toolbox --no-default-features --features mysql
 ```
 
 **PostgreSQL** -- requires a running PostgreSQL server and connection URL:
 
-```toml
-[dependencies]
-bsv-wallet-toolbox = { version = "0.2.16", default-features = false, features = ["postgres"] }
+```sh
+cargo add bsv-wallet-toolbox --no-default-features --features postgres
 ```
 
 **Chaintracks WebSocket** -- enables the real-time WebSocket live ingestor for local block
 header tracking (adds `tokio-tungstenite` and `url` dependencies):
 
-```toml
-[dependencies]
-bsv-wallet-toolbox = { version = "0.2.16", features = ["chaintracks-ws"] }
+```sh
+cargo add bsv-wallet-toolbox --features chaintracks-ws
 ```
 
 When using MySQL or PostgreSQL, pass the connection URL to the builder:
