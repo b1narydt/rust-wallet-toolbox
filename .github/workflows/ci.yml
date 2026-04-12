@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # Fails on real clippy/compile lints but tolerates pre-existing
+      # `missing_docs` noise. Tighten by dropping the `-A` flags once
+      # the doc gap is backfilled.
+      - run: cargo clippy --all-targets --all-features -- -D warnings -A missing_docs -A clippy::missing_docs_in_private_items
+
+  test:
+    name: test (default / sqlite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --lib --bins --all-targets
+      - run: cargo test --doc
+
+  # Compile-only check for the non-default DB backends so we catch
+  # feature-flag drift without standing up real MySQL / Postgres
+  # services in CI. Full integration tests against real servers can
+  # be added later as a separate workflow.
+  check-features:
+    name: check --features ${{ matrix.features }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - mysql
+          - postgres
+          - chaintracks-ws
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --no-default-features --features ${{ matrix.features }}
+
+  doc:
+    name: rustdoc
+    runs-on: ubuntu-latest
+    env:
+      # `-D warnings` catches broken intra-doc links; `-A missing_docs`
+      # tolerates the pre-existing doc gap so initial rollout passes.
+      RUSTDOCFLAGS: -D warnings -A missing_docs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --no-deps --all-features
+
+  msrv:
+    name: MSRV (1.87)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.87
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-features
+
+  publish-dry-run:
+    name: cargo publish --dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo publish --dry-run
