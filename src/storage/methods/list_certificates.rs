@@ -214,7 +214,7 @@ pub async fn list_certificates(
 
         certificates.push(CertificateResult {
             certificate: sdk_cert,
-            keyring,
+            keyring: Some(keyring),
             verifier,
         });
     }
