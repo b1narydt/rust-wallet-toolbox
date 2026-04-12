@@ -776,7 +776,11 @@ mod tests {
     use super::*;
     use crate::services::types::BlockHeader;
 
-    // A minimal mock WalletServices for testing
+    // A minimal mock WalletServices for testing.
+    // Only constructed indirectly via trait-object boxing in tests below
+    // that exercise default-derived wiring; the explicit constructor is
+    // intentionally kept for future unit tests.
+    #[allow(dead_code)]
     struct MockServices {
         chain: Chain,
     }

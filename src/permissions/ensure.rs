@@ -665,8 +665,10 @@ mod tests {
 
     #[test]
     fn test_config_skips_when_disabled() {
-        let mut config = PermissionsManagerConfig::default();
-        config.require_protocol_permission_for_signing = false;
+        let config = PermissionsManagerConfig {
+            require_protocol_permission_for_signing: false,
+            ..PermissionsManagerConfig::default()
+        };
         assert!(!config_requires_protocol_check(&config, "signing"));
     }
 

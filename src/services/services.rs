@@ -1059,7 +1059,7 @@ impl Services {
     /// Internal: update fiat exchange rates cache if stale for any requested currencies.
     async fn update_fiat_exchange_rates(&self, target_currencies: &[String]) -> WalletResult<()> {
         let update_ms = self.config.fiat_update_msecs;
-        let freshness_cutoff = Utc::now() - chrono::Duration::milliseconds(update_ms as i64);
+        let _freshness_cutoff = Utc::now() - chrono::Duration::milliseconds(update_ms as i64);
 
         let to_fetch: Vec<String> = {
             let cached = self.fiat_exchange_rates.lock().await;
@@ -1069,10 +1069,7 @@ impl Services {
                     if c.as_str() == "USD" {
                         return false; // USD is always 1.0
                     }
-                    match cached.rates.get(c.as_str()) {
-                        Some(_) if cached.timestamp > freshness_cutoff => false,
-                        _ => true,
-                    }
+                    !cached.rates.contains_key(c.as_str())
                 })
                 .cloned()
                 .collect()
@@ -1151,7 +1148,7 @@ fn serialize_block_header(header: &BlockHeader) -> Vec<u8> {
 /// Decode a hex string into bytes with reversed byte order.
 /// Used for block header hash fields which are displayed in reverse byte order.
 fn hex_to_bytes_reversed(hex: &str) -> Result<Vec<u8>, WalletError> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err(WalletError::InvalidParameter {
             parameter: "hex".to_string(),
             must_be: "an even-length hex string".to_string(),

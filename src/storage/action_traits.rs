@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 
-use crate::error::{WalletError, WalletResult};
+use crate::error::WalletResult;
 use crate::services::traits::WalletServices;
 use crate::storage::action_types::{
     StorageCreateActionArgs, StorageCreateActionResult, StorageInternalizeActionArgs,

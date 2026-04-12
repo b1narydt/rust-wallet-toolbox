@@ -10,11 +10,10 @@ use crate::error::{WalletError, WalletResult};
 use crate::status::{ProvenTxReqStatus, TransactionStatus};
 use crate::storage::action_types::{StorageProcessActionArgs, StorageProcessActionResult};
 use crate::storage::find_args::{
-    CommissionPartial, FindCommissionsArgs, FindOutputsArgs, FindTransactionsArgs, OutputPartial,
-    TransactionPartial,
+    FindOutputsArgs, FindTransactionsArgs, OutputPartial, TransactionPartial,
 };
 use crate::storage::traits::reader_writer::StorageReaderWriter;
-use crate::storage::{verify_one, verify_one_or_none, TrxToken};
+use crate::storage::{verify_one, TrxToken};
 use crate::tables::ProvenTxReq;
 
 /// Status pair for ProvenTxReq and Transaction during processAction.

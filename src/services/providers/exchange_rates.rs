@@ -14,6 +14,9 @@ use crate::services::types::FiatExchangeRates;
 
 /// WhatsOnChain exchange rate API response.
 #[derive(Debug, Deserialize)]
+// `currency` is deserialized for wire-format parity but not consumed by this
+// crate (the currency is already known from the request URL).
+#[allow(dead_code)]
 struct WocExchangeRateResponse {
     rate: f64,
     currency: String,
@@ -71,7 +74,7 @@ pub async fn fetch_fiat_exchange_rates(
 async fn fetch_from_exchangeratesapi(
     client: &reqwest::Client,
     api_key: &str,
-    base: &str,
+    _base: &str,
     targets: &[String],
 ) -> WalletResult<FiatExchangeRates> {
     // Ensure USD is always in the target list for normalization
@@ -98,9 +101,9 @@ async fn fetch_from_exchangeratesapi(
     })?;
 
     if !data.success {
-        return Err(WalletError::BadRequest(format!(
-            "exchangeratesapi returned success=false"
-        )));
+        return Err(WalletError::BadRequest(
+            "exchangeratesapi returned success=false".to_string(),
+        ));
     }
 
     // The free tier returns EUR base. Normalize to USD base.
@@ -137,8 +140,7 @@ async fn fetch_from_exchangeratesapi(
     }
 
     Ok(FiatExchangeRates {
-        timestamp: chrono::DateTime::from_timestamp(data.timestamp, 0)
-            .unwrap_or_else(|| Utc::now()),
+        timestamp: chrono::DateTime::from_timestamp(data.timestamp, 0).unwrap_or_else(Utc::now),
         base: "USD".to_string(),
         rates,
     })

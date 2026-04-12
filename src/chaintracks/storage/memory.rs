@@ -916,7 +916,7 @@ mod tests {
 
         let active = storage.get_active_headers();
         // All headers in a linear chain should be active
-        assert!(active.len() >= 1);
+        assert!(!active.is_empty());
         for h in &active {
             assert!(h.is_active);
         }

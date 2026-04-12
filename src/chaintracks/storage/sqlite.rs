@@ -1074,7 +1074,7 @@ impl ChaintracksStorage for SqliteStorage {
     }
 
     async fn is_available(&self) -> bool {
-        self.available.read().unwrap().clone()
+        *self.available.read().unwrap()
     }
 }
 

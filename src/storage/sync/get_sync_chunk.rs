@@ -97,7 +97,7 @@ pub async fn get_sync_chunk(
                 .sync_map
                 .proven_tx
                 .max_updated_at
-                .map_or(false, |since| u.updated_at <= since);
+                .is_some_and(|since| u.updated_at <= since);
             if dominated {
                 None
             } else {

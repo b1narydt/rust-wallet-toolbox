@@ -459,8 +459,7 @@ mod manager_tests {
             error_other: None,
         };
 
-        let args =
-            make_request_sync_chunk_args(&ss, &IDENTITY_KEY.to_string(), "writer_sik").unwrap();
+        let args = make_request_sync_chunk_args(&ss, IDENTITY_KEY, "writer_sik").unwrap();
 
         assert_eq!(args.from_storage_identity_key, "reader_sik");
         assert_eq!(args.to_storage_identity_key, "writer_sik");

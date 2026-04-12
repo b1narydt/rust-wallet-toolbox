@@ -257,7 +257,7 @@ pub struct ChaintracksInfo {
 /// Produces the standard Bitcoin block hash in display (big-endian) order.
 pub fn compute_block_hash(header_bytes: &[u8; 80]) -> String {
     let first = Sha256::digest(header_bytes);
-    let second = Sha256::digest(&first);
+    let second = Sha256::digest(first);
     let mut hash_bytes: [u8; 32] = second.into();
     hash_bytes.reverse();
     hex::encode(hash_bytes)

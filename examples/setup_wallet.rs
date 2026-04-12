@@ -267,7 +267,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     payment: Payment {
                         derivation_prefix: derivation_prefix.into_bytes(),
                         derivation_suffix: derivation_suffix.into_bytes(),
-                        sender_identity_key: sender_identity_key,
+                        sender_identity_key,
                     },
                 }],
             },
@@ -282,7 +282,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // -----------------------------------------------------------------------
     println!("\n  Broadcasting to miners...");
     if let Some(ref services) = setup.services {
-        use bsv_wallet_toolbox::services::traits::WalletServices;
         let results = services.post_beef(&beef_bytes, &[txid.to_string()]).await;
         for r in &results {
             let status_msg = if let Some(ref err) = r.error {

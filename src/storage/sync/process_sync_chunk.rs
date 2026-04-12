@@ -114,14 +114,14 @@ pub async fn process_sync_chunk(
                 sync_map
                     .proven_tx
                     .map_id(foreign_id, local.proven_tx_id)
-                    .map_err(|e| WalletError::Internal(e))?;
+                    .map_err(WalletError::Internal)?;
             } else {
                 // New: insert
                 let local_id = storage.insert_proven_tx(incoming, trx).await?;
                 sync_map
                     .proven_tx
                     .map_id(foreign_id, local_id)
-                    .map_err(|e| WalletError::Internal(e))?;
+                    .map_err(WalletError::Internal)?;
                 result.inserts += 1;
             }
         }
@@ -154,7 +154,7 @@ pub async fn process_sync_chunk(
             sync_map
                 .output_basket
                 .map_id(foreign_id, local.basket_id)
-                .map_err(|e| WalletError::Internal(e))?;
+                .map_err(WalletError::Internal)?;
         }
     }
 
@@ -185,7 +185,7 @@ pub async fn process_sync_chunk(
             sync_map
                 .tx_label
                 .map_id(foreign_id, local.tx_label_id)
-                .map_err(|e| WalletError::Internal(e))?;
+                .map_err(WalletError::Internal)?;
         }
     }
 
@@ -216,7 +216,7 @@ pub async fn process_sync_chunk(
             sync_map
                 .output_tag
                 .map_id(foreign_id, local.output_tag_id)
-                .map_err(|e| WalletError::Internal(e))?;
+                .map_err(WalletError::Internal)?;
         }
     }
 
@@ -268,7 +268,7 @@ pub async fn process_sync_chunk(
                 sync_map
                     .transaction
                     .map_id(foreign_id, local.transaction_id)
-                    .map_err(|e| WalletError::Internal(e))?;
+                    .map_err(WalletError::Internal)?;
             } else {
                 // Insert with remapped user_id and proven_tx_id
                 let mut to_insert = incoming.clone();
@@ -279,7 +279,7 @@ pub async fn process_sync_chunk(
                 sync_map
                     .transaction
                     .map_id(foreign_id, local_id)
-                    .map_err(|e| WalletError::Internal(e))?;
+                    .map_err(WalletError::Internal)?;
                 result.inserts += 1;
             }
         }
@@ -345,7 +345,7 @@ pub async fn process_sync_chunk(
                 sync_map
                     .output
                     .map_id(foreign_id, local.output_id)
-                    .map_err(|e| WalletError::Internal(e))?;
+                    .map_err(WalletError::Internal)?;
             } else {
                 let mut to_insert = incoming.clone();
                 to_insert.user_id = local_user_id;
@@ -357,7 +357,7 @@ pub async fn process_sync_chunk(
                 sync_map
                     .output
                     .map_id(foreign_id, local_id)
-                    .map_err(|e| WalletError::Internal(e))?;
+                    .map_err(WalletError::Internal)?;
                 result.inserts += 1;
             }
         }
@@ -520,7 +520,7 @@ pub async fn process_sync_chunk(
                 sync_map
                     .certificate
                     .map_id(foreign_id, local.certificate_id)
-                    .map_err(|e| WalletError::Internal(e))?;
+                    .map_err(WalletError::Internal)?;
             } else {
                 let mut to_insert = incoming.clone();
                 to_insert.user_id = local_user_id;
@@ -529,7 +529,7 @@ pub async fn process_sync_chunk(
                 sync_map
                     .certificate
                     .map_id(foreign_id, local_id)
-                    .map_err(|e| WalletError::Internal(e))?;
+                    .map_err(WalletError::Internal)?;
                 result.inserts += 1;
             }
         }
@@ -636,7 +636,7 @@ pub async fn process_sync_chunk(
                 sync_map
                     .commission
                     .map_id(foreign_id, local.commission_id)
-                    .map_err(|e| WalletError::Internal(e))?;
+                    .map_err(WalletError::Internal)?;
             } else {
                 let mut to_insert = incoming.clone();
                 to_insert.user_id = local_user_id;
@@ -646,7 +646,7 @@ pub async fn process_sync_chunk(
                 sync_map
                     .commission
                     .map_id(foreign_id, local_id)
-                    .map_err(|e| WalletError::Internal(e))?;
+                    .map_err(WalletError::Internal)?;
                 result.inserts += 1;
             }
         }
@@ -699,7 +699,7 @@ pub async fn process_sync_chunk(
                 sync_map
                     .proven_tx_req
                     .map_id(foreign_id, local.proven_tx_req_id)
-                    .map_err(|e| WalletError::Internal(e))?;
+                    .map_err(WalletError::Internal)?;
             } else {
                 let mut to_insert = incoming.clone();
                 to_insert.proven_tx_id = local_proven_tx_id;
@@ -708,7 +708,7 @@ pub async fn process_sync_chunk(
                 sync_map
                     .proven_tx_req
                     .map_id(foreign_id, local_id)
-                    .map_err(|e| WalletError::Internal(e))?;
+                    .map_err(WalletError::Internal)?;
                 result.inserts += 1;
             }
         }

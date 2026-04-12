@@ -19,7 +19,6 @@ use crate::status::ProvenTxReqStatus;
 use crate::storage::beef::{get_valid_beef_for_txid, TrustSelf};
 use crate::storage::find_args::ProvenTxReqPartial;
 use crate::storage::manager::WalletStorageManager;
-use crate::storage::traits::reader_writer::StorageReaderWriter;
 use crate::tables::{MonitorEvent, ProvenTx, ProvenTxReq};
 use crate::types::Chain;
 

@@ -31,6 +31,10 @@ struct ArcResponse {
 /// Matches TS SDK's `ArcMinerGetTxData` interface.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+// `txid` and `extra_info` are present for full wire-format parity with the
+// TypeScript SDK's `ArcMinerGetTxData` even though the Rust consumer does
+// not read them directly. Kept so the deserializer accepts unchanged JSON.
+#[allow(dead_code)]
 struct ArcGetTxData {
     #[serde(default)]
     txid: String,

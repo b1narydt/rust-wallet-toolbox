@@ -25,6 +25,11 @@ pub struct ArcSseClientOptions {
 
 /// SSE streaming client for ARC transaction status updates.
 ///
+/// Callback invoked whenever the SSE `last_event_id` advances.
+///
+/// Called with the new event ID string so callers can persist resume state.
+pub type LastEventIdChangedCallback = Box<dyn Fn(&str) + Send + Sync>;
+
 /// Connects to ARC's SSE endpoint for real-time status updates.
 /// Supports reconnection with exponential backoff and event ID tracking.
 pub struct ArcSseClient {
@@ -32,7 +37,7 @@ pub struct ArcSseClient {
     callback_token: String,
     arc_api_key: Option<String>,
     last_event_id: Option<String>,
-    on_last_event_id_changed: Option<Box<dyn Fn(&str) + Send + Sync>>,
+    on_last_event_id_changed: Option<LastEventIdChangedCallback>,
     event_tx: mpsc::Sender<ArcSseEvent>,
     cancel_token: CancellationToken,
 }
@@ -56,7 +61,7 @@ impl ArcSseClient {
     }
 
     /// Set the callback that is invoked whenever lastEventId changes.
-    pub fn set_on_last_event_id_changed(&mut self, cb: Box<dyn Fn(&str) + Send + Sync>) {
+    pub fn set_on_last_event_id_changed(&mut self, cb: LastEventIdChangedCallback) {
         self.on_last_event_id_changed = Some(cb);
     }
 
@@ -107,8 +112,8 @@ impl ArcSseClient {
 
             let mut es = EventSource::new(request).expect("Failed to create EventSource");
 
-            // Reset backoff on successful connection
-            backoff_secs = 1;
+            // Note: backoff is reset on `Event::Open` below (successful connection),
+            // not on every reconnect attempt, to preserve exponential backoff.
 
             loop {
                 use futures::StreamExt;

@@ -136,8 +136,7 @@ fn parse_url_parts(url: &str) -> Option<(String, String, Option<String>)> {
         if let Some(bracket_end) = host_port.find(']') {
             let hostname = &host_port[1..bracket_end];
             let after_bracket = &host_port[bracket_end + 1..];
-            let port = if after_bracket.starts_with(':') {
-                let p = &after_bracket[1..];
+            let port = if let Some(p) = after_bracket.strip_prefix(':') {
                 if p.is_empty() {
                     None
                 } else {

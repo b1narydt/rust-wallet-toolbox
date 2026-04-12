@@ -567,7 +567,7 @@ impl WalletInterface for WalletPermissionsManager {
             let cpty = args
                 .counterparty
                 .as_ref()
-                .map(|c| counterparty_str(c))
+                .map(counterparty_str)
                 .unwrap_or_default();
             ensure::ensure_protocol_permission(
                 self,

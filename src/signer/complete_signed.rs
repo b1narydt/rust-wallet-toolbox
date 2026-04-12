@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use bsv::primitives::public_key::PublicKey;
 use bsv::primitives::transaction_signature::{SIGHASH_ALL, SIGHASH_FORKID};
 use bsv::script::locking_script::LockingScript;
-use bsv::script::templates::ScriptTemplateUnlock;
 use bsv::script::unlocking_script::UnlockingScript;
 use bsv::transaction::transaction::Transaction;
 use bsv::transaction::transaction_output::TransactionOutput;

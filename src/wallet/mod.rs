@@ -12,6 +12,10 @@ pub mod settings;
 pub mod setup;
 pub mod types;
 pub mod validation;
+// The `wallet` submodule name mirrors the TypeScript wallet-toolbox layout
+// (`wallet/Wallet.ts`) which holds the main `Wallet` struct in its own file.
+// Renaming would be a breaking change to the public module path.
+#[allow(clippy::module_inception)]
 pub mod wallet;
 
 // Re-export key public types for convenience.

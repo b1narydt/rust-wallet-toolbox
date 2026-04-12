@@ -448,7 +448,7 @@ impl WalletAuthenticationManager {
 
 /// Convert a hex string to bytes.
 fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, WalletError> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err(WalletError::Internal(format!(
             "Invalid hex string length: {}",
             hex.len()

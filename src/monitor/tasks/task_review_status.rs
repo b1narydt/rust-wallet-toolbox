@@ -66,7 +66,6 @@ impl WalletMonitorTask for TaskReviewStatus {
         let now = chrono::Utc::now().naive_utc();
         let aged_limit = now - chrono::Duration::milliseconds(self.aged_limit_msecs as i64);
 
-        use crate::storage::traits::reader_writer::StorageReaderWriter;
         let result = self.storage.review_status(aged_limit).await?;
         Ok(result)
     }

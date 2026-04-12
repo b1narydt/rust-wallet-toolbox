@@ -46,6 +46,12 @@ struct CacheEntry<T> {
     expires_at: Instant,
 }
 
+impl Default for OverlayCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OverlayCache {
     /// Create a new empty OverlayCache.
     pub fn new() -> Self {
@@ -322,7 +328,7 @@ async fn parse_single_output(
     let signature: Option<Vec<u8>> = cert_data
         .get("signature")
         .and_then(|v| v.as_str())
-        .map(|s| hex_decode(s));
+        .map(hex_decode);
 
     // Parse cert_type as base64-decoded 32-byte array
     let cert_type_bytes = base64_decode_to_32(cert_type_str);

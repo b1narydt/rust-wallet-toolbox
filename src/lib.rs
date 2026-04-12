@@ -1,4 +1,14 @@
-#![warn(missing_docs)]
+// Note: `missing_docs` is intentionally NOT warned/denied at crate level.
+// CI runs clippy with `-A missing_docs` to allow private/incomplete doc coverage
+// on struct fields, variants, and methods. The crate-level attribute would
+// otherwise override the command-line `-A` (rustc lint precedence).
+#![allow(missing_docs)]
+// `WalletError::ReviewActions` and `::InvalidMerkleRoot` carry rich contextual
+// data required by the TypeScript-parity wire format (matching WERR_* payloads).
+// Boxing the variant would force an API-breaking change to a stable public
+// error type used pervasively as `Result<_, WalletError>`. The size is
+// intentional for API stability and wire-format parity.
+#![allow(clippy::result_large_err)]
 //! BSV Wallet Toolbox - Production-ready BSV wallet implementation in Rust.
 //!
 //! This crate provides a complete, production-ready BSV wallet with persistent

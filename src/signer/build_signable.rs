@@ -62,7 +62,7 @@ pub fn build_signable_transaction(
     // Build a vout-to-index mapping so we add outputs in vout order
     // ---------------------------------------------------------------
     let mut vout_to_index: Vec<usize> = vec![0; storage_outputs.len()];
-    for vout in 0..storage_outputs.len() {
+    for (vout, slot) in vout_to_index.iter_mut().enumerate() {
         let idx = storage_outputs
             .iter()
             .position(|o| o.vout == vout as u32)
@@ -70,14 +70,13 @@ pub fn build_signable_transaction(
                 parameter: "output.vout".to_string(),
                 must_be: format!("sequential. {} is missing", vout),
             })?;
-        vout_to_index[vout] = idx;
+        *slot = idx;
     }
 
     // ---------------------------------------------------------------
     // Add OUTPUTS in vout order
     // ---------------------------------------------------------------
-    for vout in 0..storage_outputs.len() {
-        let i = vout_to_index[vout];
+    for &i in &vout_to_index {
         let out = &storage_outputs[i];
 
         let is_change = out.provided_by == StorageProvidedBy::Storage

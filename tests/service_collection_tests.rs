@@ -9,10 +9,15 @@ use chrono::Utc;
 // Mock provider trait and implementation for testing
 // ---------------------------------------------------------------------------
 
+// `name`/`name_val` are kept for parity with the provider trait shape used
+// in production (`WalletServices`-adjacent providers expose a `name`) even
+// though the round-robin failover tests below only exercise insertion order.
+#[allow(dead_code)]
 trait MockProvider: Send + Sync {
     fn name(&self) -> &str;
 }
 
+#[allow(dead_code)]
 struct TestProvider {
     name_val: String,
 }

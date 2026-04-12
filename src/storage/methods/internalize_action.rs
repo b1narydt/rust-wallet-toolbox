@@ -629,6 +629,10 @@ fn output_index_of(out: &InternalizeOutput) -> u32 {
 }
 
 /// Create a new wallet payment output record.
+// Each argument maps directly to a column of the `outputs` row being inserted;
+// grouping them into a struct would just shadow the row shape without
+// reducing coupling. Kept as-is for call-site clarity.
+#[allow(clippy::too_many_arguments)]
 async fn store_new_wallet_payment<S: StorageReaderWriter + ?Sized>(
     storage: &S,
     transaction_id: i64,
@@ -675,6 +679,10 @@ async fn store_new_wallet_payment<S: StorageReaderWriter + ?Sized>(
 }
 
 /// Create a new basket insertion output record.
+// Each argument maps directly to a column of the `outputs` row being inserted;
+// grouping them into a struct would just shadow the row shape without
+// reducing coupling. Kept as-is for call-site clarity.
+#[allow(clippy::too_many_arguments)]
 async fn store_new_basket_insertion<S: StorageReaderWriter + ?Sized>(
     storage: &S,
     transaction_id: i64,

@@ -17,6 +17,12 @@ pub struct TaskClock {
     next_minute: u64,
 }
 
+impl Default for TaskClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TaskClock {
     /// Create a new clock task.
     pub fn new() -> Self {

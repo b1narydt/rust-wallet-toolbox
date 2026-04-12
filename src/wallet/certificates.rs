@@ -311,13 +311,14 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
 ///
 /// Ported from Wallet.ts lines 495-603 (issuance protocol).
 ///
-/// NOTE on AuthFetch: The bsv-sdk AuthFetch requires `W: WalletInterface + Clone
-/// + 'static`. For this helper function, we use a simplified reqwest-based HTTP
-/// approach for the CSR call. The auth headers (x-bsv-auth-identity-key) are
-/// checked on the response but full BRC-31 mutual auth is not performed inline.
-/// When the Wallet struct (which can implement Clone) calls this function, it
-/// can be upgraded to use AuthFetch directly. The certificate signature provides
-/// the real authentication of the certifier.
+/// NOTE on AuthFetch: The bsv-sdk AuthFetch requires
+/// `W: WalletInterface + Clone + 'static`. For this helper function, we use a
+/// simplified reqwest-based HTTP approach for the CSR call. The auth headers
+/// (x-bsv-auth-identity-key) are checked on the response but full BRC-31
+/// mutual auth is not performed inline. When the Wallet struct (which can
+/// implement Clone) calls this function, it can be upgraded to use AuthFetch
+/// directly. The certificate signature provides the real authentication of
+/// the certifier.
 pub async fn acquire_issuance_certificate<W: WalletInterface + ?Sized>(
     storage: &WalletStorageManager,
     wallet: &W,

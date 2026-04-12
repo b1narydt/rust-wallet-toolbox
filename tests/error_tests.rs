@@ -4,6 +4,12 @@
 //! string codes, and to_wallet_error_object() produces valid JSON matching the
 //! TypeScript WalletError.toJson() format.
 
+// The production crate already allows `clippy::result_large_err` at the
+// crate root because `WalletError::ReviewActions` intentionally carries rich
+// payload data. Test-side `WalletResult<_>` functions inherit the same
+// constraint, so we allow the lint here too.
+#![allow(clippy::result_large_err)]
+
 use bsv_wallet_toolbox::error::{WalletError, WalletErrorObject, WalletResult};
 
 // -- Display output tests --

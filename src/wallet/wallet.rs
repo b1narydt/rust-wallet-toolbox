@@ -26,8 +26,8 @@ use bsv::wallet::interfaces::{
     ProveCertificateResult, RelinquishCertificateArgs, RelinquishCertificateResult,
     RelinquishOutputArgs, RelinquishOutputResult, RevealCounterpartyKeyLinkageArgs,
     RevealCounterpartyKeyLinkageResult, RevealSpecificKeyLinkageArgs,
-    RevealSpecificKeyLinkageResult, SignActionArgs, SignActionOptions, SignActionResult, TrustSelf,
-    VerifyHmacArgs, VerifyHmacResult, VerifySignatureArgs, VerifySignatureResult, WalletInterface,
+    RevealSpecificKeyLinkageResult, SignActionArgs, SignActionResult, TrustSelf, VerifyHmacArgs,
+    VerifyHmacResult, VerifySignatureArgs, VerifySignatureResult, WalletInterface,
 };
 use bsv::wallet::proto_wallet::ProtoWallet;
 
@@ -38,7 +38,6 @@ use crate::services::traits::WalletServices;
 use crate::signer::default_signer::DefaultWalletSigner;
 use crate::signer::traits::WalletSigner;
 use crate::storage::manager::WalletStorageManager;
-use crate::storage::traits::provider::StorageProvider;
 use crate::types::Chain;
 use crate::wallet::privileged::PrivilegedKeyManager;
 use crate::wallet::settings::WalletSettingsManager;
@@ -110,6 +109,10 @@ pub struct Wallet {
     pub return_txid_only: bool,
     /// Self-trust configuration for signed operations.
     pub trust_self: Option<TrustSelf>,
+    // Stored for future BEEF-party operations; currently only referenced at
+    // construction time via `BeefParty::new(...)`. Kept to preserve the
+    // identity used to construct `beef` so later operations can rebind it.
+    #[allow(dead_code)]
     user_party: String,
 
     /// In-memory pending sign actions awaiting deferred signing.
@@ -393,7 +396,6 @@ impl Wallet {
     pub async fn sweep_to(&self, to_wallet: &Wallet) -> Result<(), WalletError> {
         use crate::storage::methods::generate_change::MAX_POSSIBLE_SATOSHIS;
         use crate::utility::script_template_brc29::ScriptTemplateBRC29;
-        use bsv::wallet::types::BooleanDefaultFalse;
 
         // Generate random derivation prefix and suffix
         let derivation_prefix = random_base64(8);
@@ -1460,7 +1462,7 @@ impl WalletInterface for Wallet {
 pub struct WalletArc(pub Arc<Wallet>);
 
 impl WalletArc {
-    /// Create a new WalletArc from an existing Arc<Wallet>.
+    /// Create a new WalletArc from an existing `Arc<Wallet>`.
     pub fn new(wallet: Arc<Wallet>) -> Self {
         Self(wallet)
     }

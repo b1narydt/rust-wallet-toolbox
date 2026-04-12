@@ -4,7 +4,6 @@
 //! and deserializes back to an equal struct.
 
 use chrono::NaiveDateTime;
-use serde_json;
 
 use bsv_wallet_toolbox::status::{ProvenTxReqStatus, SyncStatus, TransactionStatus};
 use bsv_wallet_toolbox::tables::*;
@@ -33,7 +32,7 @@ fn sample_user() -> User {
 
 #[test]
 fn user_serializes_camel_case() {
-    let json = serde_json::to_value(&sample_user()).unwrap();
+    let json = serde_json::to_value(sample_user()).unwrap();
     assert!(
         json.get("userId").is_some(),
         "Expected camelCase key 'userId'"
@@ -79,7 +78,7 @@ fn sample_proven_tx() -> ProvenTx {
 
 #[test]
 fn proven_tx_serializes_camel_case() {
-    let json = serde_json::to_value(&sample_proven_tx()).unwrap();
+    let json = serde_json::to_value(sample_proven_tx()).unwrap();
     assert!(json.get("provenTxId").is_some());
     assert!(json.get("blockHash").is_some());
     assert!(json.get("merkleRoot").is_some());
@@ -117,7 +116,7 @@ fn sample_proven_tx_req() -> ProvenTxReq {
 
 #[test]
 fn proven_tx_req_serializes_camel_case() {
-    let json = serde_json::to_value(&sample_proven_tx_req()).unwrap();
+    let json = serde_json::to_value(sample_proven_tx_req()).unwrap();
     assert!(json.get("provenTxReqId").is_some());
     assert!(json.get("provenTxId").is_some());
     // inputBEEF is None in sample, so it should be omitted
@@ -160,7 +159,7 @@ fn sample_transaction() -> Transaction {
 
 #[test]
 fn transaction_serializes_camel_case() {
-    let json = serde_json::to_value(&sample_transaction()).unwrap();
+    let json = serde_json::to_value(sample_transaction()).unwrap();
     assert!(json.get("transactionId").is_some());
     assert!(json.get("userId").is_some());
     assert!(json.get("provenTxId").is_some());
@@ -176,7 +175,7 @@ fn transaction_serializes_camel_case() {
 
 #[test]
 fn transaction_status_serializes_camel_case() {
-    let json = serde_json::to_value(&sample_transaction()).unwrap();
+    let json = serde_json::to_value(sample_transaction()).unwrap();
     assert_eq!(json["status"], "completed");
 }
 
@@ -205,7 +204,7 @@ fn sample_output_basket() -> OutputBasket {
 
 #[test]
 fn output_basket_serializes_camel_case() {
-    let json = serde_json::to_value(&sample_output_basket()).unwrap();
+    let json = serde_json::to_value(sample_output_basket()).unwrap();
     assert!(json.get("basketId").is_some());
     assert!(json.get("numberOfDesiredUTXOs").is_some());
     assert!(json.get("minimumDesiredUTXOValue").is_some());
@@ -254,7 +253,7 @@ fn sample_output() -> Output {
 
 #[test]
 fn output_serializes_camel_case() {
-    let json = serde_json::to_value(&sample_output()).unwrap();
+    let json = serde_json::to_value(sample_output()).unwrap();
     assert!(json.get("outputId").is_some());
     assert!(json.get("transactionId").is_some());
     assert!(json.get("basketId").is_some());
@@ -275,7 +274,7 @@ fn output_serializes_camel_case() {
 
 #[test]
 fn output_optional_none_is_omitted() {
-    let json = serde_json::to_value(&sample_output()).unwrap();
+    let json = serde_json::to_value(sample_output()).unwrap();
     // None values should be omitted from JSON, not present as null
     assert!(
         json.get("senderIdentityKey").is_none(),
@@ -406,7 +405,7 @@ fn sample_certificate() -> Certificate {
 
 #[test]
 fn certificate_serializes_type_field() {
-    let json = serde_json::to_value(&sample_certificate()).unwrap();
+    let json = serde_json::to_value(sample_certificate()).unwrap();
     // Should serialize as "type" not "certType"
     assert!(json.get("type").is_some(), "Expected 'type' key in JSON");
     assert!(
@@ -465,7 +464,7 @@ fn sample_commission() -> Commission {
 
 #[test]
 fn commission_serializes_camel_case() {
-    let json = serde_json::to_value(&sample_commission()).unwrap();
+    let json = serde_json::to_value(sample_commission()).unwrap();
     assert!(json.get("commissionId").is_some());
     assert!(json.get("keyOffset").is_some());
     assert!(json.get("isRedeemed").is_some());
@@ -517,7 +516,7 @@ fn sample_settings() -> Settings {
 
 #[test]
 fn settings_serializes_camel_case() {
-    let json = serde_json::to_value(&sample_settings()).unwrap();
+    let json = serde_json::to_value(sample_settings()).unwrap();
     assert!(json.get("storageIdentityKey").is_some());
     assert!(json.get("storageName").is_some());
     assert!(json.get("maxOutputScript").is_some());
@@ -555,7 +554,7 @@ fn sample_sync_state() -> SyncState {
 
 #[test]
 fn sync_state_serializes_camel_case() {
-    let json = serde_json::to_value(&sample_sync_state()).unwrap();
+    let json = serde_json::to_value(sample_sync_state()).unwrap();
     assert!(json.get("syncStateId").is_some());
     assert!(json.get("storageIdentityKey").is_some());
     assert!(json.get("storageName").is_some());

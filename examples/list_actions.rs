@@ -97,8 +97,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 3. Print table of actions
         // -----------------------------------------------------------------------
         println!(
-            "\n  {:<64}  {:>10}  {:>5}  {:>11}  {}",
-            "TXID", "Satoshis", "Dir", "Status", "Description"
+            "\n  {:<64}  {:>10}  {:>5}  {:>11}  Description",
+            "TXID", "Satoshis", "Dir", "Status"
         );
         println!("  {}", "-".repeat(110));
 

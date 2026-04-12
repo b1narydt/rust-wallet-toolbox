@@ -13,9 +13,9 @@ mod sqlite_tests {
 
     #[test]
     fn object_safety_compiles() {
-        // If this test compiles, Arc<dyn StorageProvider> is object-safe.
-        // We just need the function signature above to exist.
-        assert!(true);
+        // If this test compiles, `Arc<dyn StorageProvider>` is object-safe.
+        // The `_accepts_sp`/`_accepts_dsp` function signatures above are the
+        // actual compile-time assertion; this function only needs to exist.
     }
 
     /// Test 3: SqliteStorage::new_sqlite creates successfully with in-memory SQLite.
@@ -97,8 +97,9 @@ mod sqlite_tests {
 
     #[test]
     fn wallet_storage_provider_object_safe() {
-        // If this test compiles, Arc<dyn WalletStorageProvider> is object-safe.
-        assert!(true);
+        // If this test compiles, `Arc<dyn WalletStorageProvider>` is
+        // object-safe. The `_accepts_wsp` signature above carries the
+        // actual compile-time assertion.
     }
 
     /// Test: a function accepting &dyn WalletStorageProvider compiles when passed &SqliteStorage.

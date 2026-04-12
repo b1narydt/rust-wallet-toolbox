@@ -14,7 +14,9 @@ use crate::chaintracks::{
 use crate::error::{WalletError, WalletResult};
 use crate::types::Chain;
 
-use super::{BulkHeaderFileInfo, BulkHeaderFilesInfo, DEFAULT_CDN_URL, LEGACY_CDN_URL};
+#[cfg(test)]
+use super::LEGACY_CDN_URL;
+use super::{BulkHeaderFileInfo, BulkHeaderFilesInfo, DEFAULT_CDN_URL};
 
 /// Options for the CDN bulk ingestor.
 #[derive(Debug, Clone)]
@@ -71,13 +73,28 @@ impl BulkCdnOptions {
 /// Downloads binary header files from Babbage CDN.
 /// Files are organised by height ranges and contain 80 bytes per header.
 pub struct BulkCdnIngestor {
+    // `options`, `client`, and `available_files` are only consumed by the
+    // internal `fetch_file_listing`/`download_file`/`parse_headers`/
+    // `fetch_headers_for_range` helpers (see below). The public
+    // `BulkIngestor` trait impl currently delegates only to `storage`; the
+    // helpers are reachable via tests and via future driver code. Keeping the
+    // full wiring preserves parity with the TS ingestor shape.
+    #[allow(dead_code)]
     options: BulkCdnOptions,
+    #[allow(dead_code)]
     client: reqwest::Client,
     storage: RwLock<Option<Arc<dyn ChaintracksStorageIngest>>>,
     /// Cached file listing from the CDN JSON index.
+    #[allow(dead_code)]
     available_files: RwLock<Option<BulkHeaderFilesInfo>>,
 }
 
+// Helper methods below (`build_url`, `fetch_file_listing`, `download_file`,
+// `parse_headers`, `fetch_headers_for_range`) are kept for parity with the
+// TypeScript CDN ingestor. They are exercised from `#[cfg(test)]` blocks and
+// are expected to be used by future driver code that wires range-based
+// backfill into the `BulkIngestor` trait impl.
+#[allow(dead_code)]
 impl BulkCdnIngestor {
     /// Create a new CDN bulk ingestor from `options`.
     pub fn new(options: BulkCdnOptions) -> WalletResult<Self> {

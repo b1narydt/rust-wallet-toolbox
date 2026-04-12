@@ -4,7 +4,6 @@
 //! Recovers a PendingSignAction, applies user-provided spends,
 //! signs BRC-29 inputs, and processes the transaction.
 
-use std::collections::HashMap;
 use std::io::Cursor;
 
 use bsv::primitives::public_key::PublicKey;
@@ -94,7 +93,9 @@ pub async fn signer_sign_action(
     // updates here, transactions stay stuck as unprocessed and outputs remain
     // invisible to balance/UTXO queries.
     if !is_no_send && !is_delayed {
-        let post_results = services.post_beef(&beef_bytes, &[txid.clone()]).await;
+        let post_results = services
+            .post_beef(&beef_bytes, std::slice::from_ref(&txid))
+            .await;
         for pr in &post_results {
             if pr.status != "success" {
                 tracing::warn!(
@@ -157,6 +158,11 @@ pub async fn signer_sign_action(
 }
 
 #[cfg(test)]
+// These tests document `Option::unwrap_or` semantics with const values on
+// both sides (to mirror the `mergePriorOptions` TS semantics). Clippy's
+// `unnecessary_unwrap` lint fires because the inputs are literal `Some`/`None`,
+// but the readability of the test is the point.
+#[allow(clippy::unnecessary_unwrap, clippy::unnecessary_literal_unwrap)]
 mod tests {
     #[test]
     fn test_merge_prior_options_explicit_false_overrides_prior_true() {

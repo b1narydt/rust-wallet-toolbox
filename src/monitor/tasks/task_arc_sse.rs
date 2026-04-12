@@ -21,8 +21,6 @@ use crate::services::types::ArcSseEvent;
 use crate::status::ProvenTxReqStatus;
 use crate::storage::find_args::{FindProvenTxReqsArgs, ProvenTxReqPartial};
 use crate::storage::manager::WalletStorageManager;
-use crate::storage::traits::reader::StorageReader;
-use crate::storage::traits::reader_writer::StorageReaderWriter;
 
 /// Terminal statuses for ProvenTxReq -- events for these are skipped.
 const TERMINAL_STATUSES: &[ProvenTxReqStatus] = &[

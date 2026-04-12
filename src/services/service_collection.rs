@@ -87,6 +87,14 @@ impl<T: ?Sized> ServiceCollection<T> {
     }
 
     /// Advance to the next provider (wraps around). Returns the new index.
+    //
+    // This is NOT `Iterator::next` — the method advances the internal
+    // round-robin cursor and returns the resulting index (a `usize`),
+    // not an `Option<Self::Item>`. The public API intentionally mirrors
+    // the TypeScript wallet-toolbox `ServiceCollection.next()` shape and
+    // renaming would be a breaking change. `ServiceCollection` is not
+    // meant to be an `Iterator`.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> usize {
         if !self.services.is_empty() {
             self.index = (self.index + 1) % self.services.len();

@@ -13,6 +13,12 @@ use crate::monitor::task_trait::WalletMonitorTask;
 /// Trigger always returns false -- this task never runs.
 pub struct TaskSyncWhenIdle;
 
+impl Default for TaskSyncWhenIdle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TaskSyncWhenIdle {
     /// Create a new sync-when-idle task (currently a no-op stub).
     pub fn new() -> Self {

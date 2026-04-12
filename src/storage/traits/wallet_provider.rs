@@ -34,11 +34,11 @@ use crate::storage::action_types::{
     StorageInternalizeActionResult, StorageProcessActionArgs, StorageProcessActionResult,
 };
 use crate::storage::find_args::{
-    CertificateFieldPartial, CertificatePartial, FindCertificateFieldsArgs, FindCertificatesArgs,
-    FindMonitorEventsArgs, FindOutputBasketsArgs, FindOutputsArgs, FindProvenTxReqsArgs,
-    FindProvenTxsArgs, FindSettingsArgs, FindSyncStatesArgs, FindTransactionsArgs, OutputPartial,
-    ProvenTxPartial, ProvenTxReqPartial, PurgeParams, SettingsPartial, SyncStatePartial,
-    TransactionPartial, UserPartial,
+    CertificatePartial, FindCertificateFieldsArgs, FindCertificatesArgs, FindMonitorEventsArgs,
+    FindOutputBasketsArgs, FindOutputsArgs, FindProvenTxReqsArgs, FindProvenTxsArgs,
+    FindSettingsArgs, FindSyncStatesArgs, FindTransactionsArgs, OutputPartial, ProvenTxPartial,
+    ProvenTxReqPartial, PurgeParams, SettingsPartial, SyncStatePartial, TransactionPartial,
+    UserPartial,
 };
 use crate::storage::sync::get_sync_chunk::{GetSyncChunkArgs, SyncChunkOffsets};
 use crate::storage::sync::request_args::{RequestSyncChunkArgs, SyncChunkOffset};
@@ -47,7 +47,7 @@ use crate::storage::sync::{ProcessSyncChunkResult, SyncChunk};
 use crate::storage::traits::provider::StorageProvider;
 use crate::storage::traits::reader::StorageReader;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
-use crate::storage::{verify_one, verify_one_or_none, TrxToken};
+use crate::storage::{verify_one, verify_one_or_none};
 use crate::tables::{
     Certificate, CertificateField, MonitorEvent, Output, OutputBasket, ProvenTx, ProvenTxReq,
     Settings, SyncState, Transaction, User,
@@ -406,14 +406,14 @@ pub trait WalletStorageProvider: Send + Sync {
     // -----------------------------------------------------------------------
 
     /// Find proven transactions matching the given filter.
-    async fn find_proven_txs(&self, args: &FindProvenTxsArgs) -> WalletResult<Vec<ProvenTx>> {
+    async fn find_proven_txs(&self, _args: &FindProvenTxsArgs) -> WalletResult<Vec<ProvenTx>> {
         Err(WalletError::NotImplemented("find_proven_txs".into()))
     }
 
     /// Find transactions matching the given filter.
     async fn find_transactions(
         &self,
-        args: &FindTransactionsArgs,
+        _args: &FindTransactionsArgs,
     ) -> WalletResult<Vec<Transaction>> {
         Err(WalletError::NotImplemented("find_transactions".into()))
     }
@@ -935,24 +935,21 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         // Determine if chunk is empty (nothing to process).
         // An empty chunk signals that the reader has no more data — sync is done.
         let chunk_is_empty = chunk.user.is_none()
-            && chunk.proven_txs.as_ref().map_or(true, |v| v.is_empty())
-            && chunk.output_baskets.as_ref().map_or(true, |v| v.is_empty())
-            && chunk.transactions.as_ref().map_or(true, |v| v.is_empty())
-            && chunk.outputs.as_ref().map_or(true, |v| v.is_empty())
-            && chunk.tx_labels.as_ref().map_or(true, |v| v.is_empty())
-            && chunk.tx_label_maps.as_ref().map_or(true, |v| v.is_empty())
-            && chunk.output_tags.as_ref().map_or(true, |v| v.is_empty())
-            && chunk
-                .output_tag_maps
-                .as_ref()
-                .map_or(true, |v| v.is_empty())
-            && chunk.certificates.as_ref().map_or(true, |v| v.is_empty())
+            && chunk.proven_txs.as_ref().is_none_or(|v| v.is_empty())
+            && chunk.output_baskets.as_ref().is_none_or(|v| v.is_empty())
+            && chunk.transactions.as_ref().is_none_or(|v| v.is_empty())
+            && chunk.outputs.as_ref().is_none_or(|v| v.is_empty())
+            && chunk.tx_labels.as_ref().is_none_or(|v| v.is_empty())
+            && chunk.tx_label_maps.as_ref().is_none_or(|v| v.is_empty())
+            && chunk.output_tags.as_ref().is_none_or(|v| v.is_empty())
+            && chunk.output_tag_maps.as_ref().is_none_or(|v| v.is_empty())
+            && chunk.certificates.as_ref().is_none_or(|v| v.is_empty())
             && chunk
                 .certificate_fields
                 .as_ref()
-                .map_or(true, |v| v.is_empty())
-            && chunk.commissions.as_ref().map_or(true, |v| v.is_empty())
-            && chunk.proven_tx_reqs.as_ref().map_or(true, |v| v.is_empty());
+                .is_none_or(|v| v.is_empty())
+            && chunk.commissions.as_ref().is_none_or(|v| v.is_empty())
+            && chunk.proven_tx_reqs.as_ref().is_none_or(|v| v.is_empty());
 
         let (mut sync_map, _) = build_sync_map_and_offsets(args);
         let mut result = crate::storage::sync::process_sync_chunk::process_sync_chunk(

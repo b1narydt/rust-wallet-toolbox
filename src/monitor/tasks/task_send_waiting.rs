@@ -16,7 +16,6 @@ use crate::services::traits::WalletServices;
 use crate::status::ProvenTxReqStatus;
 use crate::storage::find_args::{FindProvenTxReqsArgs, Paged, ProvenTxReqPartial};
 use crate::storage::manager::WalletStorageManager;
-use crate::storage::traits::reader::StorageReader;
 use crate::types::Chain;
 
 use super::super::task_trait::WalletMonitorTask;

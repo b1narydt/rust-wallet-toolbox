@@ -148,18 +148,19 @@ fn compute_size(
         .fixed_inputs
         .iter()
         .map(|x| x.unlocking_script_length)
-        .chain(
-            std::iter::repeat(args.change_unlocking_script_length)
-                .take(allocated_len + added_inputs),
-        )
+        .chain(std::iter::repeat_n(
+            args.change_unlocking_script_length,
+            allocated_len + added_inputs,
+        ))
         .collect();
     let output_script_lengths: Vec<usize> = args
         .fixed_outputs
         .iter()
         .map(|x| x.locking_script_length)
-        .chain(
-            std::iter::repeat(args.change_locking_script_length).take(change_len + added_outputs),
-        )
+        .chain(std::iter::repeat_n(
+            args.change_locking_script_length,
+            change_len + added_outputs,
+        ))
         .collect();
     transaction_size(&input_script_lengths, &output_script_lengths)
 }
@@ -174,7 +175,7 @@ fn fee_target(
 ) -> u64 {
     let sz = compute_size(args, allocated_len, change_len, added_inputs, added_outputs);
     // ceil(size * sats_per_kb / 1000)
-    ((sz as u64) * args.fee_model.value + 999) / 1000
+    ((sz as u64) * args.fee_model.value).div_ceil(1000)
 }
 
 /// Sum of fixed input satoshis plus allocated change input satoshis.
@@ -245,15 +246,9 @@ pub fn generate_change_sdk(
     let mut fixed_output_satoshis: Vec<u64> =
         args.fixed_outputs.iter().map(|o| o.satoshis).collect();
 
-    // Compute initial fee excess
-    let mut fee_excess_now = fee_excess(
-        args,
-        &allocated_change_inputs,
-        &change_outputs,
-        &fixed_output_satoshis,
-        0,
-        0,
-    );
+    // fee_excess_now is computed fresh after the starvation loop completes
+    // (see line ~458); earlier iterations recompute `fee_excess(...)` inline.
+    let mut fee_excess_now: i64;
 
     let has_target_net_count = args.target_net_count.is_some();
     let target_net_count = args.target_net_count.unwrap_or(0);
@@ -298,14 +293,9 @@ pub fn generate_change_sdk(
     let mut removing_outputs = false;
     loop {
         release_all(&mut allocated_change_inputs, &mut storage);
-        fee_excess_now = fee_excess(
-            args,
-            &allocated_change_inputs,
-            &change_outputs,
-            &fixed_output_satoshis,
-            0,
-            0,
-        );
+        // Note: fee_excess_now is not used within this loop; each branch
+        // recomputes `fee_excess(...)` inline. The post-loop block below
+        // (line ~452) assigns fee_excess_now based on the final state.
 
         // Inner funding loop: add one change input at a time
         while fee_excess(
@@ -378,18 +368,19 @@ pub fn generate_change_sdk(
                         0,
                     );
 
-                    if !removing_outputs && current_excess > 0 {
-                        if ao == 1 || change_outputs.is_empty() {
-                            let sats = std::cmp::min(
-                                current_excess as u64,
-                                if change_outputs.is_empty() {
-                                    args.change_first_satoshis
-                                } else {
-                                    args.change_initial_satoshis
-                                },
-                            );
-                            change_outputs.push(ChangeOutput { satoshis: sats });
-                        }
+                    if !removing_outputs
+                        && current_excess > 0
+                        && (ao == 1 || change_outputs.is_empty())
+                    {
+                        let sats = std::cmp::min(
+                            current_excess as u64,
+                            if change_outputs.is_empty() {
+                                args.change_first_satoshis
+                            } else {
+                                args.change_initial_satoshis
+                            },
+                        );
+                        change_outputs.push(ChangeOutput { satoshis: sats });
                     }
                 }
             }
@@ -586,7 +577,7 @@ pub fn generate_change_sdk(
         allocated_change_inputs,
         size: final_size,
         fee: actual_fee,
-        sats_per_kb: sats_per_kb,
+        sats_per_kb,
         max_possible_satoshis_adjustment: max_possible_adjustment,
     })
 }
@@ -773,7 +764,7 @@ mod tests {
         );
         let available = make_utxos(&[5000]);
         let result = generate_change_sdk(&args, &available).unwrap();
-        let expected_fee = ((result.size as u64) * 100 + 999) / 1000;
+        let expected_fee = ((result.size as u64) * 100).div_ceil(1000);
         assert_eq!(result.fee, expected_fee);
     }
 

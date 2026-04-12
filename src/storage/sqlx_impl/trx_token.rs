@@ -41,8 +41,10 @@ impl TrxToken {
 
 impl std::fmt::Debug for TrxToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Deref through the `Box` so `Any::type_id` reports the erased inner
+        // type, not `Box<dyn Any + Send + Sync>` itself.
         f.debug_struct("TrxToken")
-            .field("inner_type_id", &self.inner.type_id())
+            .field("inner_type_id", &(*self.inner).type_id())
             .finish()
     }
 }

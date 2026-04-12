@@ -16,8 +16,6 @@ use crate::monitor::{DeactivatedHeader, ONE_MINUTE, ONE_SECOND};
 use crate::services::traits::WalletServices;
 use crate::storage::find_args::{FindProvenTxsArgs, ProvenTxPartial};
 use crate::storage::manager::WalletStorageManager;
-use crate::storage::traits::reader::StorageReader;
-use crate::storage::traits::reader_writer::StorageReaderWriter;
 use crate::tables::ProvenTx;
 
 use super::super::task_trait::WalletMonitorTask;

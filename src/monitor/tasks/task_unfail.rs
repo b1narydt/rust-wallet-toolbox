@@ -21,8 +21,6 @@ use crate::storage::find_args::{
     FindOutputsArgs, FindProvenTxReqsArgs, OutputPartial, Paged, ProvenTxReqPartial,
 };
 use crate::storage::manager::WalletStorageManager;
-use crate::storage::traits::reader::StorageReader;
-use crate::storage::traits::reader_writer::StorageReaderWriter;
 use async_trait::async_trait;
 
 /// Task that retries previously failed transactions.
@@ -255,35 +253,32 @@ impl TaskUnFail {
                                                 let txid_str = o.txid.as_deref().unwrap_or("");
                                                 let vout = o.vout as u32;
 
-                                                match self
+                                                if let Ok(is_utxo) = self
                                                     .services
                                                     .is_utxo(script_bytes, txid_str, vout)
                                                     .await
                                                 {
-                                                    Ok(is_utxo) => {
-                                                        let current_spendable = o.spendable;
-                                                        if is_utxo != current_spendable {
-                                                            let update = OutputPartial {
-                                                                spendable: Some(is_utxo),
-                                                                ..Default::default()
-                                                            };
-                                                            let _ = self
-                                                                .storage
-                                                                .update_output(o.output_id, &update)
-                                                                .await;
-                                                            log.push_str(&format!(
-                                                                "{}output {} set to {}\n",
-                                                                inner_pad,
-                                                                o.output_id,
-                                                                if is_utxo {
-                                                                    "spendable"
-                                                                } else {
-                                                                    "spent"
-                                                                }
-                                                            ));
-                                                        }
+                                                    let current_spendable = o.spendable;
+                                                    if is_utxo != current_spendable {
+                                                        let update = OutputPartial {
+                                                            spendable: Some(is_utxo),
+                                                            ..Default::default()
+                                                        };
+                                                        let _ = self
+                                                            .storage
+                                                            .update_output(o.output_id, &update)
+                                                            .await;
+                                                        log.push_str(&format!(
+                                                            "{}output {} set to {}\n",
+                                                            inner_pad,
+                                                            o.output_id,
+                                                            if is_utxo {
+                                                                "spendable"
+                                                            } else {
+                                                                "spent"
+                                                            }
+                                                        ));
                                                     }
-                                                    Err(_) => {}
                                                 }
                                             }
                                         }

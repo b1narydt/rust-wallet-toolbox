@@ -13,8 +13,6 @@ use crate::monitor::ONE_MINUTE;
 use crate::status::TransactionStatus;
 use crate::storage::find_args::{FindTransactionsArgs, TransactionPartial};
 use crate::storage::manager::WalletStorageManager;
-use crate::storage::traits::reader::StorageReader;
-use crate::storage::traits::reader_writer::StorageReaderWriter;
 
 use super::super::task_trait::WalletMonitorTask;
 

@@ -18,7 +18,6 @@ use crate::services::traits::WalletServices;
 use crate::status::ProvenTxReqStatus;
 use crate::storage::find_args::{FindProvenTxReqsArgs, Paged, ProvenTxReqPartial};
 use crate::storage::manager::WalletStorageManager;
-use crate::storage::traits::reader::StorageReader;
 use crate::types::Chain;
 
 use super::super::task_trait::WalletMonitorTask;
@@ -76,6 +75,11 @@ impl TaskCheckForProofs {
     }
 
     /// Create with a custom trigger interval.
+    // All eight arguments are distinct runtime dependencies (storage, services,
+    // chain selection, control flags, timing, retry policy, callback, shared
+    // header height). A builder or context struct would not meaningfully
+    // reduce coupling; each parameter is orthogonal and required here.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_trigger_msecs(
         storage: WalletStorageManager,
         services: Arc<dyn WalletServices>,

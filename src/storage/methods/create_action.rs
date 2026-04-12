@@ -20,13 +20,11 @@ use crate::storage::find_args::{
     FindOutputBasketsArgs, FindOutputsArgs, FindTransactionsArgs, OutputBasketPartial,
     OutputPartial, TransactionPartial,
 };
-use crate::storage::methods::generate_change::{
-    generate_change_sdk, AvailableChange, MAX_POSSIBLE_SATOSHIS,
-};
+use crate::storage::methods::generate_change::{generate_change_sdk, AvailableChange};
 use crate::storage::traits::provider::StorageProvider;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
 use crate::storage::{verify_one, TrxToken};
-use crate::tables::{Output, OutputBasket, Transaction, TxLabel, TxLabelMap};
+use crate::tables::{Output, OutputBasket, Transaction, TxLabelMap};
 use crate::types::StorageProvidedBy;
 
 /// Simple hex encoding (avoids hex crate dependency).
@@ -467,7 +465,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
 
     // --- Create change output records ---
     let mut change_vouts: Vec<u32> = Vec::new();
-    for (i, change_output) in change_result.change_outputs.iter().enumerate() {
+    for change_output in change_result.change_outputs.iter() {
         let derivation_suffix = random_bytes_base64(16);
         let change_vout = vout;
 
@@ -599,7 +597,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         .iter()
         .map(|i| i.satoshis as i64)
         .sum();
-    let satoshis = change_out_sats - change_in_sats;
+    let _satoshis = change_out_sats - change_in_sats;
 
     let tx_update = crate::storage::find_args::TransactionPartial {
         is_outgoing: Some(true),
@@ -909,7 +907,7 @@ mod tests {
             .expect("find outputs");
 
         // Should have user output + change outputs
-        assert!(outputs.len() >= 1, "should have at least 1 output");
+        assert!(!outputs.is_empty(), "should have at least 1 output");
         // First output should be the user's output
         let user_output = outputs.iter().find(|o| o.vout == 0).expect("vout 0");
         assert_eq!(user_output.satoshis, 2_000);

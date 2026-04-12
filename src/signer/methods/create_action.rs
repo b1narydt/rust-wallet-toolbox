@@ -80,11 +80,11 @@ fn to_storage_args(args: &ValidCreateActionArgs) -> StorageCreateActionArgs {
                     vout: i.outpoint.vout,
                 },
                 input_description: i.input_description.clone(),
-                unlocking_script_length: if i.unlocking_script.is_some() {
-                    i.unlocking_script.as_ref().unwrap().len()
-                } else {
-                    i.unlocking_script_length
-                },
+                unlocking_script_length: i
+                    .unlocking_script
+                    .as_ref()
+                    .map(|s| s.len())
+                    .unwrap_or(i.unlocking_script_length),
                 sequence_number: i.sequence_number,
             })
             .collect(),
@@ -128,8 +128,9 @@ fn to_storage_args(args: &ValidCreateActionArgs) -> StorageCreateActionArgs {
 ///
 /// 1. Call storage.create_action to allocate UTXOs and create records
 /// 2. Build the unsigned transaction via build_signable_transaction
-/// 3a. If is_sign_action: store PendingSignAction, return SignableTransaction
-/// 3b. Otherwise: sign via complete_signed_transaction, process, optionally broadcast
+/// 3. Branch based on whether this is a deferred sign action:
+///    - If `is_sign_action`: store `PendingSignAction`, return `SignableTransaction`.
+///    - Otherwise: sign via `complete_signed_transaction`, process, optionally broadcast.
 pub async fn signer_create_action(
     storage: &WalletStorageManager,
     services: &(dyn WalletServices + Send + Sync),
@@ -250,7 +251,9 @@ pub async fn signer_create_action(
     // for the non-delayed case). Without this update, outputs remain
     // invisible to the balance query and UTXO selection.
     if !args.is_no_send && !args.is_delayed {
-        let _post_results = services.post_beef(&beef_bytes, &[txid.clone()]).await;
+        let _post_results = services
+            .post_beef(&beef_bytes, std::slice::from_ref(&txid))
+            .await;
 
         // Update Transaction status to unproven (broadcast attempted)
         let _ = storage
