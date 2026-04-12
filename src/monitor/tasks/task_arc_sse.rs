@@ -253,11 +253,23 @@ impl TaskArcSse {
 
 #[async_trait]
 impl WalletMonitorTask for TaskArcSse {
+    fn storage_manager(&self) -> Option<&WalletStorageManager> {
+        Some(&self.storage)
+    }
+
     fn name(&self) -> &str {
         "ArcadeSSE"
     }
 
     async fn async_setup(&mut self) -> Result<(), WalletError> {
+        // Inherit whatever the default setup does (currently:
+        // `make_available()` on `storage_manager()`). Delegating
+        // instead of hand-copying means this task automatically picks
+        // up any future additions to the default setup — metrics,
+        // logging, additional state prep — rather than silently
+        // skipping them.
+        crate::monitor::task_trait::default_async_setup(self).await?;
+
         let callback_token = match &self.callback_token {
             Some(t) if !t.is_empty() => t.clone(),
             _ => {
