@@ -313,8 +313,7 @@ pub async fn attempt_to_post_reqs_to_network(
             if source_txid.is_empty() || beef.find_txid(&source_txid).is_some() {
                 continue;
             }
-            match get_valid_beef_for_txid(&*active, &source_txid, TrustSelf::No, &known_txids)
-                .await
+            match get_valid_beef_for_txid(&*active, &source_txid, TrustSelf::No, &known_txids).await
             {
                 Ok(Some(src_bytes)) => {
                     if src_bytes.is_empty() {

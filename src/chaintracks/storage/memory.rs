@@ -172,8 +172,13 @@ impl MemoryStorage {
             }
             // Walk back
             current_id = inner.headers.get(&cid).and_then(|h| {
-                h.previous_header_id
-                    .and_then(|pid| if inner.headers.contains_key(&pid) { Some(pid) } else { None })
+                h.previous_header_id.and_then(|pid| {
+                    if inner.headers.contains_key(&pid) {
+                        Some(pid)
+                    } else {
+                        None
+                    }
+                })
             });
         }
 
@@ -197,8 +202,13 @@ impl MemoryStorage {
             }
             // Walk back
             current_id = inner.headers.get(&cid).and_then(|h| {
-                h.previous_header_id
-                    .and_then(|pid| if inner.headers.contains_key(&pid) { Some(pid) } else { None })
+                h.previous_header_id.and_then(|pid| {
+                    if inner.headers.contains_key(&pid) {
+                        Some(pid)
+                    } else {
+                        None
+                    }
+                })
             });
         }
 
@@ -236,12 +246,10 @@ impl MemoryStorage {
         while cur2.height > cur1.height {
             let prev_id = match cur2.previous_header_id {
                 Some(pid) => pid,
-                None => {
-                    match hash_to_id.get(&cur2.previous_hash) {
-                        Some(&pid) => pid,
-                        None => return None,
-                    }
-                }
+                None => match hash_to_id.get(&cur2.previous_hash) {
+                    Some(&pid) => pid,
+                    None => return None,
+                },
             };
             cur2 = headers.get(&prev_id)?.clone();
         }
@@ -1128,19 +1136,13 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(
-            !a_header.is_active,
-            "hash_a should be inactive after reorg"
-        );
+        assert!(!a_header.is_active, "hash_a should be inactive after reorg");
         let b_header = storage
             .find_live_header_for_block_hash("hash_b")
             .await
             .unwrap()
             .unwrap();
-        assert!(
-            !b_header.is_active,
-            "hash_b should be inactive after reorg"
-        );
+        assert!(!b_header.is_active, "hash_b should be inactive after reorg");
 
         // New chain headers should be active and findable by height
         let h1 = storage.find_header_for_height(1).await.unwrap().unwrap();

@@ -319,9 +319,9 @@ impl LiveWebSocketIngestor {
         let url = self.ws_url();
         info!("Connecting to WebSocket: {}", url);
 
-        let (ws_stream, _) = connect_async(url).await.map_err(|e| {
-            WalletError::NetworkChain(format!("WebSocket connect failed: {}", e))
-        })?;
+        let (ws_stream, _) = connect_async(url)
+            .await
+            .map_err(|e| WalletError::NetworkChain(format!("WebSocket connect failed: {}", e)))?;
 
         info!("WebSocket connected");
 
@@ -331,9 +331,7 @@ impl LiveWebSocketIngestor {
         write
             .send(Message::Text("{}".to_string()))
             .await
-            .map_err(|e| {
-                WalletError::NetworkChain(format!("WebSocket send failed: {}", e))
-            })?;
+            .map_err(|e| WalletError::NetworkChain(format!("WebSocket send failed: {}", e)))?;
 
         let mut last_message_time = std::time::Instant::now();
         let idle_timeout = std::time::Duration::from_millis(self.options.idle_timeout_ms);
@@ -351,11 +349,7 @@ impl LiveWebSocketIngestor {
             // Send ping if needed
             if last_ping_time.elapsed() > ping_interval {
                 debug!("Sending ping");
-                if write
-                    .send(Message::Text("ping".to_string()))
-                    .await
-                    .is_err()
-                {
+                if write.send(Message::Text("ping".to_string())).await.is_err() {
                     warn!("Failed to send ping");
                     return Ok(false);
                 }
@@ -389,9 +383,7 @@ impl LiveWebSocketIngestor {
                         }
                         Message::Binary(data) => {
                             if let Ok(text) = String::from_utf8(data.to_vec()) {
-                                if let Err(e) =
-                                    self.process_message(&text, live_headers).await
-                                {
+                                if let Err(e) = self.process_message(&text, live_headers).await {
                                     warn!("Error processing binary message: {}", e);
                                 }
                             }
@@ -473,10 +465,8 @@ impl LiveWebSocketIngestor {
             .or_else(|| msg.get("message").and_then(|m| m.get("data")));
 
         if let Some(data) = header_data {
-            let woc_header: WocWsBlockHeader =
-                serde_json::from_value(data.clone()).map_err(|e| {
-                    WalletError::Internal(format!("Invalid header data: {}", e))
-                })?;
+            let woc_header: WocWsBlockHeader = serde_json::from_value(data.clone())
+                .map_err(|e| WalletError::Internal(format!("Invalid header data: {}", e)))?;
 
             let header = ws_header_to_block_header(&woc_header);
             info!(

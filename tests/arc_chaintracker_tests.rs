@@ -149,7 +149,11 @@ fn test_arc_headers_with_full_config() {
     );
     // New: custom headers from ArcConfig.headers field.
     assert_eq!(
-        headers.get("X-SkipScriptValidation").unwrap().to_str().unwrap(),
+        headers
+            .get("X-SkipScriptValidation")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "true"
     );
 }
@@ -200,9 +204,26 @@ fn test_arc_custom_headers_multiple() {
     };
 
     let headers = bsv_wallet_toolbox::services::providers::arc::build_arc_headers(&config);
-    assert_eq!(headers.get("X-SkipScriptValidation").unwrap().to_str().unwrap(), "true");
-    assert_eq!(headers.get("X-SkipFeeValidation").unwrap().to_str().unwrap(), "true");
-    assert_eq!(headers.get("X-SkipTxValidation").unwrap().to_str().unwrap(), "true");
+    assert_eq!(
+        headers
+            .get("X-SkipScriptValidation")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "true"
+    );
+    assert_eq!(
+        headers
+            .get("X-SkipFeeValidation")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "true"
+    );
+    assert_eq!(
+        headers.get("X-SkipTxValidation").unwrap().to_str().unwrap(),
+        "true"
+    );
 }
 
 #[test]

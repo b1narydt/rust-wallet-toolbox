@@ -405,12 +405,10 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
                 // generator side in `setup.rs`.
                 use base64::Engine as _;
                 let prefix = Some(
-                    base64::engine::general_purpose::STANDARD
-                        .encode(&payment.derivation_prefix),
+                    base64::engine::general_purpose::STANDARD.encode(&payment.derivation_prefix),
                 );
                 let suffix = Some(
-                    base64::engine::general_purpose::STANDARD
-                        .encode(&payment.derivation_suffix),
+                    base64::engine::general_purpose::STANDARD.encode(&payment.derivation_suffix),
                 );
 
                 if is_merge {
@@ -1051,12 +1049,16 @@ mod tests {
         // failure). Assert the stored value is exactly the base64
         // encoding of the input bytes.
         use base64::Engine as _;
-        let expected_prefix =
-            base64::engine::general_purpose::STANDARD.encode(b"prefix1");
-        let expected_suffix =
-            base64::engine::general_purpose::STANDARD.encode(b"suffix1");
-        assert_eq!(outputs[0].derivation_prefix.as_deref(), Some(expected_prefix.as_str()));
-        assert_eq!(outputs[0].derivation_suffix.as_deref(), Some(expected_suffix.as_str()));
+        let expected_prefix = base64::engine::general_purpose::STANDARD.encode(b"prefix1");
+        let expected_suffix = base64::engine::general_purpose::STANDARD.encode(b"suffix1");
+        assert_eq!(
+            outputs[0].derivation_prefix.as_deref(),
+            Some(expected_prefix.as_str())
+        );
+        assert_eq!(
+            outputs[0].derivation_suffix.as_deref(),
+            Some(expected_suffix.as_str())
+        );
 
         // Verify ProvenTxReq was created
         let req_args = FindProvenTxReqsArgs {
@@ -1132,10 +1134,8 @@ mod tests {
         assert_eq!(outputs.len(), 1);
 
         use base64::Engine as _;
-        let expected_prefix =
-            base64::engine::general_purpose::STANDARD.encode(&raw_prefix);
-        let expected_suffix =
-            base64::engine::general_purpose::STANDARD.encode(&raw_suffix);
+        let expected_prefix = base64::engine::general_purpose::STANDARD.encode(&raw_prefix);
+        let expected_suffix = base64::engine::general_purpose::STANDARD.encode(&raw_suffix);
 
         // The stored value must round-trip exactly to the input
         // bytes. If this ever reverts to `from_utf8_lossy`, the

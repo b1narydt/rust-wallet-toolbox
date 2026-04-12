@@ -341,7 +341,11 @@ impl SqliteStorage {
     }
 
     /// Set the is_chain_tip flag for a header by ID
-    pub async fn set_chain_tip_by_id(&self, header_id: u64, is_chain_tip: bool) -> WalletResult<()> {
+    pub async fn set_chain_tip_by_id(
+        &self,
+        header_id: u64,
+        is_chain_tip: bool,
+    ) -> WalletResult<()> {
         sqlx::query(
             "UPDATE chaintracks_live_headers SET is_chain_tip = ?, updated_at = ? WHERE header_id = ?",
         )
@@ -874,8 +878,9 @@ impl ChaintracksStorageIngest for SqliteStorage {
             None
         };
 
-        let previous_header_id_i64: Option<i64> =
-            previous_header.as_ref().and_then(|h| h.header_id.map(|v| v as i64));
+        let previous_header_id_i64: Option<i64> = previous_header
+            .as_ref()
+            .and_then(|h| h.header_id.map(|v| v as i64));
 
         // Get current tip
         let current_tip = self.get_tip().await?;

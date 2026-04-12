@@ -107,10 +107,10 @@ pub async fn signer_internalize_action(
             // this same PR — both layers must base64-encode the
             // bytes for the round-trip to work.
             use base64::Engine as _;
-            let derivation_prefix = base64::engine::general_purpose::STANDARD
-                .encode(&payment.derivation_prefix);
-            let derivation_suffix = base64::engine::general_purpose::STANDARD
-                .encode(&payment.derivation_suffix);
+            let derivation_prefix =
+                base64::engine::general_purpose::STANDARD.encode(&payment.derivation_prefix);
+            let derivation_suffix =
+                base64::engine::general_purpose::STANDARD.encode(&payment.derivation_suffix);
             let key_id = format!("{} {}", derivation_prefix, derivation_suffix);
 
             // The sender's identity key is the counterparty for derivation

@@ -409,12 +409,7 @@ fn sub_bytes32(a: &mut [u8; 32], b: &[u8; 32]) {
 /// Returns (quotient_lo_128, remainder) where the quotient fits in 128 bits.
 fn div128_by_u128(hi: u128, lo: u128, d: u128) -> (u128, u128) {
     // Split into four 64-bit limbs and use multi-precision long division.
-    let limbs = [
-        (hi >> 64) as u64,
-        hi as u64,
-        (lo >> 64) as u64,
-        lo as u64,
-    ];
+    let limbs = [(hi >> 64) as u64, hi as u64, (lo >> 64) as u64, lo as u64];
 
     let mut r: u128 = 0;
     let mut q_limbs = [0u64; 4];

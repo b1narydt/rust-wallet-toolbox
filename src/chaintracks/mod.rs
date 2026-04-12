@@ -1,12 +1,12 @@
 #[allow(clippy::module_inception)]
 mod chaintracks;
-mod types;
-mod traits;
-mod storage;
 mod ingestors;
+mod storage;
+mod traits;
+mod types;
 
 pub use chaintracks::*;
-pub use types::*;
-pub use traits::*;
-pub use storage::*;
 pub use ingestors::*;
+pub use storage::*;
+pub use traits::*;
+pub use types::*;

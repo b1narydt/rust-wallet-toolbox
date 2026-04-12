@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, info, warn};
 
-use super::{WocGetHeadersHeader, WOC_API_URL_MAIN, WOC_API_URL_TEST, woc_header_to_block_header};
+use super::{woc_header_to_block_header, WocGetHeadersHeader, WOC_API_URL_MAIN, WOC_API_URL_TEST};
 use crate::chaintracks::{BlockHeader, ChaintracksStorageIngest, LiveBlockHeader, LiveIngestor};
 use crate::error::{WalletError, WalletResult};
 use crate::types::Chain;

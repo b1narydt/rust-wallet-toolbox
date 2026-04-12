@@ -47,8 +47,7 @@ pub const WOC_API_URL_TEST: &str = "https://api.whatsonchain.com/v1/bsv/test";
 pub const WOC_WS_URL_MAIN: &str = "wss://socket-v2.whatsonchain.com/websocket/blockHeaders";
 
 /// WhatsOnChain WebSocket URL for testnet
-pub const WOC_WS_URL_TEST: &str =
-    "wss://socket-v2-testnet.whatsonchain.com/websocket/blockHeaders";
+pub const WOC_WS_URL_TEST: &str = "wss://socket-v2-testnet.whatsonchain.com/websocket/blockHeaders";
 
 // ---------------------------------------------------------------------------
 // WoC response types
@@ -136,9 +135,7 @@ pub struct WocGetHeadersHeader {
 #[allow(clippy::large_enum_variant)]
 pub enum WocWsMessage {
     /// Connection info (has required `connect` field).
-    Connect {
-        connect: String,
-    },
+    Connect { connect: String },
     /// Typed message with required `type` field (subscribe, unsubscribe, etc.).
     TypedMessage {
         #[serde(rename = "type")]

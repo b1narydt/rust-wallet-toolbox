@@ -11,8 +11,8 @@ use tokio::task::JoinHandle;
 
 use super::{
     calculate_work, BaseBlockHeader, BlockHeader, ChaintracksClient, ChaintracksInfo,
-    ChaintracksManagement, ChaintracksOptions, ChaintracksStorage, HeaderCallback,
-    LiveBlockHeader, ReorgCallback, ReorgEvent,
+    ChaintracksManagement, ChaintracksOptions, ChaintracksStorage, HeaderCallback, LiveBlockHeader,
+    ReorgCallback, ReorgEvent,
 };
 use crate::error::{WalletError, WalletResult};
 use crate::types::Chain;
@@ -145,8 +145,7 @@ impl Chaintracks {
                     None => {
                         tracing::warn!(
                             "Parent header {} not found for header {}, inserting anyway",
-                            &base_header.previous_hash
-                                [..16.min(base_header.previous_hash.len())],
+                            &base_header.previous_hash[..16.min(base_header.previous_hash.len())],
                             &block_header.hash[..16.min(block_header.hash.len())]
                         );
                         // Insert with height 0 and let storage figure it out
@@ -428,8 +427,7 @@ impl ChaintracksClient for Chaintracks {
             chain: Some(self.options.chain.clone()),
             storage_type: storage.storage_type().to_string(),
             ingestor_count: (*self.bulk_ingestor_count.read().await
-                + *self.live_ingestor_count.read().await)
-                as u32,
+                + *self.live_ingestor_count.read().await) as u32,
             tip_height: tip.as_ref().map(|h| h.height),
             live_range,
             is_listening: *self.listening.read().await,
@@ -640,9 +638,8 @@ impl ChaintracksManagement for Chaintracks {
         let per_file = headers_per_file.unwrap_or(500);
 
         // Create output folder
-        fs::create_dir_all(folder).map_err(|e| {
-            WalletError::Internal(format!("Failed to create export folder: {}", e))
-        })?;
+        fs::create_dir_all(folder)
+            .map_err(|e| WalletError::Internal(format!("Failed to create export folder: {}", e)))?;
 
         let mut file_num = 0;
         let mut height = 0u32;

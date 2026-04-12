@@ -38,6 +38,8 @@ pub mod signer;
 #[macro_use]
 mod sqlx_string_enum;
 
+/// Block header tracking, storage, and chain reorganization detection.
+pub mod chaintracks;
 /// Lenient NaiveDateTime serde helpers (handles trailing "Z" from TS).
 pub mod serde_datetime;
 /// Lenient serde helpers for TS interop (integer-as-bool, etc.).
@@ -56,8 +58,6 @@ pub mod utility;
 pub mod wab_client;
 /// High-level wallet implementation.
 pub mod wallet;
-/// Block header tracking, storage, and chain reorganization detection.
-pub mod chaintracks;
 
 /// Database migration helpers (feature-gated by database backend).
 #[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgres"))]
@@ -87,4 +87,3 @@ pub use status::TransactionStatus;
 pub use wallet::setup::SetupWallet;
 /// Builder for constructing configured Wallet instances.
 pub use wallet::setup::WalletBuilder;
-#[cfg(test)] #[path = "/tmp/test_opts.rs"] mod test_opts;

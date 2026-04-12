@@ -469,10 +469,7 @@ mod sqlite_impl {
                 let (proven_tx_id, is_new) = if let Some(ep) = existing.into_iter().next() {
                     (ep.proven_tx_id, false)
                 } else {
-                    (
-                        self.insert_proven_tx_impl(proven_tx, trx_ref).await?,
-                        true,
-                    )
+                    (self.insert_proven_tx_impl(proven_tx, trx_ref).await?, true)
                 };
 
                 // Always update the proven_tx_req → completed and

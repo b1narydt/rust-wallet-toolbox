@@ -1142,10 +1142,7 @@ impl WalletStorageManager {
         active.find_monitor_events(args).await
     }
 
-    pub async fn count_monitor_events(
-        &self,
-        args: &FindMonitorEventsArgs,
-    ) -> WalletResult<i64> {
+    pub async fn count_monitor_events(&self, args: &FindMonitorEventsArgs) -> WalletResult<i64> {
         let active = self.get_active().await?;
         active.count_monitor_events(args).await
     }

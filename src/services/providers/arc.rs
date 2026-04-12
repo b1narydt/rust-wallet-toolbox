@@ -83,7 +83,14 @@ impl ArcProvider {
         let url = format!("{}/v1/tx/{}", self.base_url, txid);
         let headers = self.build_headers();
 
-        match self.client.get(&url).headers(headers).timeout(std::time::Duration::from_secs(15)).send().await {
+        match self
+            .client
+            .get(&url)
+            .headers(headers)
+            .timeout(std::time::Duration::from_secs(15))
+            .send()
+            .await
+        {
             Ok(resp) if resp.status().is_success() => resp.json::<ArcGetTxData>().await.ok(),
             Ok(resp) => {
                 tracing::debug!(txid = txid, status = %resp.status(), "get_tx_data: non-success status");
@@ -103,10 +110,7 @@ impl ArcProvider {
 pub fn build_arc_headers(config: &ArcConfig) -> HeaderMap {
     let mut headers = HeaderMap::new();
 
-    headers.insert(
-        "Content-Type",
-        HeaderValue::from_static("application/json"),
-    );
+    headers.insert("Content-Type", HeaderValue::from_static("application/json"));
 
     headers.insert(
         "XDeployment-ID",
@@ -305,7 +309,11 @@ impl PostBeefProvider for ArcProvider {
                                     block_hash: data.block_hash,
                                     block_height: data.block_height,
                                     competing_txs: data.competing_txs,
-                                    service_error: if status == "error" { Some(true) } else { None },
+                                    service_error: if status == "error" {
+                                        Some(true)
+                                    } else {
+                                        None
+                                    },
                                 }
                             } else {
                                 overall_status = "error".to_string();
@@ -326,7 +334,8 @@ impl PostBeefProvider for ArcProvider {
                         PostBeefResult {
                             name: self.name.clone(),
                             status: overall_status,
-                            error: if tx_status != "success" && !tx_status.is_empty()
+                            error: if tx_status != "success"
+                                && !tx_status.is_empty()
                                 && (is_double_spend || !status_code.is_success())
                             {
                                 Some(format!("{} {}", tx_status, extra_info))

@@ -272,7 +272,10 @@ impl BulkCdnIngestor {
     }
 
     /// Ensure the file listing cache is populated, then return headers for `fetch_range`.
-    async fn fetch_headers_for_range(&self, fetch_range: &HeightRange) -> WalletResult<Vec<BlockHeader>> {
+    async fn fetch_headers_for_range(
+        &self,
+        fetch_range: &HeightRange,
+    ) -> WalletResult<Vec<BlockHeader>> {
         // Ensure file listing is cached.
         {
             let mut cached = self.available_files.write().await;
