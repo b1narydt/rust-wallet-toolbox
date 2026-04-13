@@ -31,6 +31,9 @@ pub struct TaskReviewDoubleSpends {
     trigger_quick_msecs: u64,
     last_run_msecs: u64,
     review_limit: i64,
+    /// Minimum age in minutes before a doubleSpend req is eligible for review.
+    /// Matches TS `minAgeMinutes` (default 60).
+    min_age_minutes: u64,
     /// When true, use the quick trigger interval (last batch was full).
     use_quick_trigger: bool,
 }
@@ -45,6 +48,7 @@ impl TaskReviewDoubleSpends {
             trigger_quick_msecs: ONE_MINUTE,
             last_run_msecs: 0,
             review_limit: 100,
+            min_age_minutes: 60,
             use_quick_trigger: false,
         }
     }
@@ -77,7 +81,12 @@ impl WalletMonitorTask for TaskReviewDoubleSpends {
     async fn run_task(&mut self) -> Result<String, WalletError> {
         self.last_run_msecs = now_msecs();
 
-        let reqs = self
+        // Age cutoff: only review reqs updated more than min_age_minutes ago.
+        // Matches TS `updatedBefore = new Date(Date.now() - minAgeMinutes * 60 * 1000)`.
+        let age_cutoff =
+            chrono::Utc::now().naive_utc() - chrono::Duration::minutes(self.min_age_minutes as i64);
+
+        let all_reqs = self
             .storage
             .find_proven_tx_reqs(&FindProvenTxReqsArgs {
                 partial: ProvenTxReqPartial::default(),
@@ -90,7 +99,13 @@ impl WalletMonitorTask for TaskReviewDoubleSpends {
             })
             .await?;
 
-        // Switch to quick trigger if we hit the limit (more work to do).
+        // Filter to only reqs old enough (updated_at <= age_cutoff), matching TS behavior.
+        let reqs: Vec<_> = all_reqs
+            .into_iter()
+            .filter(|r| r.updated_at <= age_cutoff)
+            .collect();
+
+        // Switch to quick trigger if the unfiltered batch hit the limit (more work to do).
         self.use_quick_trigger = reqs.len() as i64 >= self.review_limit;
 
         let mut unfailed = 0u64;

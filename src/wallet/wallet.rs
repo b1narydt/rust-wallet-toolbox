@@ -1099,6 +1099,7 @@ impl WalletInterface for Wallet {
         args: InternalizeActionArgs,
         originator: Option<&str>,
     ) -> Result<InternalizeActionResult, SdkWalletError> {
+        let _spend_guard = self.spend_lock.lock().await;
         tracing::debug!(description = %args.description, "internalizeAction starting");
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_internalize_action_args(&args)?;
@@ -1142,6 +1143,7 @@ impl WalletInterface for Wallet {
         args: AbortActionArgs,
         originator: Option<&str>,
     ) -> Result<AbortActionResult, SdkWalletError> {
+        let _spend_guard = self.spend_lock.lock().await;
         tracing::debug!(reference = %String::from_utf8_lossy(&args.reference), "abortAction starting");
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_abort_action_args(&args)?;
