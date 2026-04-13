@@ -678,6 +678,7 @@ impl MonitorBuilder {
                 make_storage(&storage),
                 services.clone(),
                 check_now.clone(),
+                last_new_header_height.clone(),
             )));
             tasks.push(Box::new(tasks::task_send_waiting::TaskSendWaiting::new(
                 make_storage(&storage),
