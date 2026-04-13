@@ -1322,6 +1322,7 @@ impl WalletInterface for Wallet {
         args: RelinquishOutputArgs,
         originator: Option<&str>,
     ) -> Result<RelinquishOutputResult, SdkWalletError> {
+        let _spend_guard = self.spend_lock.lock().await;
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_relinquish_output_args(&args)?;
 
