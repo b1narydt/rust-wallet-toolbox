@@ -33,6 +33,7 @@ use crate::storage::sync::request_args::{RequestSyncChunkArgs, SyncChunkOffset};
 use crate::storage::sync::sync_map::SyncMap;
 use crate::storage::sync::{ProcessSyncChunkResult, SyncChunk};
 use crate::storage::traits::wallet_provider::WalletStorageProvider;
+use crate::storage::TrxToken;
 use crate::tables::SyncState;
 use crate::tables::{
     Certificate, MonitorEvent, Output, OutputBasket, ProvenTx, ProvenTxReq, Settings, Transaction,
@@ -260,6 +261,11 @@ pub struct WalletStorageManager {
     pub(crate) sync_lock: tokio::sync::Mutex<()>,
     /// Level-4 lock (innermost). Only sp-level operations acquire this.
     pub(crate) sp_lock: tokio::sync::Mutex<()>,
+    /// Manager-level spend lock. Serializes UTXO-mutating operations
+    /// (createAction/signAction/internalizeAction/abortAction/relinquishOutput)
+    /// across ALL `Wallet` instances sharing this manager, preventing
+    /// double-spend from concurrent callers on shared storage.
+    pub(crate) spend_lock: tokio::sync::Mutex<()>,
     /// True once `make_available()` completes successfully.
     is_available_flag: AtomicBool,
     /// Optional wallet services reference.
@@ -300,6 +306,7 @@ impl WalletStorageManager {
             writer_lock: tokio::sync::Mutex::new(()),
             sync_lock: tokio::sync::Mutex::new(()),
             sp_lock: tokio::sync::Mutex::new(()),
+            spend_lock: tokio::sync::Mutex::new(()),
             is_available_flag: AtomicBool::new(false),
             services: tokio::sync::Mutex::new(None),
         }
@@ -779,6 +786,28 @@ impl WalletStorageManager {
         Ok((reader, writer, sync, sp))
     }
 
+    /// Acquire the manager-level spend lock.
+    ///
+    /// Held across createAction/signAction/internalizeAction/abortAction/
+    /// relinquishOutput to serialize UTXO-mutating operations across all
+    /// `Wallet` instances sharing this manager. Cross-wallet UTXO contention
+    /// on shared storage requires a manager-level lock; per-`Wallet` locks
+    /// would not serialize.
+    ///
+    /// Independent of the hierarchical reader/writer/sync/sp locks: callers
+    /// take this lock at the wallet layer, then perform multiple WSM calls
+    /// (each of which acquires/releases writer/reader locks) under its
+    /// protection. Do not hold it while also holding the reader lock from
+    /// this manager — acquire it first (or release reader first).
+    ///
+    /// Auto-initializes via `make_available()` if not yet available.
+    pub async fn acquire_spend_lock(&self) -> WalletResult<tokio::sync::MutexGuard<'_, ()>> {
+        if !self.is_available() {
+            self.make_available().await?;
+        }
+        Ok(self.spend_lock.lock().await)
+    }
+
     // -----------------------------------------------------------------------
     // Lifecycle methods
     // -----------------------------------------------------------------------
@@ -1126,6 +1155,90 @@ impl WalletStorageManager {
         let active = self.get_active().await?;
         active
             .update_proven_tx_req_with_new_proven_tx(req_id, proven_tx)
+            .await
+    }
+
+    // -----------------------------------------------------------------------
+    // Transaction management + trx-aware CRUD passthroughs
+    //
+    // These let callers (e.g. handle_permanent_broadcast_failure) group a
+    // sequence of writes under one atomic DB transaction on the active
+    // provider. Callers are responsible for matching begin/commit (or
+    // rollback) calls and for holding the trx only across the active
+    // provider returned by `get_active()`.
+    // -----------------------------------------------------------------------
+
+    pub async fn begin_transaction(&self) -> WalletResult<TrxToken> {
+        let active = self.get_active().await?;
+        active.begin_transaction().await
+    }
+
+    pub async fn commit_transaction(&self, trx: TrxToken) -> WalletResult<()> {
+        let active = self.get_active().await?;
+        active.commit_transaction(trx).await
+    }
+
+    pub async fn rollback_transaction(&self, trx: TrxToken) -> WalletResult<()> {
+        let active = self.get_active().await?;
+        active.rollback_transaction(trx).await
+    }
+
+    pub async fn find_outputs_trx(
+        &self,
+        args: &FindOutputsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<Output>> {
+        let active = self.get_active().await?;
+        active.find_outputs_trx(args, trx).await
+    }
+
+    pub async fn find_transactions_trx(
+        &self,
+        args: &FindTransactionsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<Transaction>> {
+        let active = self.get_active().await?;
+        active.find_transactions_trx(args, trx).await
+    }
+
+    pub async fn find_proven_tx_reqs_trx(
+        &self,
+        args: &FindProvenTxReqsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<ProvenTxReq>> {
+        let active = self.get_active().await?;
+        active.find_proven_tx_reqs_trx(args, trx).await
+    }
+
+    pub async fn update_output_trx(
+        &self,
+        id: i64,
+        update: &OutputPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
+        let active = self.get_active().await?;
+        active.update_output_trx(id, update, trx).await
+    }
+
+    pub async fn update_proven_tx_req_trx(
+        &self,
+        id: i64,
+        update: &ProvenTxReqPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
+        let active = self.get_active().await?;
+        active.update_proven_tx_req_trx(id, update, trx).await
+    }
+
+    pub async fn update_transaction_status_trx(
+        &self,
+        txid: &str,
+        new_status: TransactionStatus,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<()> {
+        let active = self.get_active().await?;
+        active
+            .update_transaction_status_trx(txid, new_status, trx)
             .await
     }
 

@@ -138,10 +138,20 @@ pub async fn signer_sign_action(
             }
             crate::signer::broadcast_outcome::BroadcastOutcome::DoubleSpend { .. }
             | crate::signer::broadcast_outcome::BroadcastOutcome::InvalidTx { .. } => {
-                let _ = crate::signer::broadcast_outcome::handle_permanent_broadcast_failure(
-                    storage, services, &txid, &outcome,
-                )
-                .await;
+                // Log any handler error for ops visibility; do not propagate — the broadcast
+                // outcome we already have remains authoritative for the caller.
+                if let Err(e) =
+                    crate::signer::broadcast_outcome::handle_permanent_broadcast_failure(
+                        storage, services, &txid, &outcome,
+                    )
+                    .await
+                {
+                    tracing::error!(
+                        error = %e,
+                        txid = %txid,
+                        "signAction: permanent failure handler errored"
+                    );
+                }
             }
             crate::signer::broadcast_outcome::BroadcastOutcome::ServiceError { details } => {
                 tracing::warn!(txid = %txid, details = ?details, "signAction broadcast: service error (will retry)");

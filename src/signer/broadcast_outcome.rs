@@ -6,8 +6,6 @@
 //! chain before applying permanent state. Matches the TS `aggregateActionResults`
 //! and Calhooon `update_transaction_status_after_broadcast` patterns.
 
-use std::collections::{HashMap, HashSet};
-
 use crate::error::WalletResult;
 use crate::services::traits::WalletServices;
 use crate::services::types::PostBeefResult;
@@ -15,6 +13,7 @@ use crate::storage::find_args::{
     FindOutputsArgs, FindTransactionsArgs, OutputPartial, TransactionPartial,
 };
 use crate::storage::manager::WalletStorageManager;
+use crate::storage::TrxToken;
 
 /// Semantic outcome of a broadcast attempt across all providers.
 #[derive(Debug, Clone)]
@@ -137,89 +136,114 @@ async fn reconcile_tx_status(
     outcome.clone()
 }
 
-/// Returns output IDs of consumed inputs whose parent transactions are verified as
-/// still valid on chain (status "mined" or "known"). Used for DoubleSpend recovery:
-/// only inputs confirmed as unspent by competing transactions are safe to restore.
+/// Returns output IDs of consumed inputs whose specific outpoints are verified as
+/// still unspent on chain. Used for DoubleSpend recovery: only inputs confirmed as
+/// unspent (not consumed by a competing transaction) are safe to restore.
 ///
-/// If the chain query fails entirely, returns an empty vec (errs on the side of
-/// NOT restoring, which is safer than falsely restoring a spent input).
+/// Per-outpoint check: for each consumed input we call
+/// `services.is_utxo(locking_script, parent_txid, vout)`. Only outputs where that
+/// returns `Ok(true)` are eligible for restoration. Inputs that fail the check
+/// (or error) are left NOT restored, which is safer than falsely restoring a
+/// spent input.
 async fn utxo_verified_input_ids(
     storage: &WalletStorageManager,
     services: &(dyn WalletServices + Send + Sync),
     failed_transaction_id: i64,
-) -> Vec<i64> {
-    // Find outputs consumed as inputs by the failed transaction.
+    trx: Option<&TrxToken>,
+) -> WalletResult<Vec<i64>> {
+    // Find outputs consumed as inputs by the failed transaction. These Output rows
+    // represent the PARENT utxos that this tx spent — their `txid`, `vout`, and
+    // `locking_script` identify the parent outpoint on chain.
     let consumed_inputs = storage
-        .find_outputs(&FindOutputsArgs {
-            partial: OutputPartial {
-                spent_by: Some(failed_transaction_id),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default();
-
-    if consumed_inputs.is_empty() {
-        return Vec::new();
-    }
-
-    // Collect unique parent transaction IDs and resolve their txid hex strings.
-    let parent_tx_ids: HashSet<i64> = consumed_inputs.iter().map(|o| o.transaction_id).collect();
-
-    let mut tx_id_to_txid: HashMap<i64, String> = HashMap::new();
-    for &parent_id in &parent_tx_ids {
-        let txs = storage
-            .find_transactions(&FindTransactionsArgs {
-                partial: TransactionPartial {
-                    transaction_id: Some(parent_id),
+        .find_outputs_trx(
+            &FindOutputsArgs {
+                partial: OutputPartial {
+                    spent_by: Some(failed_transaction_id),
                     ..Default::default()
                 },
                 ..Default::default()
-            })
-            .await
-            .unwrap_or_default();
-        if let Some(parent_tx) = txs.first() {
-            if let Some(ref hex_txid) = parent_tx.txid {
-                tx_id_to_txid.insert(parent_id, hex_txid.clone());
+            },
+            trx,
+        )
+        .await?;
+
+    if consumed_inputs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut verified: Vec<i64> = Vec::new();
+    for output in &consumed_inputs {
+        // Resolve the parent txid hex. Prefer the denormalized column on the
+        // output row; fall back to looking up the parent transaction when
+        // absent (some older rows may not have `txid` populated).
+        let parent_txid: String = if let Some(ref t) = output.txid {
+            t.clone()
+        } else {
+            let txs = storage
+                .find_transactions_trx(
+                    &FindTransactionsArgs {
+                        partial: TransactionPartial {
+                            transaction_id: Some(output.transaction_id),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    trx,
+                )
+                .await?;
+            match txs.first().and_then(|t| t.txid.clone()) {
+                Some(t) => t,
+                None => {
+                    tracing::warn!(
+                        output_id = output.output_id,
+                        transaction_id = output.transaction_id,
+                        "utxo_verified_input_ids: parent tx has no txid, skipping (not restoring)"
+                    );
+                    continue;
+                }
+            }
+        };
+
+        let locking_script = match output.locking_script.as_deref() {
+            Some(s) if !s.is_empty() => s,
+            _ => {
+                tracing::warn!(
+                    output_id = output.output_id,
+                    parent_txid = %parent_txid,
+                    "utxo_verified_input_ids: missing locking_script, skipping (not restoring)"
+                );
+                continue;
+            }
+        };
+
+        let vout = output.vout as u32;
+        match services.is_utxo(locking_script, &parent_txid, vout).await {
+            Ok(true) => {
+                verified.push(output.output_id);
+            }
+            Ok(false) => {
+                tracing::info!(
+                    output_id = output.output_id,
+                    parent_txid = %parent_txid,
+                    vout = vout,
+                    "utxo_verified_input_ids: parent outpoint no longer unspent, not restoring"
+                );
+            }
+            Err(e) => {
+                // On a per-outpoint chain error, err on the side of safety and do
+                // not restore this input. Log and continue with the rest.
+                tracing::warn!(
+                    output_id = output.output_id,
+                    parent_txid = %parent_txid,
+                    vout = vout,
+                    error = %e,
+                    "utxo_verified_input_ids: is_utxo check errored, not restoring"
+                );
             }
         }
     }
 
-    if tx_id_to_txid.is_empty() {
-        return Vec::new();
-    }
-
-    // Query chain status for all parent txids in one batch.
-    let txids_to_check: Vec<String> = tx_id_to_txid.values().cloned().collect();
-    let status_result = services.get_status_for_txids(&txids_to_check, false).await;
-
-    if status_result.status != "success" {
-        tracing::warn!(
-            error = ?status_result.error,
-            "utxo_verified_input_ids: chain query failed, not restoring any inputs"
-        );
-        return Vec::new();
-    }
-
-    // Build set of parent txids confirmed as still valid on chain.
-    let valid_txids: HashSet<&str> = status_result
-        .results
-        .iter()
-        .filter(|r| r.status == "mined" || r.status == "known")
-        .map(|r| r.txid.as_str())
-        .collect();
-
-    // Return output IDs for consumed inputs whose parent tx is still valid.
-    consumed_inputs
-        .iter()
-        .filter(|output| {
-            tx_id_to_txid
-                .get(&output.transaction_id)
-                .is_some_and(|txid| valid_txids.contains(txid.as_str()))
-        })
-        .map(|output| output.output_id)
-        .collect()
+    Ok(verified)
 }
 
 /// Update transaction and output state after a broadcast, based on the classified outcome.
@@ -239,146 +263,202 @@ pub async fn handle_permanent_broadcast_failure(
     txid: &str,
     outcome: &BroadcastOutcome,
 ) -> WalletResult<BroadcastOutcome> {
-    // Reconcile against chain first (P4).
+    // Reconcile against chain first (P4). Do this BEFORE opening a DB
+    // transaction to avoid holding write locks across a network call.
     let effective = reconcile_tx_status(services, txid, outcome).await;
 
-    // If chain reconciliation overrode to Success, return — caller will handle Success path.
+    // If chain reconciliation overrode to Success, return — caller will handle
+    // Success path. No writes needed.
     if matches!(effective, BroadcastOutcome::Success) {
         return Ok(effective);
     }
 
-    // Find the transaction record.
-    let txs = storage
-        .find_transactions(&FindTransactionsArgs {
-            partial: TransactionPartial {
-                txid: Some(txid.to_string()),
+    // Only DoubleSpend / InvalidTx require the failure-path state transitions.
+    let (new_tx_status, req_status) = match &effective {
+        BroadcastOutcome::DoubleSpend { .. } => (
+            crate::status::TransactionStatus::Failed,
+            crate::status::ProvenTxReqStatus::DoubleSpend,
+        ),
+        BroadcastOutcome::InvalidTx { .. } => (
+            crate::status::TransactionStatus::Failed,
+            crate::status::ProvenTxReqStatus::Invalid,
+        ),
+        _ => return Ok(effective),
+    };
+
+    // DoubleSpend path needs a per-outpoint UTXO check on the chain. Do those
+    // network calls BEFORE opening the DB transaction so we don't hold write
+    // locks over network I/O. The safe_output_ids result is then applied as a
+    // pure set of DB writes under the atomic transaction.
+    //
+    // We resolve the tx.transaction_id here too, by opening a short-lived read
+    // (no trx) — a small read outside the transaction is cheaper than hoisting
+    // all the chain I/O into the trx window.
+    let tx_lookup = storage
+        .find_transactions_trx(
+            &FindTransactionsArgs {
+                partial: TransactionPartial {
+                    txid: Some(txid.to_string()),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            ..Default::default()
-        })
+            None,
+        )
         .await?;
 
-    let tx = match txs.first() {
-        Some(t) => t,
+    let tx = match tx_lookup.first() {
+        Some(t) => t.clone(),
         None => {
-            tracing::warn!(txid = %txid, "handle_permanent_broadcast_failure: tx not found in storage");
+            tracing::warn!(
+                txid = %txid,
+                "handle_permanent_broadcast_failure: tx not found in storage"
+            );
             return Ok(effective);
         }
     };
 
-    // Mark the transaction as Failed.
-    let new_tx_status = match &effective {
-        BroadcastOutcome::DoubleSpend { .. } => crate::status::TransactionStatus::Failed,
-        BroadcastOutcome::InvalidTx { .. } => crate::status::TransactionStatus::Failed,
-        _ => return Ok(effective),
-    };
+    let double_spend_safe_ids: Option<Vec<i64>> =
+        if matches!(effective, BroadcastOutcome::DoubleSpend { .. }) {
+            Some(utxo_verified_input_ids(storage, services, tx.transaction_id, None).await?)
+        } else {
+            None
+        };
 
-    let _ = storage.update_transaction_status(txid, new_tx_status).await;
+    // Open the atomic DB transaction. All writes below go through Some(&db_trx)
+    // so that a single `?` failure discards ALL prior writes via sqlx rollback
+    // when db_trx is dropped.
+    let db_trx = storage.begin_transaction().await?;
 
-    // Update ProvenTxReq status.
-    let req_status = match &effective {
-        BroadcastOutcome::DoubleSpend { .. } => crate::status::ProvenTxReqStatus::DoubleSpend,
-        BroadcastOutcome::InvalidTx { .. } => crate::status::ProvenTxReqStatus::Invalid,
-        _ => return Ok(effective),
-    };
+    // 1. Transaction -> Failed
+    storage
+        .update_transaction_status_trx(txid, new_tx_status, Some(&db_trx))
+        .await?;
+
+    // 2. ProvenTxReq(s) -> DoubleSpend / Invalid
     let reqs = storage
-        .find_proven_tx_reqs(&crate::storage::find_args::FindProvenTxReqsArgs {
-            partial: crate::storage::find_args::ProvenTxReqPartial {
-                txid: Some(txid.to_string()),
+        .find_proven_tx_reqs_trx(
+            &crate::storage::find_args::FindProvenTxReqsArgs {
+                partial: crate::storage::find_args::ProvenTxReqPartial {
+                    txid: Some(txid.to_string()),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default();
+            Some(&db_trx),
+        )
+        .await?;
     for req in &reqs {
-        let _ = storage
-            .update_proven_tx_req(
+        storage
+            .update_proven_tx_req_trx(
                 req.proven_tx_req_id,
                 &crate::storage::find_args::ProvenTxReqPartial {
                     status: Some(req_status.clone()),
                     ..Default::default()
                 },
+                Some(&db_trx),
             )
-            .await;
+            .await?;
     }
 
-    // Mark this transaction's OWN outputs as unspendable.
+    // 3. Mark this transaction's OWN outputs unspendable.
     let outputs = storage
-        .find_outputs(&FindOutputsArgs {
-            partial: OutputPartial {
-                transaction_id: Some(tx.transaction_id),
+        .find_outputs_trx(
+            &FindOutputsArgs {
+                partial: OutputPartial {
+                    transaction_id: Some(tx.transaction_id),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default();
+            Some(&db_trx),
+        )
+        .await?;
     for output in &outputs {
-        let _ = storage
-            .update_output(
+        storage
+            .update_output_trx(
                 output.output_id,
                 &OutputPartial {
                     spendable: Some(false),
                     ..Default::default()
                 },
+                Some(&db_trx),
             )
-            .await;
+            .await?;
     }
 
-    // Restore consumed inputs to spendable.
-    // For InvalidTx: restore all inputs immediately (tx was malformed, inputs not consumed on chain).
-    // For DoubleSpend: only restore inputs whose parent txs are verified still valid on chain.
-    if matches!(effective, BroadcastOutcome::DoubleSpend { .. }) {
-        let safe_output_ids = utxo_verified_input_ids(storage, services, tx.transaction_id).await;
-
-        for output_id in &safe_output_ids {
-            let _ = storage
-                .update_output(
-                    *output_id,
-                    &OutputPartial {
-                        spendable: Some(true),
+    // 4. Restore consumed inputs to spendable.
+    //    InvalidTx: tx was malformed and never hit the chain — restore all inputs.
+    //    DoubleSpend: only inputs whose outpoints were verified still-unspent
+    //                 (computed above BEFORE the transaction).
+    let restored_count: usize = match &effective {
+        BroadcastOutcome::DoubleSpend { .. } => {
+            let safe_ids = double_spend_safe_ids.as_deref().unwrap_or(&[]);
+            for output_id in safe_ids {
+                storage
+                    .update_output_trx(
+                        *output_id,
+                        &OutputPartial {
+                            spendable: Some(true),
+                            ..Default::default()
+                        },
+                        Some(&db_trx),
+                    )
+                    .await?;
+            }
+            safe_ids.len()
+        }
+        BroadcastOutcome::InvalidTx { .. } => {
+            let consumed_inputs = storage
+                .find_outputs_trx(
+                    &FindOutputsArgs {
+                        partial: OutputPartial {
+                            spent_by: Some(tx.transaction_id),
+                            spendable: Some(false),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
+                    Some(&db_trx),
                 )
-                .await;
+                .await?;
+            for input_output in &consumed_inputs {
+                storage
+                    .update_output_trx(
+                        input_output.output_id,
+                        &OutputPartial {
+                            spendable: Some(true),
+                            ..Default::default()
+                        },
+                        Some(&db_trx),
+                    )
+                    .await?;
+            }
+            consumed_inputs.len()
         }
+        _ => 0,
+    };
 
-        tracing::info!(
-            txid = %txid,
-            restored_inputs = safe_output_ids.len(),
-            "handle_permanent_broadcast_failure: DoubleSpend — restored chain-verified inputs to spendable"
-        );
-    } else if matches!(effective, BroadcastOutcome::InvalidTx { .. }) {
-        let consumed_inputs = storage
-            .find_outputs(&FindOutputsArgs {
-                partial: OutputPartial {
-                    spent_by: Some(tx.transaction_id),
-                    spendable: Some(false),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .await
-            .unwrap_or_default();
+    // Commit atomically. If any step above returned Err via `?`, db_trx was
+    // dropped without commit and sqlx rolls back automatically.
+    storage.commit_transaction(db_trx).await?;
 
-        for input_output in &consumed_inputs {
-            let _ = storage
-                .update_output(
-                    input_output.output_id,
-                    &OutputPartial {
-                        spendable: Some(true),
-                        ..Default::default()
-                    },
-                )
-                .await;
+    match &effective {
+        BroadcastOutcome::DoubleSpend { .. } => {
+            tracing::info!(
+                txid = %txid,
+                restored_inputs = restored_count,
+                "handle_permanent_broadcast_failure: DoubleSpend — restored chain-verified inputs to spendable"
+            );
         }
-
-        tracing::info!(
-            txid = %txid,
-            restored_inputs = consumed_inputs.len(),
-            "handle_permanent_broadcast_failure: InvalidTx — restored consumed inputs to spendable"
-        );
+        BroadcastOutcome::InvalidTx { .. } => {
+            tracing::info!(
+                txid = %txid,
+                restored_inputs = restored_count,
+                "handle_permanent_broadcast_failure: InvalidTx — restored consumed inputs to spendable"
+            );
+        }
+        _ => {}
     }
 
     tracing::warn!(

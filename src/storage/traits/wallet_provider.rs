@@ -47,6 +47,7 @@ use crate::storage::sync::{ProcessSyncChunkResult, SyncChunk};
 use crate::storage::traits::provider::StorageProvider;
 use crate::storage::traits::reader::StorageReader;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
+use crate::storage::TrxToken;
 use crate::storage::{verify_one, verify_one_or_none};
 use crate::tables::{
     Certificate, CertificateField, MonitorEvent, Output, OutputBasket, ProvenTx, ProvenTxReq,
@@ -546,6 +547,97 @@ pub trait WalletStorageProvider: Send + Sync {
     async fn get_storage_identity_key(&self) -> WalletResult<String> {
         let settings = self.get_settings().await?;
         Ok(settings.storage_identity_key)
+    }
+
+    // -----------------------------------------------------------------------
+    // Transaction management + trx-aware CRUD
+    //
+    // These permit callers (e.g. handle_permanent_broadcast_failure) to group
+    // a sequence of writes under one atomic DB transaction. Remote storage
+    // (StorageClient) returns NotImplemented; local providers delegate to
+    // StorageReaderWriter via the blanket impl.
+    // -----------------------------------------------------------------------
+
+    /// Begin a new database transaction. Returns an opaque TrxToken.
+    async fn begin_transaction(&self) -> WalletResult<TrxToken> {
+        Err(WalletError::NotImplemented("begin_transaction".into()))
+    }
+
+    /// Commit a previously begun transaction.
+    async fn commit_transaction(&self, trx: TrxToken) -> WalletResult<()> {
+        let _ = trx;
+        Err(WalletError::NotImplemented("commit_transaction".into()))
+    }
+
+    /// Rollback a previously begun transaction.
+    async fn rollback_transaction(&self, trx: TrxToken) -> WalletResult<()> {
+        let _ = trx;
+        Err(WalletError::NotImplemented("rollback_transaction".into()))
+    }
+
+    /// Find outputs scoped to an optional open transaction.
+    async fn find_outputs_trx(
+        &self,
+        args: &FindOutputsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<Output>> {
+        let _ = (args, trx);
+        Err(WalletError::NotImplemented("find_outputs_trx".into()))
+    }
+
+    /// Find transactions scoped to an optional open transaction.
+    async fn find_transactions_trx(
+        &self,
+        args: &FindTransactionsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<Transaction>> {
+        let _ = (args, trx);
+        Err(WalletError::NotImplemented("find_transactions_trx".into()))
+    }
+
+    /// Find proven-tx-reqs scoped to an optional open transaction.
+    async fn find_proven_tx_reqs_trx(
+        &self,
+        args: &FindProvenTxReqsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<ProvenTxReq>> {
+        let _ = (args, trx);
+        Err(WalletError::NotImplemented("find_proven_tx_reqs_trx".into()))
+    }
+
+    /// Update an output inside an optional open transaction.
+    async fn update_output_trx(
+        &self,
+        id: i64,
+        update: &OutputPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
+        let _ = (id, update, trx);
+        Err(WalletError::NotImplemented("update_output_trx".into()))
+    }
+
+    /// Update a proven-tx-req inside an optional open transaction.
+    async fn update_proven_tx_req_trx(
+        &self,
+        id: i64,
+        update: &ProvenTxReqPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
+        let _ = (id, update, trx);
+        Err(WalletError::NotImplemented("update_proven_tx_req_trx".into()))
+    }
+
+    /// Update a transaction's status by txid inside an optional open transaction.
+    async fn update_transaction_status_trx(
+        &self,
+        txid: &str,
+        new_status: TransactionStatus,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<()> {
+        let _ = (txid, new_status, trx);
+        Err(WalletError::NotImplemented(
+            "update_transaction_status_trx".into(),
+        ))
     }
 }
 
@@ -1179,6 +1271,74 @@ impl<T: StorageProvider> WalletStorageProvider for T {
 
     async fn get_storage_identity_key(&self) -> WalletResult<String> {
         StorageProvider::get_storage_identity_key(self)
+    }
+
+    // -----------------------------------------------------------------------
+    // Transaction management + trx-aware CRUD overrides
+    // Local providers delegate to the underlying StorageReaderWriter.
+    // -----------------------------------------------------------------------
+
+    async fn begin_transaction(&self) -> WalletResult<TrxToken> {
+        StorageReaderWriter::begin_transaction(self).await
+    }
+
+    async fn commit_transaction(&self, trx: TrxToken) -> WalletResult<()> {
+        StorageReaderWriter::commit_transaction(self, trx).await
+    }
+
+    async fn rollback_transaction(&self, trx: TrxToken) -> WalletResult<()> {
+        StorageReaderWriter::rollback_transaction(self, trx).await
+    }
+
+    async fn find_outputs_trx(
+        &self,
+        args: &FindOutputsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<Output>> {
+        StorageReader::find_outputs(self, args, trx).await
+    }
+
+    async fn find_transactions_trx(
+        &self,
+        args: &FindTransactionsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<Transaction>> {
+        StorageReader::find_transactions(self, args, trx).await
+    }
+
+    async fn find_proven_tx_reqs_trx(
+        &self,
+        args: &FindProvenTxReqsArgs,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<Vec<ProvenTxReq>> {
+        StorageReader::find_proven_tx_reqs(self, args, trx).await
+    }
+
+    async fn update_output_trx(
+        &self,
+        id: i64,
+        update: &OutputPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
+        StorageReaderWriter::update_output(self, id, update, trx).await
+    }
+
+    async fn update_proven_tx_req_trx(
+        &self,
+        id: i64,
+        update: &ProvenTxReqPartial,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
+        StorageReaderWriter::update_proven_tx_req(self, id, update, trx).await
+    }
+
+    async fn update_transaction_status_trx(
+        &self,
+        txid: &str,
+        new_status: TransactionStatus,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<()> {
+        StorageReaderWriter::update_transaction_status(self, txid, new_status, trx).await
     }
 }
 
