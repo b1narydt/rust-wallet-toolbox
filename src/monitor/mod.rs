@@ -716,6 +716,21 @@ impl MonitorBuilder {
             tasks.push(Box::new(tasks::task_review_status::TaskReviewStatus::new(
                 make_storage(&storage),
             )));
+            tasks.push(Box::new(
+                tasks::task_review_double_spends::TaskReviewDoubleSpends::new(
+                    make_storage(&storage),
+                    services.clone(),
+                ),
+            ));
+            tasks.push(Box::new(
+                tasks::task_review_proven_txs::TaskReviewProvenTxs::new(
+                    make_storage(&storage),
+                    services.clone(),
+                ),
+            ));
+            tasks.push(Box::new(tasks::task_review_utxos::TaskReviewUtxos::new(
+                make_storage(&storage),
+            )));
             tasks.push(Box::new(tasks::task_reorg::TaskReorg::new(
                 make_storage(&storage),
                 services.clone(),

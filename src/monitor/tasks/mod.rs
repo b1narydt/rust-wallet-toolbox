@@ -17,5 +17,10 @@ pub mod task_review_status;
 pub mod task_sync_when_idle;
 pub mod task_unfail;
 
+// Plan 07 tasks:
+pub mod task_review_double_spends;
+pub mod task_review_proven_txs;
+pub mod task_review_utxos;
+
 #[cfg(test)]
 pub mod task_mine_block;
