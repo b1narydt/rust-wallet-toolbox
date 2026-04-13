@@ -908,6 +908,7 @@ impl WalletInterface for Wallet {
         originator: Option<&str>,
     ) -> Result<CreateActionResult, SdkWalletError> {
         let _spend_guard = self.spend_lock.lock().await;
+        tracing::debug!(description = %args.description, "createAction starting");
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_create_action_args(&args)?;
 
@@ -1017,6 +1018,7 @@ impl WalletInterface for Wallet {
         // Check for unsuccessful results
         crate::wallet::error_helpers::throw_if_any_unsuccessful_create_actions(&result)?;
 
+        tracing::info!(txid = ?result.txid, "createAction completed");
         Ok(result)
     }
 
@@ -1026,6 +1028,7 @@ impl WalletInterface for Wallet {
         originator: Option<&str>,
     ) -> Result<SignActionResult, SdkWalletError> {
         let _spend_guard = self.spend_lock.lock().await;
+        tracing::debug!("signAction starting");
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_sign_action_args(&args)?;
 
@@ -1087,6 +1090,7 @@ impl WalletInterface for Wallet {
         // Check for unsuccessful results
         crate::wallet::error_helpers::throw_if_any_unsuccessful_sign_actions(&result)?;
 
+        tracing::info!(txid = ?result.txid, "signAction completed");
         Ok(result)
     }
 
@@ -1095,6 +1099,7 @@ impl WalletInterface for Wallet {
         args: InternalizeActionArgs,
         originator: Option<&str>,
     ) -> Result<InternalizeActionResult, SdkWalletError> {
+        tracing::debug!(description = %args.description, "internalizeAction starting");
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_internalize_action_args(&args)?;
 
@@ -1128,6 +1133,7 @@ impl WalletInterface for Wallet {
 
         crate::wallet::error_helpers::throw_if_unsuccessful_internalize_action(&result)?;
 
+        tracing::info!(accepted = result.accepted, "internalizeAction completed");
         Ok(result)
     }
 
@@ -1136,14 +1142,18 @@ impl WalletInterface for Wallet {
         args: AbortActionArgs,
         originator: Option<&str>,
     ) -> Result<AbortActionResult, SdkWalletError> {
+        tracing::debug!(reference = %String::from_utf8_lossy(&args.reference), "abortAction starting");
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_abort_action_args(&args)?;
 
         let auth = self.auth_id();
-        self.storage
+        let result = self
+            .storage
             .abort_action(&auth, &args)
             .await
-            .map_err(to_sdk_error)
+            .map_err(to_sdk_error)?;
+        tracing::info!("abortAction completed");
+        Ok(result)
     }
 
     // -----------------------------------------------------------------------
