@@ -418,6 +418,7 @@ pub async fn attempt_to_post_reqs_to_network(
         // Aggregate results across providers
         let mut success_count = 0u32;
         let mut double_spend_count = 0u32;
+        let mut orphan_count = 0u32;
         let mut status_error_count = 0u32;
         let mut service_error_count = 0u32;
 
@@ -428,6 +429,8 @@ pub async fn attempt_to_post_reqs_to_network(
                         success_count += 1;
                     } else if tr.double_spend.unwrap_or(false) {
                         double_spend_count += 1;
+                    } else if tr.orphan_mempool.unwrap_or(false) {
+                        orphan_count += 1;
                     } else if tr.service_error.unwrap_or(false) {
                         service_error_count += 1;
                     } else {
@@ -437,20 +440,25 @@ pub async fn attempt_to_post_reqs_to_network(
             }
         }
 
-        // Determine aggregate status and update req
+        // Determine aggregate status and update req.
+        // Priority: success > double-spend > orphan (transient) > invalid > service-error
         let (new_req_status, post_status) = if success_count > 0 && double_spend_count == 0 {
             (ProvenTxReqStatus::Unmined, PostReqStatus::Success)
         } else if double_spend_count > 0 {
             (ProvenTxReqStatus::DoubleSpend, PostReqStatus::DoubleSpend)
+        } else if orphan_count > 0 {
+            // Orphan mempool is transient — parent tx not yet propagated.
+            // Keep as Sending so TaskSendWaiting retries.
+            (ProvenTxReqStatus::Sending, PostReqStatus::Orphan)
         } else if status_error_count > 0 {
             (ProvenTxReqStatus::Invalid, PostReqStatus::Invalid)
         } else {
-            // Service error -- increment attempts, keep as sending for retry
+            // Service error — increment attempts, keep as sending for retry
             (ProvenTxReqStatus::Sending, PostReqStatus::ServiceError)
         };
 
         result.log.push_str(&format!(
-            "  req {} txid {}: {} (success={}, dblSpend={}, err={}, svcErr={})\n",
+            "  req {} txid {}: {} (success={}, dblSpend={}, orphan={}, err={}, svcErr={})\n",
             req.proven_tx_req_id,
             req.txid,
             match &post_status {
@@ -463,6 +471,7 @@ pub async fn attempt_to_post_reqs_to_network(
             },
             success_count,
             double_spend_count,
+            orphan_count,
             status_error_count,
             service_error_count
         ));
