@@ -240,27 +240,39 @@ pub async fn handle_permanent_broadcast_failure(
     }
 
     // Restore consumed inputs to spendable.
-    // For InvalidTx: restore all inputs (tx was malformed, inputs not consumed on chain).
-    // For DoubleSpend: restore only inputs verified as still unspent.
-    let _input_outputs = storage
-        .find_outputs(&FindOutputsArgs {
-            partial: OutputPartial {
-                // Find outputs that were consumed as inputs by this transaction.
-                // These are outputs with spendable=false that reference a spending tx.
-                spendable: Some(false),
+    // For InvalidTx: restore all inputs immediately (tx was malformed, inputs not consumed on chain).
+    // For DoubleSpend: defer to monitor (needs chain verification via utxo_verified_input_ids, Plan 02).
+    if matches!(effective, BroadcastOutcome::InvalidTx { .. }) {
+        let consumed_inputs = storage
+            .find_outputs(&FindOutputsArgs {
+                partial: OutputPartial {
+                    spent_by: Some(tx.transaction_id),
+                    spendable: Some(false),
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default();
+            })
+            .await
+            .unwrap_or_default();
 
-    // Filter to outputs that were spent BY this transaction (their spending_tx matches our txid).
-    // Since we don't have a direct spending_tx_id field lookup, we rely on the fact that
-    // outputs marked unspendable during this transaction's creation should be restored.
-    // For now, we mark the tx as failed and let the monitor's unfail/review tasks handle
-    // input restoration on the next cycle — this matches the TS pattern where
-    // aggregateActionResults marks the tx failed and the monitor handles cleanup.
+        for input_output in &consumed_inputs {
+            let _ = storage
+                .update_output(
+                    input_output.output_id,
+                    &OutputPartial {
+                        spendable: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .await;
+        }
+
+        tracing::info!(
+            txid = %txid,
+            restored_inputs = consumed_inputs.len(),
+            "handle_permanent_broadcast_failure: InvalidTx — restored consumed inputs to spendable"
+        );
+    }
 
     tracing::warn!(
         txid = %txid,
