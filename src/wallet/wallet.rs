@@ -126,6 +126,10 @@ pub struct Wallet {
     /// Test hook: pre-determined random values for deterministic testing.
     pub random_vals: Option<Vec<f64>>,
 
+    /// Per-wallet mutex serializing createAction/signAction to prevent
+    /// concurrent operations from double-spending the same UTXOs.
+    spend_lock: Arc<tokio::sync::Mutex<()>>,
+
     // Internal signer
     signer: DefaultWalletSigner,
 }
@@ -216,6 +220,7 @@ impl Wallet {
             overlay_cache: OverlayCache::new(),
             lookup_resolver: args.lookup_resolver,
             random_vals: None,
+            spend_lock: Arc::new(tokio::sync::Mutex::new(())),
             signer,
         })
     }
@@ -902,6 +907,7 @@ impl WalletInterface for Wallet {
         args: CreateActionArgs,
         originator: Option<&str>,
     ) -> Result<CreateActionResult, SdkWalletError> {
+        let _spend_guard = self.spend_lock.lock().await;
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_create_action_args(&args)?;
 
@@ -1019,6 +1025,7 @@ impl WalletInterface for Wallet {
         args: SignActionArgs,
         originator: Option<&str>,
     ) -> Result<SignActionResult, SdkWalletError> {
+        let _spend_guard = self.spend_lock.lock().await;
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_sign_action_args(&args)?;
 
