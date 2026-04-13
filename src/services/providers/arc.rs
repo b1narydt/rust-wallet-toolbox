@@ -266,12 +266,13 @@ impl PostBeefProvider for ArcProvider {
                         let tx_status = arc_resp.tx_status.unwrap_or_default();
                         let extra_info = arc_resp.extra_info.unwrap_or_default();
 
-                        let is_double_spend = tx_status == "DOUBLE_SPEND_ATTEMPTED"
-                            || tx_status == "SEEN_IN_ORPHAN_MEMPOOL";
+                        let is_double_spend = tx_status == "DOUBLE_SPEND_ATTEMPTED";
+                        let is_orphan_mempool = tx_status == "SEEN_IN_ORPHAN_MEMPOOL";
+                        let is_rejection = is_double_spend || is_orphan_mempool;
 
                         let primary_result = PostTxResultForTxid {
                             txid: arc_resp.txid.clone(),
-                            status: if status_code.is_success() && !is_double_spend {
+                            status: if status_code.is_success() && !is_rejection {
                                 "success".to_string()
                             } else {
                                 "error".to_string()
@@ -281,11 +282,12 @@ impl PostBeefProvider for ArcProvider {
                             block_hash: None,
                             block_height: None,
                             competing_txs: arc_resp.competing_txs,
-                            service_error: if !status_code.is_success() && !is_double_spend {
+                            service_error: if !status_code.is_success() && !is_rejection {
                                 Some(true)
                             } else {
                                 None
                             },
+                            orphan_mempool: if is_orphan_mempool { Some(true) } else { None },
                         };
 
                         let mut overall_status = primary_result.status.clone();
@@ -318,6 +320,7 @@ impl PostBeefProvider for ArcProvider {
                                     } else {
                                         None
                                     },
+                                    orphan_mempool: None,
                                 }
                             } else {
                                 overall_status = "error".to_string();
@@ -330,6 +333,7 @@ impl PostBeefProvider for ArcProvider {
                                     block_height: None,
                                     competing_txs: None,
                                     service_error: Some(true),
+                                    orphan_mempool: None,
                                 }
                             };
                             txid_results.push(extra_result);
@@ -371,6 +375,7 @@ impl PostBeefProvider for ArcProvider {
                                     block_height: None,
                                     competing_txs: None,
                                     service_error: Some(true),
+                                    orphan_mempool: None,
                                 })
                                 .collect(),
                         }
@@ -394,6 +399,7 @@ impl PostBeefProvider for ArcProvider {
                             block_height: None,
                             competing_txs: None,
                             service_error: Some(true),
+                            orphan_mempool: None,
                         })
                         .collect(),
                 }

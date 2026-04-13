@@ -3,6 +3,7 @@
 //! Contains the WalletSigner trait, DefaultWalletSigner implementation,
 //! and all types used by the signing pipeline.
 
+pub mod broadcast_outcome;
 pub mod build_signable;
 pub mod complete_signed;
 pub mod default_signer;

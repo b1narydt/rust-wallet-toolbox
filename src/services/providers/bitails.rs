@@ -208,6 +208,7 @@ impl PostBeefProvider for Bitails {
                             block_height: None,
                             competing_txs: None,
                             service_error: Some(true),
+                            orphan_mempool: None,
                         })
                         .collect(),
                 };
@@ -246,6 +247,7 @@ impl PostBeefProvider for Bitails {
                     block_height: None,
                     competing_txs: None,
                     service_error: None,
+                    orphan_mempool: None,
                 })
                 .collect(),
         };

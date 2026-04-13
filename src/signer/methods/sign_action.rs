@@ -96,46 +96,55 @@ pub async fn signer_sign_action(
         let post_results = services
             .post_beef(&beef_bytes, std::slice::from_ref(&txid))
             .await;
-        for pr in &post_results {
-            if pr.status != "success" {
-                tracing::warn!(
-                    provider = %pr.name,
-                    status = %pr.status,
-                    error = ?pr.error,
-                    txid = %txid,
-                    "signAction post_beef broadcast failed"
-                );
-            } else {
-                tracing::info!(provider = %pr.name, txid = %txid, "signAction post_beef broadcast success");
-            }
-        }
 
-        // Update Transaction status to unproven (broadcast attempted)
-        let _ = storage
-            .update_transaction_status(&txid, crate::status::TransactionStatus::Unproven)
-            .await;
+        let outcome = crate::signer::broadcast_outcome::classify_broadcast_results(&post_results);
 
-        // Update ProvenTxReq status to unmined
-        let reqs = storage
-            .find_proven_tx_reqs(&crate::storage::find_args::FindProvenTxReqsArgs {
-                partial: crate::storage::find_args::ProvenTxReqPartial {
-                    txid: Some(txid.clone()),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .await
-            .unwrap_or_default();
-        for req in &reqs {
-            let _ = storage
-                .update_proven_tx_req(
-                    req.proven_tx_req_id,
-                    &crate::storage::find_args::ProvenTxReqPartial {
-                        status: Some(crate::status::ProvenTxReqStatus::Unmined),
+        match &outcome {
+            crate::signer::broadcast_outcome::BroadcastOutcome::Success
+            | crate::signer::broadcast_outcome::BroadcastOutcome::OrphanMempool { .. } => {
+                let _ = storage
+                    .update_transaction_status(&txid, crate::status::TransactionStatus::Unproven)
+                    .await;
+
+                let reqs = storage
+                    .find_proven_tx_reqs(&crate::storage::find_args::FindProvenTxReqsArgs {
+                        partial: crate::storage::find_args::ProvenTxReqPartial {
+                            txid: Some(txid.clone()),
+                            ..Default::default()
+                        },
                         ..Default::default()
-                    },
-                )
-                .await;
+                    })
+                    .await
+                    .unwrap_or_default();
+                for req in &reqs {
+                    let new_status = if matches!(
+                        outcome,
+                        crate::signer::broadcast_outcome::BroadcastOutcome::OrphanMempool { .. }
+                    ) {
+                        crate::status::ProvenTxReqStatus::Sending
+                    } else {
+                        crate::status::ProvenTxReqStatus::Unmined
+                    };
+                    let _ = storage
+                        .update_proven_tx_req(
+                            req.proven_tx_req_id,
+                            &crate::storage::find_args::ProvenTxReqPartial {
+                                status: Some(new_status),
+                                ..Default::default()
+                            },
+                        )
+                        .await;
+                }
+            }
+            crate::signer::broadcast_outcome::BroadcastOutcome::DoubleSpend { details, .. } => {
+                tracing::error!(txid = %txid, details = ?details, "signAction broadcast: double-spend detected");
+            }
+            crate::signer::broadcast_outcome::BroadcastOutcome::InvalidTx { details } => {
+                tracing::error!(txid = %txid, details = ?details, "signAction broadcast: invalid transaction");
+            }
+            crate::signer::broadcast_outcome::BroadcastOutcome::ServiceError { details } => {
+                tracing::warn!(txid = %txid, details = ?details, "signAction broadcast: service error (will retry)");
+            }
         }
     }
 

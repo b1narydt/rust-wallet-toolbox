@@ -113,6 +113,10 @@ pub struct PostTxResultForTxid {
     /// True if the service was unable to process a potentially valid transaction.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_error: Option<bool>,
+    /// True if ARC returned SEEN_IN_ORPHAN_MEMPOOL (parent tx not yet propagated).
+    /// Distinct from double_spend — orphan mempool is transient and should be retried.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub orphan_mempool: Option<bool>,
 }
 
 /// Result returned from `WalletServices::post_beef` (per provider).
@@ -148,6 +152,7 @@ impl PostBeefResult {
                     block_height: None,
                     competing_txs: None,
                     service_error: Some(true),
+                    orphan_mempool: None,
                 })
                 .collect(),
         }
