@@ -1713,225 +1713,233 @@ impl WalletStorageManager {
             return Ok(format!("{} unchanged\n", storage_identity_key));
         }
 
-        // Step 3: Acquire sync lock (reader + writer + sync)
-        // IMPORTANT: acquire_sync already holds reader_lock — must use do_make_available()
-        // at re-partition step, NOT make_available().
-        let _guards = self.acquire_sync().await?;
+        let log = {
+            // Step 3: Acquire sync lock (reader + writer + sync)
+            // IMPORTANT: acquire_sync already holds reader_lock — must use do_make_available()
+            // at re-partition step, NOT make_available().
+            let _guards = self.acquire_sync().await?;
 
-        let mut log = String::new();
+            let mut log = String::new();
 
-        // Step 4: Conflict resolution — merge each conflicting active into the new active
-        // Clone Arcs and Settings before releasing state lock (never hold state lock across async I/O)
-        let had_conflicts;
-        let (new_active_arc, new_active_settings) = {
-            let state = self.state.lock().await;
-            let arc = state.stores[new_active_idx].storage.clone();
-            let settings = state.stores[new_active_idx]
-                .get_settings_cached()
-                .await
-                .ok_or_else(|| {
-                    WalletError::InvalidOperation(
-                        "set_active: new active settings not cached".to_string(),
+            // Step 4: Conflict resolution — merge each conflicting active into the new active
+            // Clone Arcs and Settings before releasing state lock (never hold state lock across async I/O)
+            let had_conflicts;
+            let (new_active_arc, new_active_settings) = {
+                let state = self.state.lock().await;
+                let arc = state.stores[new_active_idx].storage.clone();
+                let settings = state.stores[new_active_idx]
+                    .get_settings_cached()
+                    .await
+                    .ok_or_else(|| {
+                        WalletError::InvalidOperation(
+                            "set_active: new active settings not cached".to_string(),
+                        )
+                    })?;
+                (arc, settings)
+            };
+
+            let conflict_sources = {
+                let state = self.state.lock().await;
+                if state.conflicting_active_indices.is_empty() {
+                    had_conflicts = false;
+                    Vec::new()
+                } else {
+                    had_conflicts = true;
+                    // Build list: all conflicting_active_indices + active_index, minus new_active_idx
+                    let mut sources = state.conflicting_active_indices.clone();
+                    if let Some(ai) = state.active_index {
+                        sources.push(ai);
+                    }
+                    // Remove the new_active_idx from this list (it's the destination)
+                    sources.retain(|&i| i != new_active_idx);
+
+                    // Clone arcs and settings for each conflict source
+                    let mut result = Vec::with_capacity(sources.len());
+                    for idx in sources {
+                        let arc = state.stores[idx].storage.clone();
+                        let settings = state.stores[idx].get_settings_cached().await;
+                        result.push((arc, settings));
+                    }
+                    result
+                }
+            };
+
+            // Now do the async sync_to_writer calls outside the state lock
+            for (conflict_arc, maybe_conflict_settings) in &conflict_sources {
+                let conflict_settings = match maybe_conflict_settings {
+                    Some(s) => s.clone(),
+                    None => {
+                        warn!("set_active: conflict source has no cached settings, skipping");
+                        continue;
+                    }
+                };
+                // Merge conflict into new_active (new_active is the writer/destination)
+                let (ins, upd, chunk_log) = self
+                    .sync_to_writer(
+                        new_active_arc.as_ref(),
+                        conflict_arc.as_ref(),
+                        &new_active_settings,
+                        &conflict_settings,
+                        prog_log,
                     )
-                })?;
-            (arc, settings)
-        };
-
-        let conflict_sources = {
-            let state = self.state.lock().await;
-            if state.conflicting_active_indices.is_empty() {
-                had_conflicts = false;
-                Vec::new()
-            } else {
-                had_conflicts = true;
-                // Build list: all conflicting_active_indices + active_index, minus new_active_idx
-                let mut sources = state.conflicting_active_indices.clone();
-                if let Some(ai) = state.active_index {
-                    sources.push(ai);
+                    .await?;
+                if let Some(cb) = prog_log {
+                    let msg = format!(
+                        "set_active: merged conflict {} inserts={} updates={}",
+                        conflict_settings.storage_identity_key, ins, upd
+                    );
+                    let s = cb(&msg);
+                    log.push_str(&s);
+                    log.push('\n');
                 }
-                // Remove the new_active_idx from this list (it's the destination)
-                sources.retain(|&i| i != new_active_idx);
-
-                // Clone arcs and settings for each conflict source
-                let mut result = Vec::with_capacity(sources.len());
-                for idx in sources {
-                    let arc = state.stores[idx].storage.clone();
-                    let settings = state.stores[idx].get_settings_cached().await;
-                    result.push((arc, settings));
-                }
-                result
+                log.push_str(&chunk_log);
             }
-        };
 
-        // Now do the async sync_to_writer calls outside the state lock
-        for (conflict_arc, maybe_conflict_settings) in &conflict_sources {
-            let conflict_settings = match maybe_conflict_settings {
-                Some(s) => s.clone(),
-                None => {
-                    warn!("set_active: conflict source has no cached settings, skipping");
-                    continue;
+            // Step 5: Determine backup_source
+            // If conflicts existed → backup_source = new_active
+            // Else → backup_source = current_active
+            let (backup_source_arc, backup_source_settings, backup_source_user_id) = {
+                let state = self.state.lock().await;
+                if had_conflicts {
+                    // backup_source is the new active
+                    let user_id = state.stores[new_active_idx]
+                        .get_user_cached()
+                        .await
+                        .map(|u| u.user_id)
+                        .ok_or_else(|| {
+                            WalletError::InvalidOperation(
+                                "set_active: new active user not cached".to_string(),
+                            )
+                        })?;
+                    (new_active_arc.clone(), new_active_settings.clone(), user_id)
+                } else {
+                    // backup_source is the current active
+                    let ai = state.require_active()?;
+                    let arc = state.stores[ai].storage.clone();
+                    let settings = state.stores[ai]
+                        .get_settings_cached()
+                        .await
+                        .ok_or_else(|| {
+                            WalletError::InvalidOperation(
+                                "set_active: current active settings not cached".to_string(),
+                            )
+                        })?;
+                    let user_id = state.stores[ai]
+                        .get_user_cached()
+                        .await
+                        .map(|u| u.user_id)
+                        .ok_or_else(|| {
+                            WalletError::InvalidOperation(
+                                "set_active: current active user not cached".to_string(),
+                            )
+                        })?;
+                    (arc, settings, user_id)
                 }
             };
-            // Merge conflict into new_active (new_active is the writer/destination)
-            let (ins, upd, chunk_log) = self
-                .sync_to_writer(
-                    new_active_arc.as_ref(),
-                    conflict_arc.as_ref(),
-                    &new_active_settings,
-                    &conflict_settings,
-                    prog_log,
-                )
+
+            // Step 6: Provider-level set_active on backup_source
+            // This persists user.active_storage = storage_identity_key in the backup_source DB
+            let auth = AuthId {
+                identity_key: self.identity_key.clone(),
+                user_id: Some(backup_source_user_id),
+                is_active: Some(false),
+            };
+            backup_source_arc
+                .set_active(&auth, storage_identity_key)
                 .await?;
+
             if let Some(cb) = prog_log {
                 let msg = format!(
-                    "set_active: merged conflict {} inserts={} updates={}",
-                    conflict_settings.storage_identity_key, ins, upd
+                    "set_active: provider-level set_active on {} complete",
+                    backup_source_settings.storage_identity_key
                 );
                 let s = cb(&msg);
                 log.push_str(&s);
                 log.push('\n');
             }
-            log.push_str(&chunk_log);
-        }
 
-        // Step 5: Determine backup_source
-        // If conflicts existed → backup_source = new_active
-        // Else → backup_source = current_active
-        let (backup_source_arc, backup_source_settings, backup_source_user_id) = {
-            let state = self.state.lock().await;
-            if had_conflicts {
-                // backup_source is the new active
-                let user_id = state.stores[new_active_idx]
-                    .get_user_cached()
-                    .await
-                    .map(|u| u.user_id)
-                    .ok_or_else(|| {
-                        WalletError::InvalidOperation(
-                            "set_active: new active user not cached".to_string(),
-                        )
-                    })?;
-                (new_active_arc.clone(), new_active_settings.clone(), user_id)
-            } else {
-                // backup_source is the current active
-                let ai = state.require_active()?;
-                let arc = state.stores[ai].storage.clone();
-                let settings = state.stores[ai]
-                    .get_settings_cached()
-                    .await
-                    .ok_or_else(|| {
-                        WalletError::InvalidOperation(
-                            "set_active: current active settings not cached".to_string(),
-                        )
-                    })?;
-                let user_id = state.stores[ai]
-                    .get_user_cached()
-                    .await
-                    .map(|u| u.user_id)
-                    .ok_or_else(|| {
-                        WalletError::InvalidOperation(
-                            "set_active: current active user not cached".to_string(),
-                        )
-                    })?;
-                (arc, settings, user_id)
-            }
-        };
-
-        // Step 6: Provider-level set_active on backup_source
-        // This persists user.active_storage = storage_identity_key in the backup_source DB
-        let auth = AuthId {
-            identity_key: self.identity_key.clone(),
-            user_id: Some(backup_source_user_id),
-            is_active: Some(false),
-        };
-        backup_source_arc
-            .set_active(&auth, storage_identity_key)
-            .await?;
-
-        if let Some(cb) = prog_log {
-            let msg = format!(
-                "set_active: provider-level set_active on {} complete",
-                backup_source_settings.storage_identity_key
-            );
-            let s = cb(&msg);
-            log.push_str(&s);
-            log.push('\n');
-        }
-
-        // Step 7: Propagate state to all other stores via sync_to_writer
-        // First update in-memory user.active_storage cache for all stores
-        {
-            let state = self.state.lock().await;
-            for store in &state.stores {
-                let mut user_guard = store.user.lock().await;
-                if let Some(ref mut u) = *user_guard {
-                    u.active_storage = storage_identity_key.to_string();
+            // Step 7: Propagate state to all other stores via sync_to_writer
+            // First update in-memory user.active_storage cache for all stores
+            {
+                let state = self.state.lock().await;
+                for store in &state.stores {
+                    let mut user_guard = store.user.lock().await;
+                    if let Some(ref mut u) = *user_guard {
+                        u.active_storage = storage_identity_key.to_string();
+                    }
                 }
             }
-        }
 
-        // Collect list of (store_arc, store_settings) for stores != backup_source
-        let backup_source_sik = backup_source_settings.storage_identity_key.clone();
-        let propagation_targets = {
-            let state = self.state.lock().await;
-            let mut targets = Vec::new();
-            for store in &state.stores {
-                let sik = store
-                    .get_settings_cached()
-                    .await
-                    .map(|s| s.storage_identity_key)
-                    .unwrap_or_default();
-                if sik != backup_source_sik {
-                    let arc = store.storage.clone();
-                    let settings = store.get_settings_cached().await;
-                    targets.push((arc, settings));
+            // Collect list of (store_arc, store_settings) for stores != backup_source
+            let backup_source_sik = backup_source_settings.storage_identity_key.clone();
+            let propagation_targets = {
+                let state = self.state.lock().await;
+                let mut targets = Vec::new();
+                for store in &state.stores {
+                    let sik = store
+                        .get_settings_cached()
+                        .await
+                        .map(|s| s.storage_identity_key)
+                        .unwrap_or_default();
+                    if sik != backup_source_sik {
+                        let arc = store.storage.clone();
+                        let settings = store.get_settings_cached().await;
+                        targets.push((arc, settings));
+                    }
                 }
-            }
-            targets
-        };
-
-        for (store_arc, maybe_store_settings) in &propagation_targets {
-            let store_settings = match maybe_store_settings {
-                Some(s) => s.clone(),
-                None => {
-                    warn!("set_active: propagation target has no cached settings, skipping");
-                    continue;
-                }
+                targets
             };
-            let (ins, upd, chunk_log) = self
-                .sync_to_writer(
-                    store_arc.as_ref(),
-                    backup_source_arc.as_ref(),
-                    &store_settings,
-                    &backup_source_settings,
-                    prog_log,
-                )
-                .await?;
+
+            for (store_arc, maybe_store_settings) in &propagation_targets {
+                let store_settings = match maybe_store_settings {
+                    Some(s) => s.clone(),
+                    None => {
+                        warn!("set_active: propagation target has no cached settings, skipping");
+                        continue;
+                    }
+                };
+                let (ins, upd, chunk_log) = self
+                    .sync_to_writer(
+                        store_arc.as_ref(),
+                        backup_source_arc.as_ref(),
+                        &store_settings,
+                        &backup_source_settings,
+                        prog_log,
+                    )
+                    .await?;
+                if let Some(cb) = prog_log {
+                    let msg = format!(
+                        "set_active: propagated to {} inserts={} updates={}",
+                        store_settings.storage_identity_key, ins, upd
+                    );
+                    let s = cb(&msg);
+                    log.push_str(&s);
+                    log.push('\n');
+                }
+                log.push_str(&chunk_log);
+            }
+
+            // Step 8: Re-partition — reset flag and re-run do_make_available
+            // MUST use do_make_available(), NOT make_available(): acquire_sync holds reader_lock
+            // and make_available() would try to acquire it again → deadlock.
+            self.is_available_flag.store(false, Ordering::Release);
+            self.do_make_available().await?;
+
             if let Some(cb) = prog_log {
                 let msg = format!(
-                    "set_active: propagated to {} inserts={} updates={}",
-                    store_settings.storage_identity_key, ins, upd
+                    "set_active: complete, new active is {}",
+                    storage_identity_key
                 );
                 let s = cb(&msg);
                 log.push_str(&s);
                 log.push('\n');
             }
-            log.push_str(&chunk_log);
-        }
 
-        // Step 8: Re-partition — reset flag and re-run do_make_available
-        // MUST use do_make_available(), NOT make_available(): acquire_sync holds reader_lock
-        // and make_available() would try to acquire it again → deadlock.
-        self.is_available_flag.store(false, Ordering::Release);
-        self.do_make_available().await?;
-
-        if let Some(cb) = prog_log {
-            let msg = format!(
-                "set_active: complete, new active is {}",
-                storage_identity_key
-            );
-            let s = cb(&msg);
-            log.push_str(&s);
-            log.push('\n');
+            log
+        };
+        // Sync lock released — push changes to backups (non-fatal).
+        if let Err(e) = self.update_backups(None).await {
+            warn!("set_active: backup sync failed: {e}");
         }
 
         Ok(log)
@@ -1948,21 +1956,27 @@ impl WalletStorageManager {
         &self,
         provider: Arc<dyn WalletStorageProvider>,
     ) -> WalletResult<()> {
-        // Acquire all four locks (storage-provider level).
-        let _guards = self.acquire_storage_provider().await?;
-
         {
-            let mut state = self.state.lock().await;
-            state.stores.push(ManagedStorage::new(provider));
-            // Reset is_available so make_available() will re-run the full partition.
-            self.is_available_flag.store(false, Ordering::Release);
-        }
+            // Acquire all four locks (storage-provider level).
+            let _guards = self.acquire_storage_provider().await?;
 
-        // Re-run make_available() to initialize the new store and re-partition.
-        // We must NOT call self.make_available() here because it would try to
-        // acquire reader_lock which is already held by acquire_storage_provider.
-        // Instead call do_make_available() which runs without acquiring reader_lock.
-        self.do_make_available().await?;
+            {
+                let mut state = self.state.lock().await;
+                state.stores.push(ManagedStorage::new(provider));
+                // Reset is_available so make_available() will re-run the full partition.
+                self.is_available_flag.store(false, Ordering::Release);
+            }
+
+            // Re-run make_available() to initialize the new store and re-partition.
+            // We must NOT call self.make_available() here because it would try to
+            // acquire reader_lock which is already held by acquire_storage_provider.
+            // Instead call do_make_available() which runs without acquiring reader_lock.
+            self.do_make_available().await?;
+        }
+        // All locks released — sync active state to the newly added backup (non-fatal).
+        if let Err(e) = self.update_backups(None).await {
+            warn!("add_wallet_storage_provider: backup sync failed: {e}");
+        }
 
         Ok(())
     }
