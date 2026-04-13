@@ -111,6 +111,35 @@ impl TaskReviewDoubleSpends {
         Ok(None)
     }
 
+    /// Delete old checkpoint events, keeping only the most recent.
+    ///
+    /// Called after a complete review cycle (no remaining reqs) to prevent
+    /// unbounded growth of checkpoint rows in the monitor_events table.
+    async fn purge_old_checkpoints(&self) -> Result<(), WalletError> {
+        let events = self
+            .storage
+            .find_monitor_events(&FindMonitorEventsArgs {
+                partial: MonitorEventPartial {
+                    id: None,
+                    event: Some("ReviewDoubleSpends".to_string()),
+                },
+                since: None,
+                paged: None,
+            })
+            .await?;
+
+        if events.len() <= 1 {
+            return Ok(());
+        }
+
+        // The most recent checkpoint has the highest id.
+        let max_id = events.iter().map(|e| e.id).max().unwrap_or(0);
+        self.storage
+            .delete_monitor_events_before_id("ReviewDoubleSpends", max_id)
+            .await?;
+        Ok(())
+    }
+
     /// Save a checkpoint to monitor_events.
     async fn save_checkpoint(&self, cp: &ReviewDoubleSpendCheckpoint) -> Result<(), WalletError> {
         let now = chrono::Utc::now().naive_utc();
@@ -204,6 +233,8 @@ impl WalletMonitorTask for TaskReviewDoubleSpends {
 
         if reqs.is_empty() {
             self.use_quick_trigger = false;
+            // Clean up stale checkpoint events, keeping only the most recent.
+            self.purge_old_checkpoints().await?;
             return Ok(String::new());
         }
 

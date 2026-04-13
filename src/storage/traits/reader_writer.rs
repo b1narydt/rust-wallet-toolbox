@@ -66,6 +66,17 @@ pub trait StorageReaderWriter: StorageReader {
         trx: Option<&TrxToken>,
     ) -> WalletResult<i64>;
 
+    /// Delete monitor events matching `event` name with `id < before_id`.
+    ///
+    /// Used to prune stale checkpoint entries after a complete review cycle.
+    /// Returns the number of rows deleted.
+    async fn delete_monitor_events_before_id(
+        &self,
+        event_name: &str,
+        before_id: i64,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<u64>;
+
     /// Insert an output basket and return the new basket_id.
     async fn insert_output_basket(
         &self,

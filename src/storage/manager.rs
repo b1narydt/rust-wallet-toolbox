@@ -1134,6 +1134,17 @@ impl WalletStorageManager {
         active.insert_monitor_event(event).await
     }
 
+    pub async fn delete_monitor_events_before_id(
+        &self,
+        event_name: &str,
+        before_id: i64,
+    ) -> WalletResult<u64> {
+        let active = self.get_active().await?;
+        active
+            .delete_monitor_events_before_id(event_name, before_id)
+            .await
+    }
+
     pub async fn find_monitor_events(
         &self,
         args: &FindMonitorEventsArgs,

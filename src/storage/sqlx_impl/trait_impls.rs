@@ -97,6 +97,21 @@ mod sqlite_impl {
             self.insert_monitor_event_impl(event, trx).await
         }
 
+        async fn delete_monitor_events_before_id(
+            &self,
+            event_name: &str,
+            before_id: i64,
+            _trx: Option<&TrxToken>,
+        ) -> WalletResult<u64> {
+            let sql = "DELETE FROM monitor_events WHERE event = ? AND id < ?";
+            let result = sqlx::query(sql)
+                .bind(event_name)
+                .bind(before_id)
+                .execute(&self.write_pool)
+                .await?;
+            Ok(result.rows_affected())
+        }
+
         async fn insert_output_basket(
             &self,
             basket: &OutputBasket,
@@ -903,6 +918,20 @@ macro_rules! impl_storage_rw_and_provider {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
                     self.insert_monitor_event_impl(e, trx).await
+                }
+                async fn delete_monitor_events_before_id(
+                    &self,
+                    event_name: &str,
+                    before_id: i64,
+                    _trx: Option<&TrxToken>,
+                ) -> WalletResult<u64> {
+                    let sql = "DELETE FROM monitor_events WHERE event = ? AND id < ?";
+                    let result = sqlx::query(sql)
+                        .bind(event_name)
+                        .bind(before_id)
+                        .execute(&self.write_pool)
+                        .await?;
+                    Ok(result.rows_affected())
                 }
                 async fn insert_output_basket(
                     &self,

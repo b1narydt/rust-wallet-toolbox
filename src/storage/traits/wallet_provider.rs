@@ -497,6 +497,18 @@ pub trait WalletStorageProvider: Send + Sync {
         Err(WalletError::NotImplemented("insert_monitor_event".into()))
     }
 
+    /// Delete monitor events matching `event` name with `id < before_id`.
+    async fn delete_monitor_events_before_id(
+        &self,
+        event_name: &str,
+        before_id: i64,
+    ) -> WalletResult<u64> {
+        let _ = (event_name, before_id);
+        Err(WalletError::NotImplemented(
+            "delete_monitor_events_before_id".into(),
+        ))
+    }
+
     /// Find monitor events matching the given filter.
     async fn find_monitor_events(
         &self,
@@ -1131,6 +1143,15 @@ impl<T: StorageProvider> WalletStorageProvider for T {
 
     async fn insert_monitor_event(&self, event: &MonitorEvent) -> WalletResult<i64> {
         StorageReaderWriter::insert_monitor_event(self, event, None).await
+    }
+
+    async fn delete_monitor_events_before_id(
+        &self,
+        event_name: &str,
+        before_id: i64,
+    ) -> WalletResult<u64> {
+        StorageReaderWriter::delete_monitor_events_before_id(self, event_name, before_id, None)
+            .await
     }
 
     async fn find_monitor_events(
