@@ -569,6 +569,10 @@ pub struct PurgeParams {
     pub purge_completed_age: u64,
     /// Age threshold (in msecs) for purging failed records.
     pub purge_failed_age: u64,
+    /// Whether to purge old monitor event records.
+    pub purge_monitor_events: bool,
+    /// Age threshold (in msecs) for purging monitor events.
+    pub purge_monitor_events_age: u64,
 }
 
 impl Default for PurgeParams {
@@ -580,6 +584,8 @@ impl Default for PurgeParams {
             purge_spent_age: 2 * 604_800_000, // 2 weeks
             purge_completed_age: 2 * 604_800_000,
             purge_failed_age: 5 * 86_400_000, // 5 days
+            purge_monitor_events: true,
+            purge_monitor_events_age: 30 * 86_400_000, // 30 days
         }
     }
 }

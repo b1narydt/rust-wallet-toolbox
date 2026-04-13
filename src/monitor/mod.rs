@@ -195,6 +195,8 @@ pub fn default_purge_params() -> PurgeParams {
         purge_spent_age: 2 * ONE_WEEK,
         purge_completed_age: 2 * ONE_WEEK,
         purge_failed_age: 5 * ONE_DAY,
+        purge_monitor_events: true,
+        purge_monitor_events_age: 30 * ONE_DAY,
     }
 }
 

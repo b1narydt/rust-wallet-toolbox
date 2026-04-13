@@ -644,6 +644,21 @@ mod sqlite_impl {
                 summary.push(format!("purged {} spent outputs", result.rows_affected()));
             }
 
+            if params.purge_monitor_events {
+                let age_ms = params.purge_monitor_events_age;
+                let cutoff =
+                    chrono::Utc::now().naive_utc() - chrono::Duration::milliseconds(age_ms as i64);
+                let sql = "DELETE FROM monitor_events WHERE created_at < ?";
+                let result = sqlx::query(sql)
+                    .bind(cutoff)
+                    .execute(&self.write_pool)
+                    .await?;
+                summary.push(format!(
+                    "purged {} old monitor events",
+                    result.rows_affected()
+                ));
+            }
+
             Ok(summary.join("; "))
         }
     }
