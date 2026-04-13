@@ -6,6 +6,8 @@
 //! chain before applying permanent state. Matches the TS `aggregateActionResults`
 //! and Calhooon `update_transaction_status_after_broadcast` patterns.
 
+use std::collections::{HashMap, HashSet};
+
 use crate::error::WalletResult;
 use crate::services::traits::WalletServices;
 use crate::services::types::PostBeefResult;
@@ -135,6 +137,91 @@ async fn reconcile_tx_status(
     outcome.clone()
 }
 
+/// Returns output IDs of consumed inputs whose parent transactions are verified as
+/// still valid on chain (status "mined" or "known"). Used for DoubleSpend recovery:
+/// only inputs confirmed as unspent by competing transactions are safe to restore.
+///
+/// If the chain query fails entirely, returns an empty vec (errs on the side of
+/// NOT restoring, which is safer than falsely restoring a spent input).
+async fn utxo_verified_input_ids(
+    storage: &WalletStorageManager,
+    services: &(dyn WalletServices + Send + Sync),
+    failed_transaction_id: i64,
+) -> Vec<i64> {
+    // Find outputs consumed as inputs by the failed transaction.
+    let consumed_inputs = storage
+        .find_outputs(&FindOutputsArgs {
+            partial: OutputPartial {
+                spent_by: Some(failed_transaction_id),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap_or_default();
+
+    if consumed_inputs.is_empty() {
+        return Vec::new();
+    }
+
+    // Collect unique parent transaction IDs and resolve their txid hex strings.
+    let parent_tx_ids: HashSet<i64> = consumed_inputs.iter().map(|o| o.transaction_id).collect();
+
+    let mut tx_id_to_txid: HashMap<i64, String> = HashMap::new();
+    for &parent_id in &parent_tx_ids {
+        let txs = storage
+            .find_transactions(&FindTransactionsArgs {
+                partial: TransactionPartial {
+                    transaction_id: Some(parent_id),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .await
+            .unwrap_or_default();
+        if let Some(parent_tx) = txs.first() {
+            if let Some(ref hex_txid) = parent_tx.txid {
+                tx_id_to_txid.insert(parent_id, hex_txid.clone());
+            }
+        }
+    }
+
+    if tx_id_to_txid.is_empty() {
+        return Vec::new();
+    }
+
+    // Query chain status for all parent txids in one batch.
+    let txids_to_check: Vec<String> = tx_id_to_txid.values().cloned().collect();
+    let status_result = services.get_status_for_txids(&txids_to_check, false).await;
+
+    if status_result.status != "success" {
+        tracing::warn!(
+            error = ?status_result.error,
+            "utxo_verified_input_ids: chain query failed, not restoring any inputs"
+        );
+        return Vec::new();
+    }
+
+    // Build set of parent txids confirmed as still valid on chain.
+    let valid_txids: HashSet<&str> = status_result
+        .results
+        .iter()
+        .filter(|r| r.status == "mined" || r.status == "known")
+        .map(|r| r.txid.as_str())
+        .collect();
+
+    // Return output IDs for consumed inputs whose parent tx is still valid.
+    consumed_inputs
+        .iter()
+        .filter(|output| {
+            tx_id_to_txid
+                .get(&output.transaction_id)
+                .is_some_and(|txid| valid_txids.contains(txid.as_str()))
+        })
+        .map(|output| output.output_id)
+        .collect()
+}
+
 /// Update transaction and output state after a broadcast, based on the classified outcome.
 ///
 /// - **Success**: tx -> Unproven, req -> Unmined (already handled in caller)
@@ -241,8 +328,28 @@ pub async fn handle_permanent_broadcast_failure(
 
     // Restore consumed inputs to spendable.
     // For InvalidTx: restore all inputs immediately (tx was malformed, inputs not consumed on chain).
-    // For DoubleSpend: defer to monitor (needs chain verification via utxo_verified_input_ids, Plan 02).
-    if matches!(effective, BroadcastOutcome::InvalidTx { .. }) {
+    // For DoubleSpend: only restore inputs whose parent txs are verified still valid on chain.
+    if matches!(effective, BroadcastOutcome::DoubleSpend { .. }) {
+        let safe_output_ids = utxo_verified_input_ids(storage, services, tx.transaction_id).await;
+
+        for output_id in &safe_output_ids {
+            let _ = storage
+                .update_output(
+                    *output_id,
+                    &OutputPartial {
+                        spendable: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .await;
+        }
+
+        tracing::info!(
+            txid = %txid,
+            restored_inputs = safe_output_ids.len(),
+            "handle_permanent_broadcast_failure: DoubleSpend — restored chain-verified inputs to spendable"
+        );
+    } else if matches!(effective, BroadcastOutcome::InvalidTx { .. }) {
         let consumed_inputs = storage
             .find_outputs(&FindOutputsArgs {
                 partial: OutputPartial {
