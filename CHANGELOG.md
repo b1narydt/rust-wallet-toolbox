@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.19] - 2026-04-13
+
+### Added
+
+- **Chain-verified input restoration** — `utxo_verified_input_ids` queries chain
+  via `get_status_for_txids` before restoring inputs on DoubleSpend. Only inputs
+  whose parent txs are confirmed "mined" or "known" are restored to spendable.
+  InvalidTx immediately restores all inputs (tx was malformed, not consumed).
+
+- **Monitor event purge** — `purge_data` now cleans old `monitor_events` entries
+  using configurable age threshold (default 30 days). Prevents unbounded growth.
+
+- **Checkpoint cleanup** — `TaskReviewDoubleSpends` purges stale checkpoint
+  entries from `monitor_events` after completing a full review cycle.
+
+### Changed
+
+- **Shared WalletStorageManager** — `WalletBuilder` now creates ONE
+  `Arc<WalletStorageManager>` shared across wallet, monitor, signer, and setup
+  return value. Adding a `StorageClient` to `setup.storage` is now visible to
+  the wallet's internal storage. 17 files refactored.
+
+- **Backup sync wiring** — `update_backups()` called after `set_active()` and
+  `add_wallet_storage_provider()` to propagate changes to backup providers.
+
+### Fixed
+
+- **Monitor orphan mempool misclassification** — `attempt_to_post_reqs_to_network`
+  now checks `orphan_mempool` flag and maps it to `ProvenTxReqStatus::Sending`
+  (transient retry). Previously fell through to `Invalid` (permanent failure).
+  New `PostReqStatus::Orphan` variant added.
+
+### Verified
+
+- All 8 StorageClient integration tests pass against both
+  `staging-storage.babbage.systems` (TS reference) and `rust.b1nary.cloud`.
+  BRC-31 auth, makeAvailable, findOrInsertUser, getSyncChunk, syncToWriter,
+  updateBackups all wire-compatible.
+
 ## [0.2.18] - 2026-04-13
 
 ### Added
