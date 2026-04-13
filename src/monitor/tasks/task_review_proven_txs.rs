@@ -126,6 +126,8 @@ impl WalletMonitorTask for TaskReviewProvenTxs {
             }
 
             // Check each proven tx's merkle root against the canonical chain.
+            let mut height_has_mismatch = false;
+
             for ptx in &ptxs {
                 let is_valid = chain_tracker
                     .is_valid_root_for_height(&ptx.merkle_root, height)
@@ -138,13 +140,9 @@ impl WalletMonitorTask for TaskReviewProvenTxs {
 
                 // Merkle root doesn't match canonical — reprove this tx.
                 affected_txs += 1;
-                if mismatched_heights == 0
-                    || log
-                        .lines()
-                        .last()
-                        .map_or(true, |l| !l.contains(&format!("height {height}")))
-                {
+                if !height_has_mismatch {
                     mismatched_heights += 1;
+                    height_has_mismatch = true;
                 }
 
                 let result = self.storage.reprove_proven(&ptx, false).await?;
