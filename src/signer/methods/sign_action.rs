@@ -136,11 +136,12 @@ pub async fn signer_sign_action(
                         .await;
                 }
             }
-            crate::signer::broadcast_outcome::BroadcastOutcome::DoubleSpend { details, .. } => {
-                tracing::error!(txid = %txid, details = ?details, "signAction broadcast: double-spend detected");
-            }
-            crate::signer::broadcast_outcome::BroadcastOutcome::InvalidTx { details } => {
-                tracing::error!(txid = %txid, details = ?details, "signAction broadcast: invalid transaction");
+            crate::signer::broadcast_outcome::BroadcastOutcome::DoubleSpend { .. }
+            | crate::signer::broadcast_outcome::BroadcastOutcome::InvalidTx { .. } => {
+                let _ = crate::signer::broadcast_outcome::handle_permanent_broadcast_failure(
+                    storage, services, &txid, &outcome,
+                )
+                .await;
             }
             crate::signer::broadcast_outcome::BroadcastOutcome::ServiceError { details } => {
                 tracing::warn!(txid = %txid, details = ?details, "signAction broadcast: service error (will retry)");

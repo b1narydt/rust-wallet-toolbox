@@ -296,11 +296,13 @@ pub async fn signer_create_action(
                         .await;
                 }
             }
-            crate::signer::broadcast_outcome::BroadcastOutcome::DoubleSpend { details, .. } => {
-                tracing::error!(txid = %txid, details = ?details, "createAction broadcast: double-spend detected");
-            }
-            crate::signer::broadcast_outcome::BroadcastOutcome::InvalidTx { details } => {
-                tracing::error!(txid = %txid, details = ?details, "createAction broadcast: invalid transaction");
+            crate::signer::broadcast_outcome::BroadcastOutcome::DoubleSpend { .. }
+            | crate::signer::broadcast_outcome::BroadcastOutcome::InvalidTx { .. } => {
+                // Permanent failure — mark tx failed, outputs unspendable, reconcile against chain.
+                let _ = crate::signer::broadcast_outcome::handle_permanent_broadcast_failure(
+                    storage, services, &txid, &outcome,
+                )
+                .await;
             }
             crate::signer::broadcast_outcome::BroadcastOutcome::ServiceError { details } => {
                 tracing::warn!(txid = %txid, details = ?details, "createAction broadcast: service error (will retry)");
