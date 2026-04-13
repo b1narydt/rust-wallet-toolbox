@@ -4,31 +4,26 @@
 //!
 //! Walks block heights from `last_reviewed_height` up to `tip - min_block_age`,
 //! finds proven txs at each height, and reproves any whose merkle root doesn't
-//! match the canonical header.
-//!
-//! NOTE: Full height-by-height merkle-root comparison requires chaintracks
-//! integration (canonical header lookup by height). Until that is available,
-//! this task logs the reviewed height range and reproves nothing. The structure
-//! and registration are in place for when chaintracks lands.
+//! match the canonical header via the chain tracker.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bsv::transaction::chain_tracker::ChainTracker;
 
 use crate::error::WalletError;
 use crate::monitor::helpers::now_msecs;
 use crate::monitor::task_trait::WalletMonitorTask;
 use crate::monitor::ONE_MINUTE;
 use crate::services::traits::WalletServices;
+use crate::storage::find_args::{FindProvenTxsArgs, ProvenTxPartial};
 use crate::storage::manager::WalletStorageManager;
 
 /// Audits proven transaction merkle roots against the canonical chain.
 ///
 /// Walks block heights in batches, comparing stored merkle roots to canonical
-/// block headers. Mismatched transactions are reproved via `reprove_proven`.
-///
-/// Currently stubbed: full merkle-root comparison requires chaintracks
-/// integration for canonical header lookups by height.
+/// block headers via `ChainTracker::is_valid_root_for_height`. Mismatched
+/// transactions are reproved via `reprove_proven`.
 pub struct TaskReviewProvenTxs {
     storage: WalletStorageManager,
     services: Arc<dyn WalletServices>,
@@ -102,18 +97,74 @@ impl WalletMonitorTask for TaskReviewProvenTxs {
         let start = self.last_reviewed_height + 1;
         let end = max_eligible.min(start + self.max_heights_per_run - 1);
 
-        // Full merkle-root comparison requires chaintracks canonical header
-        // lookups by height, which is not yet integrated. Track the range
-        // so the task advances and log accordingly.
+        // Obtain chain tracker for merkle root validation.
+        let chain_tracker = self.services.get_chain_tracker().await?;
+
+        let mut reviewed_heights = 0u32;
+        let mut mismatched_heights = 0u32;
+        let mut affected_txs = 0u32;
+        let mut reproved_txs = 0u32;
+        let mut log = String::new();
+
+        for height in start..=end {
+            reviewed_heights += 1;
+
+            // Find all proven txs stored at this height.
+            let ptxs = self
+                .storage
+                .find_proven_txs(&FindProvenTxsArgs {
+                    partial: ProvenTxPartial {
+                        height: Some(height as i32),
+                        ..Default::default()
+                    },
+                    since: None,
+                    paged: None,
+                })
+                .await?;
+
+            if ptxs.is_empty() {
+                continue;
+            }
+
+            // Check each proven tx's merkle root against the canonical chain.
+            for ptx in &ptxs {
+                let is_valid = chain_tracker
+                    .is_valid_root_for_height(&ptx.merkle_root, height)
+                    .await
+                    .unwrap_or(false);
+
+                if is_valid {
+                    continue;
+                }
+
+                // Merkle root doesn't match canonical — reprove this tx.
+                affected_txs += 1;
+                if mismatched_heights == 0
+                    || log
+                        .lines()
+                        .last()
+                        .map_or(true, |l| !l.contains(&format!("height {height}")))
+                {
+                    mismatched_heights += 1;
+                }
+
+                let result = self.storage.reprove_proven(&ptx, false).await?;
+                if result.updated.is_some() {
+                    reproved_txs += 1;
+                    log += &format!("  reproved txid={} at height {height}\n", ptx.txid);
+                } else if result.unavailable {
+                    log += &format!("  unavailable txid={} at height {height}\n", ptx.txid);
+                }
+            }
+        }
+
         self.last_reviewed_height = end;
         self.use_quick_trigger = end < max_eligible;
 
-        // Suppress unused-variable warnings; these are used in the log output
-        // and will be used when chaintracks integration lands.
-        let _ = &self.storage;
-
         Ok(format!(
-            "tip={tip}, reviewed height range {start}..={end} (stub: chaintracks integration pending)"
+            "tip={tip}, reviewed heights {start}..={end}: \
+             {reviewed_heights} checked, {mismatched_heights} mismatched, \
+             {affected_txs} affected, {reproved_txs} reproved\n{log}"
         ))
     }
 }
