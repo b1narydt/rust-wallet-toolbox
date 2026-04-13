@@ -647,9 +647,8 @@ impl MonitorBuilder {
             Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
         // All tasks share the same Arc<WalletStorageManager>
-        let make_storage = |s: &Arc<WalletStorageManager>| -> Arc<WalletStorageManager> {
-            s.clone()
-        };
+        let make_storage =
+            |s: &Arc<WalletStorageManager>| -> Arc<WalletStorageManager> { s.clone() };
 
         // Unproven attempt limits based on chain
         let unproven_limit = match chain {

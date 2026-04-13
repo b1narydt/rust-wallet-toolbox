@@ -1827,14 +1827,15 @@ impl WalletStorageManager {
                     // backup_source is the current active
                     let ai = state.require_active()?;
                     let arc = state.stores[ai].storage.clone();
-                    let settings = state.stores[ai]
-                        .get_settings_cached()
-                        .await
-                        .ok_or_else(|| {
-                            WalletError::InvalidOperation(
-                                "set_active: current active settings not cached".to_string(),
-                            )
-                        })?;
+                    let settings =
+                        state.stores[ai]
+                            .get_settings_cached()
+                            .await
+                            .ok_or_else(|| {
+                                WalletError::InvalidOperation(
+                                    "set_active: current active settings not cached".to_string(),
+                                )
+                            })?;
                     let user_id = state.stores[ai]
                         .get_user_cached()
                         .await
