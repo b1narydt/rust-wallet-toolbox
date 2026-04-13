@@ -9,7 +9,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bsv::transaction::chain_tracker::ChainTracker;
 
 use crate::error::WalletError;
 use crate::monitor::helpers::now_msecs;
