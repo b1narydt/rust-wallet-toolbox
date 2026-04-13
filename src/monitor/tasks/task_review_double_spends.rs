@@ -34,7 +34,7 @@ use crate::tables::MonitorEvent;
 /// Progress is checkpointed to the monitor_events table so that interrupted
 /// runs resume from the last position.
 pub struct TaskReviewDoubleSpends {
-    storage: WalletStorageManager,
+    storage: Arc<WalletStorageManager>,
     services: Arc<dyn WalletServices>,
     trigger_msecs: u64,
     trigger_quick_msecs: u64,
@@ -62,7 +62,7 @@ struct ReviewDoubleSpendCheckpoint {
 
 impl TaskReviewDoubleSpends {
     /// Create a new double-spend review task.
-    pub fn new(storage: WalletStorageManager, services: Arc<dyn WalletServices>) -> Self {
+    pub fn new(storage: Arc<WalletStorageManager>, services: Arc<dyn WalletServices>) -> Self {
         Self {
             storage,
             services,

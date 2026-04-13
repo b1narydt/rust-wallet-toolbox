@@ -29,7 +29,7 @@ use async_trait::async_trait;
 /// If proof is found: status -> unmined, referenced transactions -> unproven.
 /// If no proof: status -> invalid (back to failed).
 pub struct TaskUnFail {
-    storage: WalletStorageManager,
+    storage: Arc<WalletStorageManager>,
     services: Arc<dyn WalletServices>,
     trigger_msecs: u64,
     last_run_msecs: u64,
@@ -39,7 +39,7 @@ pub struct TaskUnFail {
 
 impl TaskUnFail {
     /// Create a new unfail task.
-    pub fn new(storage: WalletStorageManager, services: Arc<dyn WalletServices>) -> Self {
+    pub fn new(storage: Arc<WalletStorageManager>, services: Arc<dyn WalletServices>) -> Self {
         Self {
             storage,
             services,

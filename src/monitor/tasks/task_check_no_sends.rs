@@ -23,7 +23,7 @@ use crate::types::Chain;
 
 /// Task that retrieves merkle proofs for 'nosend' transactions.
 pub struct TaskCheckNoSends {
-    storage: WalletStorageManager,
+    storage: Arc<WalletStorageManager>,
     services: Arc<dyn WalletServices>,
     chain: Chain,
     trigger_msecs: u64,
@@ -38,7 +38,7 @@ pub struct TaskCheckNoSends {
 impl TaskCheckNoSends {
     /// Create a new no-sends checking task.
     pub fn new(
-        storage: WalletStorageManager,
+        storage: Arc<WalletStorageManager>,
         services: Arc<dyn WalletServices>,
         chain: Chain,
         unproven_attempts_limit: u32,

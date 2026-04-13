@@ -143,8 +143,8 @@ pub struct Monitor {
     /// Configuration options.
     pub options: MonitorOptions,
 
-    /// Storage manager for persistence operations.
-    pub storage: WalletStorageManager,
+    /// Storage manager for persistence operations (shared via Arc).
+    pub storage: Arc<WalletStorageManager>,
 
     /// Network services for broadcasting and proof retrieval.
     pub services: Arc<dyn WalletServices>,
@@ -227,11 +227,7 @@ impl Monitor {
         // Take tasks out of self for the spawned future.
         // They will be returned when stop_tasks is called.
         let mut tasks: Vec<Box<dyn WalletMonitorTask>> = std::mem::take(&mut self.tasks);
-        let storage = WalletStorageManager::new(
-            self.storage.auth_id().to_string(),
-            self.storage.active().cloned(),
-            self.storage.backups().to_vec(),
-        );
+        let storage = self.storage.clone();
 
         let handle = tokio::spawn(async move {
             // Ensure the monitor's storage manager is initialized before tasks run.
@@ -498,7 +494,7 @@ impl Monitor {
 /// ```no_run
 /// # use std::sync::Arc;
 /// # fn example(
-/// #     storage: bsv_wallet_toolbox::storage::manager::WalletStorageManager,
+/// #     storage: Arc<bsv_wallet_toolbox::storage::manager::WalletStorageManager>,
 /// #     services: Arc<dyn bsv_wallet_toolbox::services::traits::WalletServices>,
 /// # ) -> bsv_wallet_toolbox::WalletResult<()> {
 /// use bsv_wallet_toolbox::monitor::Monitor;
@@ -515,7 +511,7 @@ impl Monitor {
 /// ```
 pub struct MonitorBuilder {
     chain: Option<Chain>,
-    storage: Option<WalletStorageManager>,
+    storage: Option<Arc<WalletStorageManager>>,
     services: Option<Arc<dyn WalletServices>>,
     options: MonitorOptions,
     default_tasks: bool,
@@ -545,7 +541,7 @@ impl MonitorBuilder {
     }
 
     /// Set the storage manager (required).
-    pub fn storage(mut self, storage: WalletStorageManager) -> Self {
+    pub fn storage(mut self, storage: Arc<WalletStorageManager>) -> Self {
         self.storage = Some(storage);
         self
     }
@@ -648,13 +644,9 @@ impl MonitorBuilder {
         let deactivated_headers: Arc<tokio::sync::Mutex<Vec<DeactivatedHeader>>> =
             Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
-        // Helper: create a new WalletStorageManager sharing the same providers
-        let make_storage = |s: &WalletStorageManager| -> WalletStorageManager {
-            WalletStorageManager::new(
-                s.auth_id().to_string(),
-                s.active().cloned(),
-                s.backups().to_vec(),
-            )
+        // All tasks share the same Arc<WalletStorageManager>
+        let make_storage = |s: &Arc<WalletStorageManager>| -> Arc<WalletStorageManager> {
+            s.clone()
         };
 
         // Unproven attempt limits based on chain

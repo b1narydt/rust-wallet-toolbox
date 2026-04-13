@@ -24,7 +24,7 @@ use crate::storage::manager::WalletStorageManager;
 /// block headers via `ChainTracker::is_valid_root_for_height`. Mismatched
 /// transactions are reproved via `reprove_proven`.
 pub struct TaskReviewProvenTxs {
-    storage: WalletStorageManager,
+    storage: Arc<WalletStorageManager>,
     services: Arc<dyn WalletServices>,
     trigger_msecs: u64,
     trigger_quick_msecs: u64,
@@ -41,7 +41,7 @@ pub struct TaskReviewProvenTxs {
 
 impl TaskReviewProvenTxs {
     /// Create a new proven-tx review task.
-    pub fn new(storage: WalletStorageManager, services: Arc<dyn WalletServices>) -> Self {
+    pub fn new(storage: Arc<WalletStorageManager>, services: Arc<dyn WalletServices>) -> Self {
         Self {
             storage,
             services,

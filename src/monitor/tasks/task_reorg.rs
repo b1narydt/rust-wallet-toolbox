@@ -27,7 +27,7 @@ use super::super::task_trait::WalletMonitorTask;
 /// Uses an aging pattern to delay processing, allowing the chain to stabilize.
 pub struct TaskReorg {
     /// Storage manager for persistence operations.
-    storage: WalletStorageManager,
+    storage: Arc<WalletStorageManager>,
     /// Network services for proof retrieval.
     services: Arc<dyn WalletServices>,
     /// How long to age headers before processing (default 10 minutes).
@@ -47,7 +47,7 @@ pub struct TaskReorg {
 impl TaskReorg {
     /// Create a new TaskReorg with default intervals.
     pub fn new(
-        storage: WalletStorageManager,
+        storage: Arc<WalletStorageManager>,
         services: Arc<dyn WalletServices>,
         deactivated_headers: Arc<tokio::sync::Mutex<Vec<DeactivatedHeader>>>,
     ) -> Self {
@@ -65,7 +65,7 @@ impl TaskReorg {
 
     /// Create with custom intervals.
     pub fn with_intervals(
-        storage: WalletStorageManager,
+        storage: Arc<WalletStorageManager>,
         services: Arc<dyn WalletServices>,
         deactivated_headers: Arc<tokio::sync::Mutex<Vec<DeactivatedHeader>>>,
         aged_msecs: u64,

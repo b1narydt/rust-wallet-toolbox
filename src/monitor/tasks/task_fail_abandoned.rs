@@ -14,6 +14,8 @@ use crate::status::TransactionStatus;
 use crate::storage::find_args::{FindTransactionsArgs, TransactionPartial};
 use crate::storage::manager::WalletStorageManager;
 
+use std::sync::Arc;
+
 use super::super::task_trait::WalletMonitorTask;
 
 /// Background task that fails stuck transactions.
@@ -23,7 +25,7 @@ use super::super::task_trait::WalletMonitorTask;
 /// any locked UTXOs back to spendable status.
 pub struct TaskFailAbandoned {
     /// Storage manager for persistence operations.
-    storage: WalletStorageManager,
+    storage: Arc<WalletStorageManager>,
     /// How often to trigger (default 5 minutes, matching TS).
     trigger_msecs: u64,
     /// Last time this task ran (epoch ms).
@@ -34,7 +36,7 @@ pub struct TaskFailAbandoned {
 
 impl TaskFailAbandoned {
     /// Create a new TaskFailAbandoned with default intervals.
-    pub fn new(storage: WalletStorageManager, abandoned_msecs: u64) -> Self {
+    pub fn new(storage: Arc<WalletStorageManager>, abandoned_msecs: u64) -> Self {
         Self {
             storage,
             trigger_msecs: ONE_MINUTE * 5,
@@ -45,7 +47,7 @@ impl TaskFailAbandoned {
 
     /// Create with a custom trigger interval.
     pub fn with_trigger_msecs(
-        storage: WalletStorageManager,
+        storage: Arc<WalletStorageManager>,
         trigger_msecs: u64,
         abandoned_msecs: u64,
     ) -> Self {

@@ -85,7 +85,7 @@ pub struct Wallet {
     /// Key deriver for BRC-42/BRC-43 child key derivation.
     pub key_deriver: Arc<CachedKeyDeriver>,
     /// Storage manager providing persistence operations.
-    pub storage: WalletStorageManager,
+    pub storage: Arc<WalletStorageManager>,
     /// Optional network services (broadcasting, chain lookups, etc.).
     pub services: Option<Arc<dyn WalletServices>>,
     /// Optional background monitor for transaction lifecycle.
@@ -175,13 +175,9 @@ impl Wallet {
             )
         })?;
 
-        // Create signer with a shared storage manager (same providers as args.storage)
+        // Signer shares the same Arc<WalletStorageManager> as the wallet
         let signer = DefaultWalletSigner::new(
-            Arc::new(WalletStorageManager::new(
-                identity_key_hex.clone(),
-                args.storage.active().cloned(),
-                args.storage.backups().to_vec(),
-            )),
+            args.storage.clone(),
             services_for_signer,
             args.key_deriver.clone(),
             args.chain.clone(),

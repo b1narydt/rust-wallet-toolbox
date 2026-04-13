@@ -29,7 +29,7 @@ use super::super::task_trait::WalletMonitorTask;
 /// This aging pattern avoids chasing proofs during rapid block reorgs.
 pub struct TaskNewHeader {
     /// Storage manager for persistence operations (reserved for future header persistence).
-    _storage: WalletStorageManager,
+    _storage: Arc<WalletStorageManager>,
     /// Network services for chain tip queries.
     services: Arc<dyn WalletServices>,
     /// The most recent chain tip header known to this task.
@@ -47,7 +47,7 @@ pub struct TaskNewHeader {
 impl TaskNewHeader {
     /// Create a new TaskNewHeader with default intervals.
     pub fn new(
-        storage: WalletStorageManager,
+        storage: Arc<WalletStorageManager>,
         services: Arc<dyn WalletServices>,
         check_now: Arc<AtomicBool>,
         last_new_header_height: Arc<AtomicU32>,

@@ -5,6 +5,8 @@
 //! This task is intentionally disabled: `trigger()` always returns false.
 //! Manual review is available via `review_by_identity_key`.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use crate::error::WalletError;
@@ -17,12 +19,12 @@ use crate::wallet::types::{AuthId, SPEC_OP_INVALID_CHANGE};
 /// Disabled by default -- `trigger()` always returns `false`.
 /// Use `review_by_identity_key` for on-demand UTXO review.
 pub struct TaskReviewUtxos {
-    storage: WalletStorageManager,
+    storage: Arc<WalletStorageManager>,
 }
 
 impl TaskReviewUtxos {
     /// Create a new UTXO review task.
-    pub fn new(storage: WalletStorageManager) -> Self {
+    pub fn new(storage: Arc<WalletStorageManager>) -> Self {
         Self { storage }
     }
 
