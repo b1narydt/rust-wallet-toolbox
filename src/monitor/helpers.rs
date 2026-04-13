@@ -63,6 +63,9 @@ pub enum PostReqStatus {
     Invalid,
     /// The service encountered an error processing the request.
     ServiceError,
+    /// Transaction seen in orphan mempool (parent not yet propagated).
+    /// Transient — should be retried.
+    Orphan,
     /// Status could not be determined.
     Unknown,
 }
@@ -455,6 +458,7 @@ pub async fn attempt_to_post_reqs_to_network(
                 PostReqStatus::DoubleSpend => "doubleSpend",
                 PostReqStatus::Invalid => "invalid",
                 PostReqStatus::ServiceError => "serviceError",
+                PostReqStatus::Orphan => "orphan",
                 PostReqStatus::Unknown => "unknown",
             },
             success_count,
