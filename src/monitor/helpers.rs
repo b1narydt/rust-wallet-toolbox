@@ -514,6 +514,7 @@ pub async fn attempt_to_post_reqs_to_network(
         };
         let mut cascade_update_failed = false;
         if let Some(tx_status) = new_tx_status {
+            let is_failed = matches!(tx_status, crate::status::TransactionStatus::Failed);
             if let Err(e) = storage
                 .update_transaction_status(&req.txid, tx_status)
                 .await
@@ -530,6 +531,48 @@ pub async fn attempt_to_post_reqs_to_network(
                     "  req {} txid {}: warn update_transaction_status: {}\n",
                     req.proven_tx_req_id, req.txid, e
                 ));
+            } else if is_failed {
+                // Explicitly restore this tx's consumed inputs. The
+                // implicit restore-on-Failed cascade was removed from
+                // `update_transaction_status` so DoubleSpend recovery
+                // can keep its per-outpoint filter. Both
+                // DoubleSpend and Invalid flow through here; restoring
+                // every consumed input matches the previous cascade
+                // semantics for this monitor-side path.
+                match storage
+                    .find_transactions(
+                        &crate::storage::find_args::FindTransactionsArgs {
+                            partial:
+                                crate::storage::find_args::TransactionPartial {
+                                    txid: Some(req.txid.clone()),
+                                    ..Default::default()
+                                },
+                            no_raw_tx: true,
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    Ok(txs) => {
+                        if let Some(tx) = txs.first() {
+                            if let Err(e) = storage
+                                .restore_consumed_inputs(tx.transaction_id)
+                                .await
+                            {
+                                result.log.push_str(&format!(
+                                    "  req {} txid {}: warn restore_consumed_inputs: {}\n",
+                                    req.proven_tx_req_id, req.txid, e
+                                ));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        result.log.push_str(&format!(
+                            "  req {} txid {}: warn find_transactions for restore: {}\n",
+                            req.proven_tx_req_id, req.txid, e
+                        ));
+                    }
+                }
             }
         }
 

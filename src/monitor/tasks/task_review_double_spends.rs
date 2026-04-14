@@ -301,22 +301,468 @@ impl WalletMonitorTask for TaskReviewDoubleSpends {
 
 #[cfg(test)]
 mod tests {
-    use crate::monitor::ONE_MINUTE;
+    //! Behavioral tests for `TaskReviewDoubleSpends`.
+    //!
+    //! Each test builds a fresh in-memory SQLite storage, attaches a scripted
+    //! `MockServices` with a configurable `get_status_for_txids` response, and
+    //! exercises the real `run_task` / helper methods.
 
-    #[test]
-    fn test_review_double_spends_defaults() {
-        assert_eq!(12 * ONE_MINUTE, 720_000);
-        assert_eq!(ONE_MINUTE, 60_000);
+    use super::*;
+    use crate::error::WalletResult;
+    use crate::services::traits::WalletServices;
+    use crate::services::types::{
+        BlockHeader, BsvExchangeRate, FiatExchangeRates, GetMerklePathResult, GetRawTxResult,
+        GetScriptHashHistoryResult, GetStatusForTxidsResult, GetUtxoStatusOutputFormat,
+        GetUtxoStatusResult, NLockTimeInput, PostBeefResult, ServicesCallHistory,
+        StatusForTxidResult,
+    };
+    use crate::status::ProvenTxReqStatus;
+    use crate::storage::find_args::{FindMonitorEventsArgs, MonitorEventPartial};
+    use crate::storage::sqlx_impl::SqliteStorage;
+    use crate::storage::traits::provider::StorageProvider;
+    use crate::storage::traits::wallet_provider::WalletStorageProvider;
+    use crate::storage::StorageConfig;
+    use crate::tables::ProvenTxReq;
+    use crate::types::Chain;
+    use async_trait::async_trait;
+    use bsv::transaction::Beef;
+    use chrono::{Duration, Utc};
+    use std::sync::Mutex;
+
+    // -----------------------------------------------------------------------
+    // Mock WalletServices whose `get_status_for_txids` returns a scripted
+    // response keyed by txid. Captures call count for verification.
+    // -----------------------------------------------------------------------
+
+    struct ScriptedStatusServices {
+        /// `(status_code, per-txid-result)` pairs for each incoming txid.
+        /// Status "success" → include a `StatusForTxidResult` with given status.
+        /// Status "error" → empty results (simulates outage).
+        outage: bool,
+        /// txid -> status string ("mined", "known", "unknown")
+        responses: std::collections::HashMap<String, String>,
+        /// Collected txids that were looked up.
+        calls: Mutex<Vec<Vec<String>>>,
     }
 
-    #[test]
-    fn test_name() {
-        assert_eq!("ReviewDoubleSpends", "ReviewDoubleSpends");
+    impl ScriptedStatusServices {
+        fn success(
+            responses: std::collections::HashMap<String, String>,
+        ) -> Arc<dyn WalletServices> {
+            Arc::new(Self {
+                outage: false,
+                responses,
+                calls: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn outage() -> Arc<dyn WalletServices> {
+            Arc::new(Self {
+                outage: true,
+                responses: Default::default(),
+                calls: Mutex::new(Vec::new()),
+            })
+        }
     }
 
+    #[async_trait]
+    impl WalletServices for ScriptedStatusServices {
+        fn chain(&self) -> Chain {
+            Chain::Test
+        }
+        async fn get_chain_tracker(
+            &self,
+        ) -> WalletResult<Box<dyn bsv::transaction::chain_tracker::ChainTracker>> {
+            Err(WalletError::NotImplemented("mock".into()))
+        }
+        async fn get_merkle_path(&self, _txid: &str, _use_next: bool) -> GetMerklePathResult {
+            GetMerklePathResult::default()
+        }
+        async fn get_raw_tx(&self, _txid: &str, _use_next: bool) -> GetRawTxResult {
+            GetRawTxResult::default()
+        }
+        async fn post_beef(&self, _beef: &[u8], _txids: &[String]) -> Vec<PostBeefResult> {
+            vec![]
+        }
+        async fn get_utxo_status(
+            &self,
+            _output: &str,
+            _output_format: Option<GetUtxoStatusOutputFormat>,
+            _outpoint: Option<&str>,
+            _use_next: bool,
+        ) -> GetUtxoStatusResult {
+            GetUtxoStatusResult {
+                name: "mock".into(),
+                status: "error".into(),
+                error: Some("mock".into()),
+                is_utxo: None,
+                details: vec![],
+            }
+        }
+        async fn get_status_for_txids(
+            &self,
+            txids: &[String],
+            _use_next: bool,
+        ) -> GetStatusForTxidsResult {
+            self.calls.lock().unwrap().push(txids.to_vec());
+            if self.outage {
+                return GetStatusForTxidsResult {
+                    name: "mock".into(),
+                    status: "error".into(),
+                    error: Some("service outage".into()),
+                    results: vec![],
+                };
+            }
+            let results = txids
+                .iter()
+                .map(|t| {
+                    let status = self
+                        .responses
+                        .get(t)
+                        .cloned()
+                        .unwrap_or_else(|| "unknown".to_string());
+                    StatusForTxidResult {
+                        txid: t.clone(),
+                        depth: None,
+                        status,
+                    }
+                })
+                .collect();
+            GetStatusForTxidsResult {
+                name: "mock".into(),
+                status: "success".into(),
+                error: None,
+                results,
+            }
+        }
+        async fn get_script_hash_history(
+            &self,
+            _hash: &str,
+            _use_next: bool,
+        ) -> GetScriptHashHistoryResult {
+            GetScriptHashHistoryResult {
+                name: "mock".into(),
+                status: "error".into(),
+                error: Some("mock".into()),
+                history: vec![],
+            }
+        }
+        async fn hash_to_header(&self, _hash: &str) -> WalletResult<BlockHeader> {
+            Err(WalletError::NotImplemented("mock".into()))
+        }
+        async fn get_header_for_height(&self, _height: u32) -> WalletResult<Vec<u8>> {
+            Err(WalletError::NotImplemented("mock".into()))
+        }
+        async fn get_height(&self) -> WalletResult<u32> {
+            Ok(0)
+        }
+        async fn n_lock_time_is_final(&self, _input: NLockTimeInput) -> WalletResult<bool> {
+            Ok(true)
+        }
+        async fn get_bsv_exchange_rate(&self) -> WalletResult<BsvExchangeRate> {
+            Err(WalletError::NotImplemented("mock".into()))
+        }
+        async fn get_fiat_exchange_rate(
+            &self,
+            _currency: &str,
+            _base: Option<&str>,
+        ) -> WalletResult<f64> {
+            Ok(1.0)
+        }
+        async fn get_fiat_exchange_rates(
+            &self,
+            _target_currencies: &[String],
+        ) -> WalletResult<FiatExchangeRates> {
+            Err(WalletError::NotImplemented("mock".into()))
+        }
+        fn get_services_call_history(&self, _reset: bool) -> ServicesCallHistory {
+            ServicesCallHistory { services: vec![] }
+        }
+        async fn get_beef_for_txid(&self, _txid: &str) -> WalletResult<Beef> {
+            Err(WalletError::NotImplemented("mock".into()))
+        }
+        fn hash_output_script(&self, _script: &[u8]) -> String {
+            String::new()
+        }
+        async fn is_utxo(
+            &self,
+            _locking_script: &[u8],
+            _txid: &str,
+            _vout: u32,
+        ) -> WalletResult<bool> {
+            Ok(false)
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Storage helpers
+    // -----------------------------------------------------------------------
+
+    async fn make_manager_and_storage() -> (Arc<WalletStorageManager>, Arc<SqliteStorage>) {
+        let cfg = StorageConfig {
+            url: "sqlite::memory:".to_string(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::new_sqlite(cfg, Chain::Test).await.unwrap();
+        StorageProvider::migrate_database(&storage).await.unwrap();
+        let storage = Arc::new(storage);
+        let provider: Arc<dyn WalletStorageProvider> = storage.clone();
+        let mgr = Arc::new(WalletStorageManager::new(
+            "02aabbcc".to_string(),
+            Some(provider),
+            vec![],
+        ));
+        mgr.make_available().await.unwrap();
+        (mgr, storage)
+    }
+
+    /// Insert a `ProvenTxReq` with given txid + updated_at.
+    async fn insert_req(
+        storage: &SqliteStorage,
+        txid: &str,
+        updated_at: chrono::NaiveDateTime,
+        status: ProvenTxReqStatus,
+    ) -> i64 {
+        use crate::storage::traits::reader_writer::StorageReaderWriter;
+        let req = ProvenTxReq {
+            created_at: updated_at,
+            updated_at,
+            proven_tx_req_id: 0,
+            proven_tx_id: None,
+            status,
+            attempts: 0,
+            notified: false,
+            txid: txid.to_string(),
+            batch: None,
+            history: "{}".to_string(),
+            notify: "{}".to_string(),
+            raw_tx: vec![],
+            input_beef: None,
+        };
+        storage.insert_proven_tx_req(&req, None).await.unwrap()
+    }
+
+    // =======================================================================
+    // Tests
+    // =======================================================================
+
+    /// `purge_old_checkpoints` should delete all checkpoint events whose id is
+    /// less than the most-recent checkpoint id. Guards the stale-checkpoint
+    /// cleanup invariant introduced in commit 9044177.
+    #[tokio::test]
+    async fn test_purge_old_checkpoints_keeps_only_most_recent() {
+        let (mgr, _storage) = make_manager_and_storage().await;
+        // Insert three checkpoint events manually.
+        let now = Utc::now().naive_utc();
+        for i in 0..3 {
+            let ev = MonitorEvent {
+                created_at: now,
+                updated_at: now,
+                id: 0,
+                event: "ReviewDoubleSpends".to_string(),
+                details: Some(format!("{{\"resumeOffset\":{i}}}")),
+            };
+            mgr.insert_monitor_event(&ev).await.unwrap();
+        }
+        // Insert an unrelated event — must NOT be deleted.
+        let other = MonitorEvent {
+            created_at: now,
+            updated_at: now,
+            id: 0,
+            event: "OtherEvent".to_string(),
+            details: None,
+        };
+        mgr.insert_monitor_event(&other).await.unwrap();
+
+        let task = TaskReviewDoubleSpends::new(
+            mgr.clone(),
+            ScriptedStatusServices::success(Default::default()),
+        );
+        task.purge_old_checkpoints().await.unwrap();
+
+        let remaining = mgr
+            .find_monitor_events(&FindMonitorEventsArgs {
+                partial: MonitorEventPartial {
+                    id: None,
+                    event: Some("ReviewDoubleSpends".to_string()),
+                },
+                since: None,
+                paged: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            remaining.len(),
+            1,
+            "only the most recent ReviewDoubleSpends event should remain"
+        );
+
+        let other_remaining = mgr
+            .find_monitor_events(&FindMonitorEventsArgs {
+                partial: MonitorEventPartial {
+                    id: None,
+                    event: Some("OtherEvent".to_string()),
+                },
+                since: None,
+                paged: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            other_remaining.len(),
+            1,
+            "unrelated events must be preserved"
+        );
+    }
+
+    /// Age filter: a req whose `updated_at` is NEWER than `min_age_minutes` is
+    /// NOT reviewed (commit 77c55cb). An older req IS reviewed.
+    #[tokio::test]
+    async fn test_age_filter_only_processes_old_enough_reqs() {
+        let (mgr, storage) = make_manager_and_storage().await;
+        let now = Utc::now().naive_utc();
+        // too-new: updated 10 minutes ago (< 60-min default) -- must NOT be touched
+        let young_id = insert_req(
+            &storage,
+            "young_txid",
+            now - Duration::minutes(10),
+            ProvenTxReqStatus::DoubleSpend,
+        )
+        .await;
+        // old enough: updated 120 minutes ago -- IS eligible
+        let old_id = insert_req(
+            &storage,
+            "old_txid",
+            now - Duration::minutes(120),
+            ProvenTxReqStatus::DoubleSpend,
+        )
+        .await;
+
+        // Scripted services: say both txids are "mined" so anything touched → Unfail.
+        let mut resp = std::collections::HashMap::new();
+        resp.insert("young_txid".to_string(), "mined".to_string());
+        resp.insert("old_txid".to_string(), "mined".to_string());
+
+        let svc = ScriptedStatusServices::success(resp);
+        let mut task = TaskReviewDoubleSpends::new(mgr.clone(), svc);
+        task.run_task().await.unwrap();
+
+        // Re-read both reqs.
+        let young = mgr
+            .find_proven_tx_reqs(&FindProvenTxReqsArgs {
+                partial: ProvenTxReqPartial {
+                    proven_tx_req_id: Some(young_id),
+                    ..Default::default()
+                },
+                since: None,
+                paged: None,
+                statuses: None,
+            })
+            .await
+            .unwrap();
+        let old = mgr
+            .find_proven_tx_reqs(&FindProvenTxReqsArgs {
+                partial: ProvenTxReqPartial {
+                    proven_tx_req_id: Some(old_id),
+                    ..Default::default()
+                },
+                since: None,
+                paged: None,
+                statuses: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(
+            young[0].status,
+            ProvenTxReqStatus::DoubleSpend,
+            "young (< min_age) req must NOT be touched"
+        );
+        assert_eq!(
+            old[0].status,
+            ProvenTxReqStatus::Unfail,
+            "old req with on-chain status must be flipped to Unfail"
+        );
+    }
+
+    /// Service outage (status="error", empty results): the task must NOT
+    /// terminalize (flip) any req. PR review IMPORTANT #6.
+    ///
+    /// If this test fails, the production code is treating an outage as
+    /// equivalent to "unknown" for every txid and may therefore spuriously
+    /// advance reqs through the pipeline. See PR review note.
+    #[tokio::test]
+    async fn test_service_outage_does_not_terminalize() {
+        let (mgr, storage) = make_manager_and_storage().await;
+        let old = Utc::now().naive_utc() - Duration::minutes(120);
+        let id = insert_req(&storage, "txid_outage", old, ProvenTxReqStatus::DoubleSpend).await;
+
+        let mut task = TaskReviewDoubleSpends::new(mgr.clone(), ScriptedStatusServices::outage());
+        task.run_task().await.unwrap();
+
+        let reqs = mgr
+            .find_proven_tx_reqs(&FindProvenTxReqsArgs {
+                partial: ProvenTxReqPartial {
+                    proven_tx_req_id: Some(id),
+                    ..Default::default()
+                },
+                since: None,
+                paged: None,
+                statuses: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            reqs[0].status,
+            ProvenTxReqStatus::DoubleSpend,
+            "outage must not cause a status transition — current code is unsafe if this fails"
+        );
+    }
+
+    /// Checkpoint persistence: after a run that found eligible reqs, a
+    /// ReviewDoubleSpends monitor_event row is written with the correct
+    /// `reviewed` count serialized in JSON details.
+    #[tokio::test]
+    async fn test_checkpoint_persisted_after_run() {
+        let (mgr, storage) = make_manager_and_storage().await;
+        let old = Utc::now().naive_utc() - Duration::minutes(120);
+        insert_req(&storage, "a_tx", old, ProvenTxReqStatus::DoubleSpend).await;
+        insert_req(&storage, "b_tx", old, ProvenTxReqStatus::DoubleSpend).await;
+
+        // Both txids return "unknown" → no unfails, both retained.
+        let mut task = TaskReviewDoubleSpends::new(
+            mgr.clone(),
+            ScriptedStatusServices::success(Default::default()),
+        );
+        task.run_task().await.unwrap();
+
+        let events = mgr
+            .find_monitor_events(&FindMonitorEventsArgs {
+                partial: MonitorEventPartial {
+                    id: None,
+                    event: Some("ReviewDoubleSpends".to_string()),
+                },
+                since: None,
+                paged: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            events.len(),
+            1,
+            "exactly one checkpoint event should be persisted"
+        );
+        let details = events[0].details.as_ref().expect("checkpoint has details");
+        let cp: ReviewDoubleSpendCheckpoint = serde_json::from_str(details).unwrap();
+        assert_eq!(cp.reviewed, 2, "checkpoint reviewed count must equal reqs");
+        assert_eq!(cp.unfails, 0, "no unfails when all txids return unknown");
+    }
+
+    /// Checkpoint serialization roundtrip. Kept from the original suite —
+    /// the only substantive test of the old version.
     #[test]
     fn test_checkpoint_serialization() {
-        let cp = super::ReviewDoubleSpendCheckpoint {
+        let cp = ReviewDoubleSpendCheckpoint {
             resume_offset: 42,
             expected_proven_tx_req_id: Some(123),
             review_limit: 100,
@@ -325,8 +771,10 @@ mod tests {
             unfails: 3,
         };
         let json = serde_json::to_string(&cp).unwrap();
-        let parsed: super::ReviewDoubleSpendCheckpoint = serde_json::from_str(&json).unwrap();
+        let parsed: ReviewDoubleSpendCheckpoint = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.resume_offset, 42);
         assert_eq!(parsed.expected_proven_tx_req_id, Some(123));
+        assert_eq!(parsed.reviewed, 10);
+        assert_eq!(parsed.unfails, 3);
     }
 }

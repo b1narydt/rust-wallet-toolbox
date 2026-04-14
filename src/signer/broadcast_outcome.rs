@@ -246,6 +246,72 @@ async fn utxo_verified_input_ids(
     Ok(verified)
 }
 
+/// Apply the post-broadcast state transition for Success / OrphanMempool outcomes.
+///
+/// Shared by `create_action` and `sign_action` to avoid drift between the two
+/// broadcast paths. Only handles the non-permanent arms; DoubleSpend / InvalidTx
+/// go through `handle_permanent_broadcast_failure` instead, and ServiceError
+/// intentionally leaves state untouched so the monitor will retry.
+///
+/// Behavior:
+/// - **Success**: Transaction -> Unproven, ProvenTxReq -> Unmined
+/// - **OrphanMempool**: Transaction stays Sending (parent not yet propagated —
+///   monitor will retry), ProvenTxReq -> Sending
+///
+/// Both the Transaction.status and ProvenTxReq.status are branched so the
+/// monitor's re-broadcast contract (module doc above, "OrphanMempool/
+/// ServiceError: tx stays Sending") is upheld. Earlier revisions set
+/// Transaction -> Unproven unconditionally, which was the bug surfaced by PR
+/// review §"IMPORTANT #5".
+pub async fn apply_success_or_orphan_outcome(
+    storage: &WalletStorageManager,
+    txid: &str,
+    outcome: &BroadcastOutcome,
+) -> WalletResult<()> {
+    let is_orphan = matches!(outcome, BroadcastOutcome::OrphanMempool { .. });
+
+    // OrphanMempool: leave Transaction at Sending so the monitor retries once
+    // the parent tx propagates. Success: advance to Unproven (accepted,
+    // awaiting proof).
+    let new_tx_status = if is_orphan {
+        crate::status::TransactionStatus::Sending
+    } else {
+        crate::status::TransactionStatus::Unproven
+    };
+    let _ = storage.update_transaction_status(txid, new_tx_status).await;
+
+    let reqs = storage
+        .find_proven_tx_reqs(&crate::storage::find_args::FindProvenTxReqsArgs {
+            partial: crate::storage::find_args::ProvenTxReqPartial {
+                txid: Some(txid.to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap_or_default();
+
+    let new_status = if is_orphan {
+        crate::status::ProvenTxReqStatus::Sending
+    } else {
+        crate::status::ProvenTxReqStatus::Unmined
+    };
+
+    for req in &reqs {
+        let _ = storage
+            .update_proven_tx_req(
+                req.proven_tx_req_id,
+                &crate::storage::find_args::ProvenTxReqPartial {
+                    status: Some(new_status.clone()),
+                    ..Default::default()
+                },
+            )
+            .await;
+    }
+
+    Ok(())
+}
+
 /// Update transaction and output state after a broadcast, based on the classified outcome.
 ///
 /// - **Success**: tx -> Unproven, req -> Unmined (already handled in caller)

@@ -639,6 +639,21 @@ pub trait WalletStorageProvider: Send + Sync {
             "update_transaction_status_trx".into(),
         ))
     }
+
+    /// Restore all outputs consumed by `tx_id` back to spendable (clears
+    /// spent_by and sets spendable=true). Callers that previously relied on
+    /// the implicit restore-on-Failed side-effect of update_transaction_status
+    /// must now call this explicitly.
+    async fn restore_consumed_inputs_trx(
+        &self,
+        tx_id: i64,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<u64> {
+        let _ = (tx_id, trx);
+        Err(WalletError::NotImplemented(
+            "restore_consumed_inputs_trx".into(),
+        ))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1339,6 +1354,14 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         trx: Option<&TrxToken>,
     ) -> WalletResult<()> {
         StorageReaderWriter::update_transaction_status(self, txid, new_status, trx).await
+    }
+
+    async fn restore_consumed_inputs_trx(
+        &self,
+        tx_id: i64,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<u64> {
+        StorageReaderWriter::restore_consumed_inputs(self, tx_id, trx).await
     }
 }
 

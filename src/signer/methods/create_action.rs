@@ -262,39 +262,10 @@ pub async fn signer_create_action(
             | crate::signer::broadcast_outcome::BroadcastOutcome::OrphanMempool { .. } => {
                 // Success or transient orphan — transition to unproven/unmined.
                 // OrphanMempool stays in sending for monitor retry.
-                let _ = storage
-                    .update_transaction_status(&txid, crate::status::TransactionStatus::Unproven)
-                    .await;
-
-                let reqs = storage
-                    .find_proven_tx_reqs(&crate::storage::find_args::FindProvenTxReqsArgs {
-                        partial: crate::storage::find_args::ProvenTxReqPartial {
-                            txid: Some(txid.clone()),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    })
-                    .await
-                    .unwrap_or_default();
-                for req in &reqs {
-                    let new_status = if matches!(
-                        outcome,
-                        crate::signer::broadcast_outcome::BroadcastOutcome::OrphanMempool { .. }
-                    ) {
-                        crate::status::ProvenTxReqStatus::Sending
-                    } else {
-                        crate::status::ProvenTxReqStatus::Unmined
-                    };
-                    let _ = storage
-                        .update_proven_tx_req(
-                            req.proven_tx_req_id,
-                            &crate::storage::find_args::ProvenTxReqPartial {
-                                status: Some(new_status),
-                                ..Default::default()
-                            },
-                        )
-                        .await;
-                }
+                let _ = crate::signer::broadcast_outcome::apply_success_or_orphan_outcome(
+                    storage, &txid, &outcome,
+                )
+                .await;
             }
             crate::signer::broadcast_outcome::BroadcastOutcome::DoubleSpend { .. }
             | crate::signer::broadcast_outcome::BroadcastOutcome::InvalidTx { .. } => {

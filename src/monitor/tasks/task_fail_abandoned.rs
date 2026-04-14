@@ -124,6 +124,23 @@ impl WalletMonitorTask for TaskFailAbandoned {
                                 "updated tx {} (id={}) status to 'failed'\n",
                                 txid, tx.transaction_id
                             ));
+                            // Explicitly restore inputs this abandoned tx had
+                            // locked. The cascade is no longer implicit in
+                            // `update_transaction_status` (it was removed so
+                            // DoubleSpend recovery can restore only chain-
+                            // verified inputs); abandoned txs never hit the
+                            // chain so restoring every consumed input is safe
+                            // and matches the previous behavior.
+                            if let Err(e) = self
+                                .storage
+                                .restore_consumed_inputs(tx.transaction_id)
+                                .await
+                            {
+                                log.push_str(&format!(
+                                    "warn restore_consumed_inputs tx {} (id={}): {}\n",
+                                    txid, tx.transaction_id, e
+                                ));
+                            }
                         }
                         Err(e) => {
                             log.push_str(&format!(

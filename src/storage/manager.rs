@@ -1242,6 +1242,25 @@ impl WalletStorageManager {
             .await
     }
 
+    /// Restore every output consumed by `tx_id` (rows with `spent_by = tx_id`)
+    /// back to `spendable=true, spent_by=NULL`. Callers that previously relied
+    /// on the implicit cascade in `update_transaction_status(.., Failed, ..)`
+    /// must now call this explicitly after the status update.
+    pub async fn restore_consumed_inputs(&self, tx_id: i64) -> WalletResult<u64> {
+        let active = self.get_active().await?;
+        active.restore_consumed_inputs_trx(tx_id, None).await
+    }
+
+    /// Trx-scoped variant of `restore_consumed_inputs`.
+    pub async fn restore_consumed_inputs_trx(
+        &self,
+        tx_id: i64,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<u64> {
+        let active = self.get_active().await?;
+        active.restore_consumed_inputs_trx(tx_id, trx).await
+    }
+
     pub async fn insert_monitor_event(&self, event: &MonitorEvent) -> WalletResult<i64> {
         let active = self.get_active().await?;
         active.insert_monitor_event(event).await
