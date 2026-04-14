@@ -214,14 +214,8 @@ mod multi_provider_arc {
         let provider_a = create_provider().await.unwrap();
         let provider_b = create_provider().await.unwrap();
 
-        let _ = provider_a
-            .find_or_insert_user(IDENTITY_KEY)
-            .await
-            .unwrap();
-        let _ = provider_b
-            .find_or_insert_user(IDENTITY_KEY)
-            .await
-            .unwrap();
+        let _ = provider_a.find_or_insert_user(IDENTITY_KEY).await.unwrap();
+        let _ = provider_b.find_or_insert_user(IDENTITY_KEY).await.unwrap();
 
         // Capture B's storage identity key before building the manager.
         let sik_b = provider_b
@@ -240,7 +234,10 @@ mod multi_provider_arc {
         manager.make_available().await.unwrap();
 
         let sik_a = manager.get_active_store().await.unwrap();
-        assert_ne!(sik_a, sik_b, "A and B must have distinct storage identity keys");
+        assert_ne!(
+            sik_a, sik_b,
+            "A and B must have distinct storage identity keys"
+        );
 
         // 4. Seed transactions & outputs through the manager (routes to A).
         let seeded_output_ids = common::seed_outputs(&manager, IDENTITY_KEY, 3, 1234).await;
@@ -357,10 +354,7 @@ mod multi_provider_arc {
 
         // 1. Build manager with A active. Pre-seed user in A.
         let provider_a = create_provider().await.unwrap();
-        let _ = provider_a
-            .find_or_insert_user(IDENTITY_KEY)
-            .await
-            .unwrap();
+        let _ = provider_a.find_or_insert_user(IDENTITY_KEY).await.unwrap();
 
         let manager = Arc::new(WalletStorageManager::new(
             IDENTITY_KEY.to_string(),
@@ -376,10 +370,7 @@ mod multi_provider_arc {
 
         // 2. Create B, pre-seed user, capture its sik, then add via the runtime API.
         let provider_b = create_provider().await.unwrap();
-        let _ = provider_b
-            .find_or_insert_user(IDENTITY_KEY)
-            .await
-            .unwrap();
+        let _ = provider_b.find_or_insert_user(IDENTITY_KEY).await.unwrap();
         let sik_b = provider_b
             .make_available()
             .await

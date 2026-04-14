@@ -163,7 +163,7 @@ impl WalletMonitorTask for TaskReviewProvenTxs {
                     height_has_mismatch = true;
                 }
 
-                let result = self.storage.reprove_proven(&ptx, false).await?;
+                let result = self.storage.reprove_proven(ptx, false).await?;
                 if result.updated.is_some() {
                     reproved_txs += 1;
                     log += &format!("  reproved txid={} at height {height}\n", ptx.txid);

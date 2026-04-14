@@ -283,7 +283,7 @@ pub trait StorageReaderWriter: StorageReader {
     /// NOTE: as of the broadcast-outcome correctness fix, this method only
     /// updates the transaction row's status. Callers that need to also
     /// release locked UTXOs (the inputs this tx consumed) must call
-    /// [`restore_consumed_inputs`] explicitly. That separation is required
+    /// [`Self::restore_consumed_inputs`] explicitly. That separation is required
     /// because some failure paths (e.g. DoubleSpend) need to restore ONLY
     /// chain-verified-unspent inputs, not every `spent_by = tx_id` row.
     async fn update_transaction_status(

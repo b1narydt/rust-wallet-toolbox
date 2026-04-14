@@ -62,7 +62,9 @@ mod signer_flow_tests {
             url: "sqlite::memory:".to_string(),
             ..Default::default()
         };
-        let storage = SqliteStorage::new_sqlite(config, Chain::Test).await.unwrap();
+        let storage = SqliteStorage::new_sqlite(config, Chain::Test)
+            .await
+            .unwrap();
         StorageProvider::migrate_database(&storage).await.unwrap();
         let concrete = Arc::new(storage);
         let as_provider: Arc<dyn WalletStorageProvider> = concrete.clone();
@@ -220,23 +222,22 @@ mod signer_flow_tests {
         let user_id = user.user_id;
 
         // Basket
-        let basket_id =
-            StorageReaderWriter::insert_output_basket(
-                concrete,
-                &OutputBasket {
-                    created_at: now,
-                    updated_at: now,
-                    basket_id: 0,
-                    user_id,
-                    name: "default".to_string(),
-                    number_of_desired_utxos: 10,
-                    minimum_desired_utxo_value: 1000,
-                    is_deleted: false,
-                },
-                None,
-            )
-            .await
-            .expect("insert basket");
+        let basket_id = StorageReaderWriter::insert_output_basket(
+            concrete,
+            &OutputBasket {
+                created_at: now,
+                updated_at: now,
+                basket_id: 0,
+                user_id,
+                name: "default".to_string(),
+                number_of_desired_utxos: 10,
+                minimum_desired_utxo_value: 1000,
+                is_deleted: false,
+            },
+            None,
+        )
+        .await
+        .expect("insert basket");
 
         // Parent transaction (source of inputs)
         let parent_txid_hex = format!("{:064x}", rand::random::<u64>());
@@ -309,8 +310,7 @@ mod signer_flow_tests {
             } else {
                 None
             };
-            let script_len: Option<i64> =
-                locking_script.as_ref().map(|s| s.len() as i64);
+            let script_len: Option<i64> = locking_script.as_ref().map(|s| s.len() as i64);
             let oid = StorageReaderWriter::insert_output(
                 concrete,
                 &Output {
@@ -562,11 +562,7 @@ mod signer_flow_tests {
                 error: None,
             }
         }
-        async fn post_beef(
-            &self,
-            _beef: &[u8],
-            _txids: &[String],
-        ) -> Vec<types::PostBeefResult> {
+        async fn post_beef(&self, _beef: &[u8], _txids: &[String]) -> Vec<types::PostBeefResult> {
             vec![]
         }
         async fn get_utxo_status(
@@ -618,10 +614,7 @@ mod signer_flow_tests {
         async fn get_height(&self) -> WalletResult<u32> {
             Ok(100_000)
         }
-        async fn n_lock_time_is_final(
-            &self,
-            _input: types::NLockTimeInput,
-        ) -> WalletResult<bool> {
+        async fn n_lock_time_is_final(&self, _input: types::NLockTimeInput) -> WalletResult<bool> {
             Ok(true)
         }
         async fn get_bsv_exchange_rate(&self) -> WalletResult<types::BsvExchangeRate> {
@@ -777,11 +770,7 @@ mod signer_flow_tests {
                 error: None,
             }
         }
-        async fn post_beef(
-            &self,
-            _beef: &[u8],
-            _txids: &[String],
-        ) -> Vec<types::PostBeefResult> {
+        async fn post_beef(&self, _beef: &[u8], _txids: &[String]) -> Vec<types::PostBeefResult> {
             vec![]
         }
         async fn get_utxo_status(
@@ -841,10 +830,7 @@ mod signer_flow_tests {
         async fn get_height(&self) -> WalletResult<u32> {
             Ok(100_000)
         }
-        async fn n_lock_time_is_final(
-            &self,
-            _input: types::NLockTimeInput,
-        ) -> WalletResult<bool> {
+        async fn n_lock_time_is_final(&self, _input: types::NLockTimeInput) -> WalletResult<bool> {
             Ok(true)
         }
         async fn get_bsv_exchange_rate(&self) -> WalletResult<types::BsvExchangeRate> {
@@ -921,7 +907,10 @@ mod signer_flow_tests {
         }
         for out_id in &failed_output_ids {
             let o = get_output(&manager, *out_id).await;
-            assert!(o.spendable, "failed tx output untouched on reconcile-success");
+            assert!(
+                o.spendable,
+                "failed tx output untouched on reconcile-success"
+            );
         }
     }
 
@@ -1144,13 +1133,9 @@ mod signer_flow_tests {
         .await
         .expect("insert req");
 
-        apply_service_error_outcome(
-            &manager,
-            &txid_hex,
-            vec!["timeout".to_string()],
-        )
-        .await
-        .expect("service error transition should succeed");
+        apply_service_error_outcome(&manager, &txid_hex, vec!["timeout".to_string()])
+            .await
+            .expect("service error transition should succeed");
 
         // req: Unprocessed -> Sending, attempts 0 -> 1
         let req = get_req(&manager, &txid_hex).await;
@@ -1174,13 +1159,9 @@ mod signer_flow_tests {
 
         // Calling again must bump attempts to 2 (covers the case where a
         // second broadcast attempt also returns a service error).
-        apply_service_error_outcome(
-            &manager,
-            &txid_hex,
-            vec!["network unreachable".to_string()],
-        )
-        .await
-        .expect("second service error transition should succeed");
+        apply_service_error_outcome(&manager, &txid_hex, vec!["network unreachable".to_string()])
+            .await
+            .expect("second service error transition should succeed");
 
         let req2 = get_req(&manager, &txid_hex).await;
         assert_eq!(
@@ -1233,11 +1214,7 @@ mod signer_flow_tests {
                 error: None,
             }
         }
-        async fn post_beef(
-            &self,
-            _beef: &[u8],
-            _txids: &[String],
-        ) -> Vec<types::PostBeefResult> {
+        async fn post_beef(&self, _beef: &[u8], _txids: &[String]) -> Vec<types::PostBeefResult> {
             vec![]
         }
         async fn get_utxo_status(
@@ -1288,10 +1265,7 @@ mod signer_flow_tests {
         async fn get_height(&self) -> WalletResult<u32> {
             Ok(100_000)
         }
-        async fn n_lock_time_is_final(
-            &self,
-            _input: types::NLockTimeInput,
-        ) -> WalletResult<bool> {
+        async fn n_lock_time_is_final(&self, _input: types::NLockTimeInput) -> WalletResult<bool> {
             Ok(true)
         }
         async fn get_bsv_exchange_rate(&self) -> WalletResult<types::BsvExchangeRate> {
@@ -1400,5 +1374,4 @@ mod signer_flow_tests {
             );
         }
     }
-
 }

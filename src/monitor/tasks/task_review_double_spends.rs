@@ -200,7 +200,7 @@ impl WalletMonitorTask for TaskReviewDoubleSpends {
 
                 if verify
                     .first()
-                    .map_or(true, |r| r.proven_tx_req_id != expected)
+                    .is_none_or(|r| r.proven_tx_req_id != expected)
                 {
                     // Dataset changed — restart from beginning.
                     offset = 0;
@@ -249,7 +249,7 @@ impl WalletMonitorTask for TaskReviewDoubleSpends {
         for req in &reqs {
             let result = self
                 .services
-                .get_status_for_txids(&[req.txid.clone()], false)
+                .get_status_for_txids(std::slice::from_ref(&req.txid), false)
                 .await;
 
             // If the service found the txid on-chain, mark for unfail.

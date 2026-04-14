@@ -211,8 +211,7 @@ mod tests {
         let mut task = TaskReviewUtxos::new(mgr);
         let out = task.run_task().await.unwrap();
         assert!(
-            out.contains("disabled")
-                && out.contains("review_by_identity_key"),
+            out.contains("disabled") && out.contains("review_by_identity_key"),
             "run_task output must mention disabled state and the manual API; got: {out}"
         );
     }
@@ -256,7 +255,10 @@ mod tests {
         assert!(user_id > 0);
 
         let task = TaskReviewUtxos::new(mgr);
-        let out = task.review_by_identity_key("02userkey", "all").await.unwrap();
+        let out = task
+            .review_by_identity_key("02userkey", "all")
+            .await
+            .unwrap();
         assert!(
             out.contains("no invalid utxos found"),
             "known-user-no-outputs path must report 'no invalid utxos found'; got: {out}"

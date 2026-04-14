@@ -602,7 +602,9 @@ pub trait WalletStorageProvider: Send + Sync {
         trx: Option<&TrxToken>,
     ) -> WalletResult<Vec<ProvenTxReq>> {
         let _ = (args, trx);
-        Err(WalletError::NotImplemented("find_proven_tx_reqs_trx".into()))
+        Err(WalletError::NotImplemented(
+            "find_proven_tx_reqs_trx".into(),
+        ))
     }
 
     /// Update an output inside an optional open transaction.
@@ -624,7 +626,9 @@ pub trait WalletStorageProvider: Send + Sync {
         trx: Option<&TrxToken>,
     ) -> WalletResult<i64> {
         let _ = (id, update, trx);
-        Err(WalletError::NotImplemented("update_proven_tx_req_trx".into()))
+        Err(WalletError::NotImplemented(
+            "update_proven_tx_req_trx".into(),
+        ))
     }
 
     /// Update a transaction's status by txid inside an optional open transaction.

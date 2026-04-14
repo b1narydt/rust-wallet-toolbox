@@ -540,24 +540,19 @@ pub async fn attempt_to_post_reqs_to_network(
                 // every consumed input matches the previous cascade
                 // semantics for this monitor-side path.
                 match storage
-                    .find_transactions(
-                        &crate::storage::find_args::FindTransactionsArgs {
-                            partial:
-                                crate::storage::find_args::TransactionPartial {
-                                    txid: Some(req.txid.clone()),
-                                    ..Default::default()
-                                },
-                            no_raw_tx: true,
+                    .find_transactions(&crate::storage::find_args::FindTransactionsArgs {
+                        partial: crate::storage::find_args::TransactionPartial {
+                            txid: Some(req.txid.clone()),
                             ..Default::default()
                         },
-                    )
+                        no_raw_tx: true,
+                        ..Default::default()
+                    })
                     .await
                 {
                     Ok(txs) => {
                         if let Some(tx) = txs.first() {
-                            if let Err(e) = storage
-                                .restore_consumed_inputs(tx.transaction_id)
-                                .await
+                            if let Err(e) = storage.restore_consumed_inputs(tx.transaction_id).await
                             {
                                 result.log.push_str(&format!(
                                     "  req {} txid {}: warn restore_consumed_inputs: {}\n",
