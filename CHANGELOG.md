@@ -44,6 +44,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   BRC-31 auth, makeAvailable, findOrInsertUser, getSyncChunk, syncToWriter,
   updateBackups all wire-compatible.
 
+### Hardening (post-review, PR #17)
+
+External code review surfaced correctness, atomicity, and architectural
+issues across the broadcast permanent-failure path, monitor tasks, and the
+multi-provider Arc refactor. This release rolls all those fixes in.
+
+#### Added
+
+- **`restore_consumed_inputs(tx_id, trx)`** on `StorageReaderWriter`, with
+  passthroughs on `WalletStorageProvider` and `WalletStorageManager`. Replaces
+  the implicit cascade in `update_transaction_status` (see Changed below).
+- **Storage transaction passthroughs** on `WalletStorageProvider` and
+  `WalletStorageManager` — `begin_transaction`, `commit_transaction`,
+  `rollback_transaction` plus trx-aware variants of `update_output`,
+  `update_proven_tx_req`, `update_transaction_status`, `find_outputs`,
+  `find_transactions`, `find_proven_tx_reqs`. Enables atomic multi-write
+  paths through the manager facade. `StorageClient` correctly returns
+  `NotImplemented` (remote backends cannot offer SQL transactions).
+- **`WalletStorageManager::acquire_spend_lock()`** — fifth hierarchical lock
+  alongside reader/writer/sync/sp. Serializes spend operations across all
+  `Wallet` instances sharing the same `Arc<WalletStorageManager>`.
+- **`ProvenTxReqPartial.attempts: Option<i32>`** — enables atomic
+  status+attempts updates from the ServiceError retry path.
+- **Helpers** `apply_service_error_outcome` and `apply_success_or_orphan_outcome`
+  in `signer::broadcast_outcome` — extracted per-outcome state transitions
+  for testability and de-duplication across `create_action`/`sign_action`.
+- **Behavioral test coverage** — `tests/signer_flow_tests.rs` (9 tests:
+  spend_lock concurrency, broadcast outcome branches, ServiceError retry,
+  OrphanMempool retry path), `tests/multi_provider_arc_tests.rs` (5 tests:
+  Arc sharing across components, set_active backup replication, error
+  propagation), `tests/brc100_vectors.rs` (57 round-trip tests over
+  `testdata/brc100/*` against bsv-sdk 0.2.81). Replaced 6 tautological
+  monitor task tests with 14 behavioral ones. Total: 1069 tests, 0 failures.
+
+#### Changed
+
+- **`spend_lock` relocated** from per-`Wallet` field to `WalletStorageManager`.
+  With multiple `Wallet` instances sharing one `Arc<WalletStorageManager>`
+  (the intended pattern after the 0.2.19 multi-provider refactor),
+  per-`Wallet` locks did not serialize cross-`Wallet` UTXO contention on
+  shared storage. Now matches TS architectural placement (storage-manager-level
+  serialization).
+- **`StorageReaderWriter::update_transaction_status`** no longer cascades input
+  restoration as a side effect when marking `Failed`. Callers (`process_action`,
+  `monitor::helpers` post-broadcast, `monitor::tasks::task_fail_abandoned`) now
+  invoke `restore_consumed_inputs` explicitly. Required to make DoubleSpend's
+  chain-verified filter actually take effect; previously the cascade ran first
+  and restored every consumed UTXO regardless of chain state.
+- **Per-outpoint UTXO check** — `utxo_verified_input_ids` now calls
+  `services.is_utxo(script, parent_txid, vout)` per outpoint instead of
+  `get_status_for_txids(parent_txid)`. The previous tx-level check could not
+  distinguish "parent exists" from "this specific output is unspent", so a
+  real DoubleSpend caused the wallet to restore inputs the competing tx had
+  already consumed. Mirrors Calhooon's per-outpoint pattern.
+- **`bsv-sdk` pinned to crates.io `0.2`** — reverted from a git pin that was
+  in place during BRC-100 vector iteration. Verified against `bsv-sdk 0.2.81`,
+  which fixes the BRC-100 wire-format drifts tracked as
+  `b1narydt/bsv-rust-sdk#24`.
+
+#### Fixed
+
+- **Atomic permanent-failure writes** — `handle_permanent_broadcast_failure`
+  now opens a storage transaction, passes `Some(&trx)` to all writes
+  (`update_transaction_status`, `update_proven_tx_req`, `update_output`),
+  and commits at the end. Replaces five independent `let _ = storage.X(...)`
+  calls that silently dropped errors and left partial DB state on failure.
+- **Error propagation in broadcast handler** — replaced `.unwrap_or_default()`
+  on `Result` returns from `find_outputs`, `find_transactions`,
+  `find_proven_tx_reqs` with `?`. DB timeouts no longer surface as empty
+  result sets that silently skip restoration. Caller arms now log the
+  handler's `Result` via `tracing::error!` instead of dropping it.
+- **`ServiceError` retry semantics** — `BroadcastOutcome::ServiceError` now
+  transitions ProvenTxReq + Transaction to `Sending` and bumps `attempts` via
+  `apply_service_error_outcome`. Previously the arm only emitted
+  `tracing::warn!("(will retry)")` while leaving both at `Unprocessed` —
+  a status TaskSendWaiting does not retry. Matches TS
+  `attemptToPostReqsToNetwork.ts:240-244`.
+- **`OrphanMempool` tx status** — `apply_success_or_orphan_outcome` now sets
+  `Transaction::Sending` for OrphanMempool (matches the ProvenTxReq side and
+  the module's own design comment) instead of `Transaction::Unproven`.
+  Previously `list_outputs` and `list_actions` surfaced orphan-mempool txs
+  as confirmed-pending.
+- **`reconcile_tx_status` wrapper-level failure** — now checks
+  `status_result.status != "success"` before iterating per-result statuses.
+  On all-providers-failed, returns `BroadcastOutcome::ServiceError` (which
+  chains into the retry path) instead of letting the original outcome
+  propagate unchanged. Previously a chain-status query outage during
+  reconciliation could lock in a spurious permanent failure.
+- **`TaskReviewProvenTxs` ChainTracker outage handling** — replaced
+  `.unwrap_or(false)` on `is_valid_root_for_height` with explicit `match`.
+  On `Err`, log warn and `continue`; do not count outage as merkle mismatch.
+  Brief tracker downtime no longer triggers `reprove_proven` on every healthy
+  tx at the reviewed heights.
+- **`update_backups` error propagation** — both `WalletStorageManager::set_active`
+  and `add_wallet_storage_provider` now propagate `update_backups()` errors via
+  `?` instead of silently logging via `warn!`. Backups silently desyncing after
+  a successful active-store cutover was the previous failure mode. Mirrors
+  Calhooon's `?` propagation pattern.
+
 ## [0.2.18] - 2026-04-13
 
 ### Added
