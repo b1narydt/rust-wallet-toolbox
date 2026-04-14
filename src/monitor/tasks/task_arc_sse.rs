@@ -34,7 +34,7 @@ const TERMINAL_STATUSES: &[ProvenTxReqStatus] = &[
 /// Consumes events from an ArcSseClient mpsc channel. If no callback_token is
 /// configured, the task is a no-op (trigger always returns false).
 pub struct TaskArcSse {
-    storage: WalletStorageManager,
+    storage: Arc<WalletStorageManager>,
     _services: Arc<dyn WalletServices>,
     /// Callback token for ARC SSE streaming.
     callback_token: Option<String>,
@@ -51,7 +51,7 @@ pub struct TaskArcSse {
 impl TaskArcSse {
     /// Create a new ARC SSE task.
     pub fn new(
-        storage: WalletStorageManager,
+        storage: Arc<WalletStorageManager>,
         services: Arc<dyn WalletServices>,
         callback_token: Option<String>,
         on_tx_status_changed: Option<AsyncCallback<(String, String)>>,

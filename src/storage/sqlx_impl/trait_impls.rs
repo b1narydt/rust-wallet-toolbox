@@ -97,6 +97,21 @@ mod sqlite_impl {
             self.insert_monitor_event_impl(event, trx).await
         }
 
+        async fn delete_monitor_events_before_id(
+            &self,
+            event_name: &str,
+            before_id: i64,
+            _trx: Option<&TrxToken>,
+        ) -> WalletResult<u64> {
+            let sql = "DELETE FROM monitor_events WHERE event = ? AND id < ?";
+            let result = sqlx::query(sql)
+                .bind(event_name)
+                .bind(before_id)
+                .execute(&self.write_pool)
+                .await?;
+            Ok(result.rows_affected())
+        }
+
         async fn insert_output_basket(
             &self,
             basket: &OutputBasket,
@@ -358,7 +373,16 @@ mod sqlite_impl {
                 must_be: format!("an existing transaction, '{}' not found", txid),
             })?;
 
-            // Update transaction status
+            // Update transaction status.
+            //
+            // IMPORTANT: this method intentionally does NOT cascade-restore the
+            // tx's consumed inputs on Failed. That cascade used to live here
+            // but regressed the DoubleSpend handler (which must only restore
+            // chain-verified-unspent inputs). Callers that want the cascade
+            // must now call `restore_consumed_inputs` explicitly — see
+            // `broadcast_outcome::handle_permanent_broadcast_failure` (InvalidTx
+            // path), `monitor::helpers` post-broadcast cascade, and
+            // `monitor::tasks::task_fail_abandoned`.
             self.update_transaction_impl(
                 tx.transaction_id,
                 &TransactionPartial {
@@ -369,36 +393,43 @@ mod sqlite_impl {
             )
             .await?;
 
-            // If setting to Failed, release locked UTXOs
-            if new_status == crate::status::TransactionStatus::Failed {
-                let outputs = self
-                    .find_outputs(
-                        &FindOutputsArgs {
-                            partial: OutputPartial {
-                                spent_by: Some(tx.transaction_id),
-                                ..Default::default()
-                            },
-                            ..Default::default()
-                        },
-                        trx,
-                    )
-                    .await?;
+            Ok(())
+        }
 
-                for output in &outputs {
-                    self.update_output_impl(
-                        output.output_id,
-                        &OutputPartial {
-                            spendable: Some(true),
-                            spent_by: Some(0),
+        async fn restore_consumed_inputs(
+            &self,
+            tx_id: i64,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<u64> {
+            use crate::storage::traits::reader::StorageReader;
+
+            let outputs = self
+                .find_outputs(
+                    &FindOutputsArgs {
+                        partial: OutputPartial {
+                            spent_by: Some(tx_id),
                             ..Default::default()
                         },
-                        trx,
-                    )
-                    .await?;
-                }
+                        ..Default::default()
+                    },
+                    trx,
+                )
+                .await?;
+
+            for output in &outputs {
+                self.update_output_impl(
+                    output.output_id,
+                    &OutputPartial {
+                        spendable: Some(true),
+                        spent_by: Some(0),
+                        ..Default::default()
+                    },
+                    trx,
+                )
+                .await?;
             }
 
-            Ok(())
+            Ok(outputs.len() as u64)
         }
 
         async fn update_transactions_status(
@@ -642,6 +673,21 @@ mod sqlite_impl {
                     .execute(&self.write_pool)
                     .await?;
                 summary.push(format!("purged {} spent outputs", result.rows_affected()));
+            }
+
+            if params.purge_monitor_events {
+                let age_ms = params.purge_monitor_events_age;
+                let cutoff =
+                    chrono::Utc::now().naive_utc() - chrono::Duration::milliseconds(age_ms as i64);
+                let sql = "DELETE FROM monitor_events WHERE created_at < ?";
+                let result = sqlx::query(sql)
+                    .bind(cutoff)
+                    .execute(&self.write_pool)
+                    .await?;
+                summary.push(format!(
+                    "purged {} old monitor events",
+                    result.rows_affected()
+                ));
             }
 
             Ok(summary.join("; "))
@@ -888,6 +934,20 @@ macro_rules! impl_storage_rw_and_provider {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
                     self.insert_monitor_event_impl(e, trx).await
+                }
+                async fn delete_monitor_events_before_id(
+                    &self,
+                    event_name: &str,
+                    before_id: i64,
+                    _trx: Option<&TrxToken>,
+                ) -> WalletResult<u64> {
+                    let sql = "DELETE FROM monitor_events WHERE event = ? AND id < ?";
+                    let result = sqlx::query(sql)
+                        .bind(event_name)
+                        .bind(before_id)
+                        .execute(&self.write_pool)
+                        .await?;
+                    Ok(result.rows_affected())
                 }
                 async fn insert_output_basket(
                     &self,

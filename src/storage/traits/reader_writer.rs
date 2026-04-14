@@ -66,6 +66,17 @@ pub trait StorageReaderWriter: StorageReader {
         trx: Option<&TrxToken>,
     ) -> WalletResult<i64>;
 
+    /// Delete monitor events matching `event` name with `id < before_id`.
+    ///
+    /// Used to prune stale checkpoint entries after a complete review cycle.
+    /// Returns the number of rows deleted.
+    async fn delete_monitor_events_before_id(
+        &self,
+        event_name: &str,
+        before_id: i64,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<u64>;
+
     /// Insert an output basket and return the new basket_id.
     async fn insert_output_basket(
         &self,
@@ -268,8 +279,13 @@ pub trait StorageReaderWriter: StorageReader {
     // -----------------------------------------------------------------------
 
     /// Update a transaction's status by txid.
-    /// When setting to Failed, also releases locked UTXOs (set spendable=true
-    /// on outputs with this txid that are currently locked).
+    ///
+    /// NOTE: as of the broadcast-outcome correctness fix, this method only
+    /// updates the transaction row's status. Callers that need to also
+    /// release locked UTXOs (the inputs this tx consumed) must call
+    /// [`Self::restore_consumed_inputs`] explicitly. That separation is required
+    /// because some failure paths (e.g. DoubleSpend) need to restore ONLY
+    /// chain-verified-unspent inputs, not every `spent_by = tx_id` row.
     async fn update_transaction_status(
         &self,
         _txid: &str,
@@ -290,6 +306,26 @@ pub trait StorageReaderWriter: StorageReader {
     ) -> WalletResult<()> {
         Err(crate::error::WalletError::NotImplemented(
             "update_transactions_status".to_string(),
+        ))
+    }
+
+    /// Restore every output this transaction consumed (rows with
+    /// `spent_by = tx_id`) back to `spendable=true, spent_by=NULL`.
+    ///
+    /// Returns the number of output rows updated.
+    ///
+    /// This is the "release locked UTXOs" side-effect that used to be
+    /// implicit in `update_transaction_status(..., Failed, ..)`. It is now
+    /// explicit so callers with partial-restore semantics (e.g. DoubleSpend
+    /// recovery, which only restores chain-verified-unspent inputs) can
+    /// avoid the blanket cascade.
+    async fn restore_consumed_inputs(
+        &self,
+        _tx_id: i64,
+        _trx: Option<&TrxToken>,
+    ) -> WalletResult<u64> {
+        Err(crate::error::WalletError::NotImplemented(
+            "restore_consumed_inputs".to_string(),
         ))
     }
 

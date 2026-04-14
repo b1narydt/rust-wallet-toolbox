@@ -29,7 +29,7 @@ use super::super::task_trait::WalletMonitorTask;
 /// to retrieve merkle proofs from services.
 pub struct TaskCheckForProofs {
     /// Storage manager for persistence operations.
-    storage: WalletStorageManager,
+    storage: Arc<WalletStorageManager>,
     /// Network services for proof retrieval.
     services: Arc<dyn WalletServices>,
     /// Periodic trigger interval (default 2 hours).
@@ -53,7 +53,7 @@ pub struct TaskCheckForProofs {
 impl TaskCheckForProofs {
     /// Create a new TaskCheckForProofs with default intervals.
     pub fn new(
-        storage: WalletStorageManager,
+        storage: Arc<WalletStorageManager>,
         services: Arc<dyn WalletServices>,
         chain: Chain,
         check_now: Arc<AtomicBool>,
@@ -81,7 +81,7 @@ impl TaskCheckForProofs {
     // reduce coupling; each parameter is orthogonal and required here.
     #[allow(clippy::too_many_arguments)]
     pub fn with_trigger_msecs(
-        storage: WalletStorageManager,
+        storage: Arc<WalletStorageManager>,
         services: Arc<dyn WalletServices>,
         chain: Chain,
         check_now: Arc<AtomicBool>,

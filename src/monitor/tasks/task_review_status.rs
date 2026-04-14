@@ -2,6 +2,8 @@
 //!
 //! Translated from wallet-toolbox/src/monitor/tasks/TaskReviewStatus.ts.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use crate::error::WalletError;
@@ -16,7 +18,7 @@ use crate::storage::manager::WalletStorageManager;
 /// sets status to 'completed'. Also looks for reqs with 'invalid' status
 /// that have corresponding transactions with status other than 'failed'.
 pub struct TaskReviewStatus {
-    storage: WalletStorageManager,
+    storage: Arc<WalletStorageManager>,
     trigger_msecs: u64,
     last_run_msecs: u64,
     /// How old a record must be before it is considered "aged" for review.
@@ -25,7 +27,7 @@ pub struct TaskReviewStatus {
 
 impl TaskReviewStatus {
     /// Create a new status review task.
-    pub fn new(storage: WalletStorageManager) -> Self {
+    pub fn new(storage: Arc<WalletStorageManager>) -> Self {
         Self {
             storage,
             trigger_msecs: 15 * ONE_MINUTE,

@@ -35,7 +35,7 @@ pub struct WalletArgs {
     /// Key deriver for deriving child keys from the root private key.
     pub key_deriver: Arc<CachedKeyDeriver>,
     /// Storage manager providing active + optional backup persistence.
-    pub storage: WalletStorageManager,
+    pub storage: Arc<WalletStorageManager>,
     /// Optional wallet services (broadcasting, chain lookups, etc.).
     pub services: Option<Arc<dyn WalletServices>>,
     /// Chain monitor for background transaction lifecycle management (Phase 6).

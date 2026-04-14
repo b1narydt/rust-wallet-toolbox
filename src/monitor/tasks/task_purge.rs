@@ -5,6 +5,8 @@
 //! NOTE: In the TS reference, default_tasks comments out Purge.
 //! It is included in Rust builder presets but with a long trigger interval (6 hours).
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use crate::error::WalletError;
@@ -16,7 +18,7 @@ use crate::storage::manager::WalletStorageManager;
 
 /// Task that periodically purges old records from storage.
 pub struct TaskPurge {
-    storage: WalletStorageManager,
+    storage: Arc<WalletStorageManager>,
     params: PurgeParams,
     trigger_msecs: u64,
     last_run_msecs: u64,
@@ -26,7 +28,7 @@ pub struct TaskPurge {
 
 impl TaskPurge {
     /// Create a new purge task with the given parameters.
-    pub fn new(storage: WalletStorageManager, params: PurgeParams) -> Self {
+    pub fn new(storage: Arc<WalletStorageManager>, params: PurgeParams) -> Self {
         Self {
             storage,
             params,

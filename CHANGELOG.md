@@ -5,6 +5,86 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.19] - 2026-04-13
+
+### Added
+
+- **Chain-verified input restoration** — `utxo_verified_input_ids` queries chain
+  via `get_status_for_txids` before restoring inputs on DoubleSpend. Only inputs
+  whose parent txs are confirmed "mined" or "known" are restored to spendable.
+  InvalidTx immediately restores all inputs (tx was malformed, not consumed).
+
+- **Monitor event purge** — `purge_data` now cleans old `monitor_events` entries
+  using configurable age threshold (default 30 days). Prevents unbounded growth.
+
+- **Checkpoint cleanup** — `TaskReviewDoubleSpends` purges stale checkpoint
+  entries from `monitor_events` after completing a full review cycle.
+
+### Changed
+
+- **Shared WalletStorageManager** — `WalletBuilder` now creates ONE
+  `Arc<WalletStorageManager>` shared across wallet, monitor, signer, and setup
+  return value. Adding a `StorageClient` to `setup.storage` is now visible to
+  the wallet's internal storage. 17 files refactored.
+
+- **Backup sync wiring** — `update_backups()` called after `set_active()` and
+  `add_wallet_storage_provider()` to propagate changes to backup providers.
+
+### Fixed
+
+- **Monitor orphan mempool misclassification** — `attempt_to_post_reqs_to_network`
+  now checks `orphan_mempool` flag and maps it to `ProvenTxReqStatus::Sending`
+  (transient retry). Previously fell through to `Invalid` (permanent failure).
+  New `PostReqStatus::Orphan` variant added.
+
+### Verified
+
+- All 8 StorageClient integration tests pass against both
+  `staging-storage.babbage.systems` (TS reference) and `rust.b1nary.cloud`.
+  BRC-31 auth, makeAvailable, findOrInsertUser, getSyncChunk, syncToWriter,
+  updateBackups all wire-compatible.
+
+## [0.2.18] - 2026-04-13
+
+### Added
+
+- **Monitor tasks** — TaskReviewDoubleSpends (reviews false-positive double-spend
+  flags with 60-minute age filter and checkpoint persistence to monitor_events),
+  TaskReviewProvenTxs (audits proven_txs merkle roots against canonical chain via
+  ChainTracker, reproves mismatches), TaskReviewUtxos (disabled by default, manual
+  review via `review_by_identity_key`). All three match TS wallet-toolbox behavior.
+  Closes #13.
+
+- **Spend lock** — Per-wallet `Arc<tokio::sync::Mutex<()>>` serializing
+  createAction, signAction, internalizeAction, abortAction, and relinquishOutput
+  to prevent concurrent UTXO double-spend races. Matches Calhooon 5-method pattern.
+  Closes #15 (Part A).
+
+- **BroadcastOutcome classifier** — `classify_broadcast_results` function with
+  `BroadcastOutcome` enum (Success/ServiceError/InvalidTx/DoubleSpend/OrphanMempool).
+  Wired into create_action and sign_action signer methods. OrphanMempool keeps
+  ProvenTxReq in Sending for monitor retry instead of treating as permanent failure.
+  Closes #15 (Parts B+C).
+
+- **Structured tracing** — `tracing::debug` on entry and `tracing::info` on
+  completion for all four action methods with description, txid, and reference fields.
+
+### Fixed
+
+- **TaskNewHeader alignment** — `trigger()` now always returns true (matches TS —
+  runs every scheduler cycle). Shares `last_new_header_height` with
+  TaskCheckForProofs and TaskCheckNoSends for max acceptable height guard.
+  Closes #14.
+
+- **ARC orphan-mempool distinction** — `SEEN_IN_ORPHAN_MEMPOOL` is no longer
+  conflated with `DOUBLE_SPEND_ATTEMPTED`. New `orphan_mempool` field on
+  `PostTxResultForTxid` enables downstream classification.
+
+### Changed
+
+- **bsv-sdk dependency** — Updated to git main branch with complete BRC-100
+  universal test vector coverage (62/62 vectors, byte-identical to Go/TS SDKs).
+
 ## [0.2.17] - 2026-04-12
 
 ### Fixed

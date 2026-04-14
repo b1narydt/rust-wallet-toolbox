@@ -442,6 +442,10 @@ mod sqlite_impl {
                 sets.push("notified = ?");
                 binds.push(BindVal::Bool(*v));
             }
+            if let Some(v) = &update.attempts {
+                sets.push("attempts = ?");
+                binds.push(BindVal::Int64(*v as i64));
+            }
             sets.push("updated_at = datetime('now')");
             let sql = format!(
                 "UPDATE proven_tx_reqs SET {} WHERE provenTxReqId = ?",
@@ -883,6 +887,7 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.txid { idx += 1; sets.push(format!("txid = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.batch { idx += 1; sets.push(format!("batch = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.notified { idx += 1; sets.push(format!("notified = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
+                    if let Some(v) = &update.attempts { idx += 1; sets.push(format!("attempts = {}", ph(idx))); binds.push(BindVal::Int64(*v as i64)); }
                     sets.push(format!("updated_at = {}", $now_expr));
                     idx += 1; let sql = format!("UPDATE proven_tx_reqs SET {} WHERE provenTxReqId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));

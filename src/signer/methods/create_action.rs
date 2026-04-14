@@ -251,36 +251,59 @@ pub async fn signer_create_action(
     // for the non-delayed case). Without this update, outputs remain
     // invisible to the balance query and UTXO selection.
     if !args.is_no_send && !args.is_delayed {
-        let _post_results = services
+        let post_results = services
             .post_beef(&beef_bytes, std::slice::from_ref(&txid))
             .await;
 
-        // Update Transaction status to unproven (broadcast attempted)
-        let _ = storage
-            .update_transaction_status(&txid, crate::status::TransactionStatus::Unproven)
-            .await;
+        let outcome = crate::signer::broadcast_outcome::classify_broadcast_results(&post_results);
 
-        // Update ProvenTxReq status to unmined
-        let reqs = storage
-            .find_proven_tx_reqs(&crate::storage::find_args::FindProvenTxReqsArgs {
-                partial: crate::storage::find_args::ProvenTxReqPartial {
-                    txid: Some(txid.clone()),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .await
-            .unwrap_or_default();
-        for req in &reqs {
-            let _ = storage
-                .update_proven_tx_req(
-                    req.proven_tx_req_id,
-                    &crate::storage::find_args::ProvenTxReqPartial {
-                        status: Some(crate::status::ProvenTxReqStatus::Unmined),
-                        ..Default::default()
-                    },
+        match &outcome {
+            crate::signer::broadcast_outcome::BroadcastOutcome::Success
+            | crate::signer::broadcast_outcome::BroadcastOutcome::OrphanMempool { .. } => {
+                // Success or transient orphan — transition to unproven/unmined.
+                // OrphanMempool stays in sending for monitor retry.
+                let _ = crate::signer::broadcast_outcome::apply_success_or_orphan_outcome(
+                    storage, &txid, &outcome,
                 )
                 .await;
+            }
+            crate::signer::broadcast_outcome::BroadcastOutcome::DoubleSpend { .. }
+            | crate::signer::broadcast_outcome::BroadcastOutcome::InvalidTx { .. } => {
+                // Permanent failure — mark tx failed, outputs unspendable, reconcile against chain.
+                // Log any handler error for ops visibility; do not propagate — the broadcast
+                // outcome we already have remains authoritative for the caller.
+                if let Err(e) =
+                    crate::signer::broadcast_outcome::handle_permanent_broadcast_failure(
+                        storage, services, &txid, &outcome,
+                    )
+                    .await
+                {
+                    tracing::error!(
+                        error = %e,
+                        txid = %txid,
+                        "createAction: permanent failure handler errored"
+                    );
+                }
+            }
+            crate::signer::broadcast_outcome::BroadcastOutcome::ServiceError { details } => {
+                // Transition tx+req back to Sending and bump attempts so
+                // TaskSendWaiting will actually retry. Log any handler error
+                // but don't propagate — the broadcast already happened and the
+                // caller's contract is to return the classified outcome.
+                if let Err(e) = crate::signer::broadcast_outcome::apply_service_error_outcome(
+                    storage,
+                    &txid,
+                    details.clone(),
+                )
+                .await
+                {
+                    tracing::error!(
+                        error = %e,
+                        txid = %txid,
+                        "createAction: service error retry transition failed"
+                    );
+                }
+            }
         }
     }
 

@@ -611,6 +611,7 @@ impl PostBeefProvider for WhatsOnChain {
                             block_height: None,
                             competing_txs: None,
                             service_error: Some(true),
+                            orphan_mempool: None,
                         })
                         .collect(),
                 };
@@ -641,6 +642,7 @@ impl PostBeefProvider for WhatsOnChain {
                                 block_height: None,
                                 competing_txs: None,
                                 service_error: Some(true),
+                                orphan_mempool: None,
                             });
                             if result.status == "success" {
                                 result.status = "error".to_string();
@@ -660,6 +662,7 @@ impl PostBeefProvider for WhatsOnChain {
                             block_height: None,
                             competing_txs: None,
                             service_error: Some(true),
+                            orphan_mempool: None,
                         });
                         if result.status == "success" {
                             result.status = "error".to_string();
@@ -679,6 +682,7 @@ impl PostBeefProvider for WhatsOnChain {
                         block_height: None,
                         competing_txs: None,
                         service_error: Some(true),
+                        orphan_mempool: None,
                     });
                     if result.status == "success" {
                         result.status = "error".to_string();
@@ -723,6 +727,7 @@ impl PostBeefProvider for WhatsOnChain {
                             block_height: None,
                             competing_txs: None,
                             service_error: None,
+                            orphan_mempool: None,
                         }
                     } else if body_text.contains("already in the mempool") {
                         // Already known -- treat as success
@@ -735,6 +740,7 @@ impl PostBeefProvider for WhatsOnChain {
                             block_height: None,
                             competing_txs: None,
                             service_error: None,
+                            orphan_mempool: None,
                         }
                     } else if body_text.contains("mempool-conflict")
                         || body_text.contains("Missing inputs")
@@ -748,6 +754,7 @@ impl PostBeefProvider for WhatsOnChain {
                             block_height: None,
                             competing_txs: None,
                             service_error: None,
+                            orphan_mempool: None,
                         }
                     } else {
                         PostTxResultForTxid {
@@ -759,6 +766,7 @@ impl PostBeefProvider for WhatsOnChain {
                             block_height: None,
                             competing_txs: None,
                             service_error: Some(true),
+                            orphan_mempool: None,
                         }
                     }
                 }
@@ -771,6 +779,7 @@ impl PostBeefProvider for WhatsOnChain {
                     block_height: None,
                     competing_txs: None,
                     service_error: Some(true),
+                    orphan_mempool: None,
                 },
             };
 

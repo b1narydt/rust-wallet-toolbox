@@ -26,7 +26,7 @@ use super::super::task_trait::WalletMonitorTask;
 /// "sending" for retry), filters by age, and posts them via services.post_beef().
 pub struct TaskSendWaiting {
     /// Storage manager for persistence operations.
-    storage: WalletStorageManager,
+    storage: Arc<WalletStorageManager>,
     /// Network services for broadcasting.
     services: Arc<dyn WalletServices>,
     /// How often to trigger (default 8 seconds).
@@ -50,7 +50,7 @@ pub struct TaskSendWaiting {
 impl TaskSendWaiting {
     /// Create a new TaskSendWaiting with default intervals.
     pub fn new(
-        storage: WalletStorageManager,
+        storage: Arc<WalletStorageManager>,
         services: Arc<dyn WalletServices>,
         chain: Chain,
         on_tx_broadcasted: Option<AsyncCallback<String>>,
@@ -71,7 +71,7 @@ impl TaskSendWaiting {
 
     /// Create with custom intervals.
     pub fn with_intervals(
-        storage: WalletStorageManager,
+        storage: Arc<WalletStorageManager>,
         services: Arc<dyn WalletServices>,
         chain: Chain,
         trigger_msecs: u64,

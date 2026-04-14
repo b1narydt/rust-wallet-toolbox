@@ -42,8 +42,8 @@ pub struct SetupWallet {
     pub key_deriver: Arc<CachedKeyDeriver>,
     /// The wallet's identity key as a hex DER public key string.
     pub identity_key: String,
-    /// The storage manager (shares the same underlying providers as the wallet).
-    pub storage: WalletStorageManager,
+    /// The storage manager (shared Arc -- same instance used by wallet, monitor, and caller).
+    pub storage: Arc<WalletStorageManager>,
     /// The services provider, if configured.
     pub services: Option<Arc<dyn WalletServices>>,
     /// The monitor, if enabled.
@@ -365,15 +365,12 @@ impl WalletBuilder {
         // Run migrations and make available via the provider's WalletStorageProvider interface.
         provider.migrate("setup", "").await?;
 
-        // Helper: create a manager backed by this provider and make it available.
-        // Calling make_available() initialises the manager's internal state (active_idx,
-        // cached settings/user). The provider itself handles idempotency.
-        let make_manager = |key: String, p: Arc<dyn WalletStorageProvider>| {
-            WalletStorageManager::new(key, Some(p), vec![])
-        };
-
-        // Create and initialise the primary storage manager (returned in SetupWallet).
-        let storage = make_manager(identity_key_hex.clone(), provider.clone());
+        // Create ONE storage manager and wrap in Arc -- shared by wallet, monitor, and caller.
+        let storage = Arc::new(WalletStorageManager::new(
+            identity_key_hex.clone(),
+            Some(provider.clone()),
+            vec![],
+        ));
         storage.make_available().await?;
 
         // Determine services
@@ -387,14 +384,11 @@ impl WalletBuilder {
             None
         };
 
-        // Build WalletArgs — wallet gets its own manager (same provider, separate lock state).
-        let wallet_storage = make_manager(identity_key_hex.clone(), provider.clone());
-        wallet_storage.make_available().await?;
-
+        // Build WalletArgs -- wallet shares the same Arc<WalletStorageManager>.
         let wallet_args = WalletArgs {
             chain: chain.clone(),
             key_deriver: key_deriver.clone(),
-            storage: wallet_storage,
+            storage: storage.clone(),
             services: services.clone(),
             monitor: None, // Monitor is created after wallet
             privileged_key_manager: self.privileged_key_manager,
@@ -405,14 +399,12 @@ impl WalletBuilder {
         // Construct wallet
         let wallet = Wallet::new(wallet_args)?;
 
-        // Optionally create Monitor — monitor gets its own manager too.
+        // Optionally create Monitor -- shares the same Arc<WalletStorageManager>.
         let monitor = if self.monitor_enabled {
             if let Some(ref svc) = services {
-                let monitor_storage = make_manager(identity_key_hex.clone(), provider.clone());
-                monitor_storage.make_available().await?;
                 let monitor = crate::monitor::Monitor::builder()
                     .chain(chain.clone())
-                    .storage(monitor_storage)
+                    .storage(storage.clone())
                     .services(svc.clone())
                     .default_tasks()
                     .build()?;
