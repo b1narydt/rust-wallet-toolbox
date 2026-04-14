@@ -372,6 +372,11 @@ pub struct ProvenTxReqPartial {
     pub batch: Option<String>,
     /// Filter by notification flag.
     pub notified: Option<bool>,
+    /// When used as an update target, overwrite the `attempts` counter.
+    /// Filter semantics are unused (updates only). Mirrors the TS
+    /// `attemptToPostReqsToNetwork` flow where a ServiceError bumps
+    /// `req.attempts` in the same update as the status transition.
+    pub attempts: Option<i32>,
 }
 
 /// Arguments for querying proven transaction requests.

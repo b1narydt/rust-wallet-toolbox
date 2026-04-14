@@ -29,7 +29,8 @@ mod signer_flow_tests {
     use bsv_wallet_toolbox::services::traits::WalletServices;
     use bsv_wallet_toolbox::services::types;
     use bsv_wallet_toolbox::signer::broadcast_outcome::{
-        apply_success_or_orphan_outcome, handle_permanent_broadcast_failure, BroadcastOutcome,
+        apply_service_error_outcome, apply_success_or_orphan_outcome,
+        handle_permanent_broadcast_failure, BroadcastOutcome,
     };
     use bsv_wallet_toolbox::status::{ProvenTxReqStatus, TransactionStatus};
     use bsv_wallet_toolbox::storage::find_args::{
@@ -1065,6 +1066,339 @@ mod signer_flow_tests {
             TransactionStatus::Unproven,
             "Success must flip tx to Unproven"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Suite 4: ServiceError retry transitions (Bug #4)
+    //
+    // Covers apply_service_error_outcome: a transient service failure must
+    // leave req+tx in the Sending state with req.attempts bumped so that
+    // TaskSendWaiting (which only scans [Unsent, Sending]) picks the tx up.
+    // Previously the signer emitted a "will retry" log and did nothing,
+    // stranding the tx at Unprocessed.
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn service_error_outcome_transitions_req_and_tx_to_sending() {
+        let (manager, concrete) = build_manager_pair().await;
+
+        // Seed a tx + matching req, both at pre-broadcast state: tx=Sending,
+        // req=Unprocessed (the state process_action hands off). We then apply
+        // the service-error transition and assert the TS attemptToPostReqs
+        // semantics: both -> Sending, attempts incremented by 1.
+        let now = Utc::now().naive_utc();
+        let (user, _) = manager
+            .find_or_insert_user(IDENTITY_KEY)
+            .await
+            .expect("find_or_insert_user");
+
+        let txid_hex = format!("{:064x}", rand::random::<u64>());
+        StorageReaderWriter::insert_transaction(
+            &*concrete,
+            &Transaction {
+                created_at: now,
+                updated_at: now,
+                transaction_id: 0,
+                user_id: user.user_id,
+                proven_tx_id: None,
+                // Note: real process_action leaves tx at Unprocessed before
+                // broadcast. We seed Sending here because that's the status
+                // the service-error transition should *preserve/restore* to;
+                // the invariant under test is "after ServiceError, tx=Sending",
+                // independent of its prior value.
+                status: TransactionStatus::Sending,
+                reference: format!("svc-err-{}", rand::random::<u32>()),
+                is_outgoing: true,
+                satoshis: 100,
+                description: "service-error retry seed".to_string(),
+                version: Some(1),
+                lock_time: Some(0),
+                txid: Some(txid_hex.clone()),
+                input_beef: None,
+                raw_tx: None,
+            },
+            None,
+        )
+        .await
+        .expect("insert tx");
+
+        StorageReaderWriter::insert_proven_tx_req(
+            &*concrete,
+            &ProvenTxReq {
+                created_at: now,
+                updated_at: now,
+                proven_tx_req_id: 0,
+                proven_tx_id: None,
+                status: ProvenTxReqStatus::Unprocessed,
+                attempts: 0,
+                notified: false,
+                txid: txid_hex.clone(),
+                batch: None,
+                history: "{}".to_string(),
+                notify: "{}".to_string(),
+                raw_tx: vec![0u8; 4],
+                input_beef: None,
+            },
+            None,
+        )
+        .await
+        .expect("insert req");
+
+        apply_service_error_outcome(
+            &manager,
+            &txid_hex,
+            vec!["timeout".to_string()],
+        )
+        .await
+        .expect("service error transition should succeed");
+
+        // req: Unprocessed -> Sending, attempts 0 -> 1
+        let req = get_req(&manager, &txid_hex).await;
+        assert_eq!(
+            req.status,
+            ProvenTxReqStatus::Sending,
+            "ServiceError must flip req to Sending so TaskSendWaiting retries"
+        );
+        assert_eq!(
+            req.attempts, 1,
+            "ServiceError must bump req.attempts (was 0, expected 1)"
+        );
+
+        // tx: remains (or is set to) Sending
+        let tx = get_tx(&manager, &txid_hex).await;
+        assert_eq!(
+            tx.status,
+            TransactionStatus::Sending,
+            "ServiceError must leave tx at Sending for monitor retry"
+        );
+
+        // Calling again must bump attempts to 2 (covers the case where a
+        // second broadcast attempt also returns a service error).
+        apply_service_error_outcome(
+            &manager,
+            &txid_hex,
+            vec!["network unreachable".to_string()],
+        )
+        .await
+        .expect("second service error transition should succeed");
+
+        let req2 = get_req(&manager, &txid_hex).await;
+        assert_eq!(
+            req2.attempts, 2,
+            "Second ServiceError must bump attempts from 1 to 2"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Suite 5: reconcile_tx_status wrapper-failure handling (Bug #6)
+    //
+    // When get_status_for_txids fails at the wrapper level (all providers
+    // down, network timeout, etc.), we cannot conclude the tx is invalid.
+    // reconcile_tx_status must downgrade the outcome to ServiceError so the
+    // retry path runs instead of locking in a spurious InvalidTx verdict.
+    //
+    // We exercise this through handle_permanent_broadcast_failure — its
+    // observable contract is that it returns the effective outcome after
+    // reconciliation, which the test asserts is ServiceError, NOT InvalidTx.
+    // -----------------------------------------------------------------------
+
+    /// Mock services whose `get_status_for_txids` reports a wrapper-level
+    /// failure: status="error", empty results, error=Some("all providers down").
+    struct WrapperFailureStatusMock;
+    #[async_trait]
+    impl WalletServices for WrapperFailureStatusMock {
+        fn chain(&self) -> Chain {
+            Chain::Test
+        }
+        async fn get_chain_tracker(&self) -> WalletResult<Box<dyn ChainTracker>> {
+            Err(WalletError::NotImplemented("mock".to_string()))
+        }
+        async fn get_merkle_path(
+            &self,
+            _txid: &str,
+            _use_next: bool,
+        ) -> types::GetMerklePathResult {
+            types::GetMerklePathResult {
+                name: Some("mock".to_string()),
+                merkle_path: None,
+                header: None,
+                error: None,
+            }
+        }
+        async fn get_raw_tx(&self, txid: &str, _use_next: bool) -> types::GetRawTxResult {
+            types::GetRawTxResult {
+                txid: txid.to_string(),
+                name: Some("mock".to_string()),
+                raw_tx: None,
+                error: None,
+            }
+        }
+        async fn post_beef(
+            &self,
+            _beef: &[u8],
+            _txids: &[String],
+        ) -> Vec<types::PostBeefResult> {
+            vec![]
+        }
+        async fn get_utxo_status(
+            &self,
+            _output: &str,
+            _output_format: Option<types::GetUtxoStatusOutputFormat>,
+            _outpoint: Option<&str>,
+            _use_next: bool,
+        ) -> types::GetUtxoStatusResult {
+            types::GetUtxoStatusResult {
+                name: "mock".to_string(),
+                status: "success".to_string(),
+                error: None,
+                is_utxo: Some(false),
+                details: vec![],
+            }
+        }
+        async fn get_status_for_txids(
+            &self,
+            _txids: &[String],
+            _use_next: bool,
+        ) -> types::GetStatusForTxidsResult {
+            types::GetStatusForTxidsResult {
+                name: "mock".to_string(),
+                status: "error".to_string(),
+                error: Some("all providers down".to_string()),
+                results: vec![],
+            }
+        }
+        async fn get_script_hash_history(
+            &self,
+            _hash: &str,
+            _use_next: bool,
+        ) -> types::GetScriptHashHistoryResult {
+            types::GetScriptHashHistoryResult {
+                name: "mock".to_string(),
+                status: "success".to_string(),
+                error: None,
+                history: vec![],
+            }
+        }
+        async fn hash_to_header(&self, _hash: &str) -> WalletResult<types::BlockHeader> {
+            Err(WalletError::NotImplemented("mock".to_string()))
+        }
+        async fn get_header_for_height(&self, _height: u32) -> WalletResult<Vec<u8>> {
+            Ok(vec![0u8; 80])
+        }
+        async fn get_height(&self) -> WalletResult<u32> {
+            Ok(100_000)
+        }
+        async fn n_lock_time_is_final(
+            &self,
+            _input: types::NLockTimeInput,
+        ) -> WalletResult<bool> {
+            Ok(true)
+        }
+        async fn get_bsv_exchange_rate(&self) -> WalletResult<types::BsvExchangeRate> {
+            Ok(types::BsvExchangeRate::default())
+        }
+        async fn get_fiat_exchange_rate(
+            &self,
+            _currency: &str,
+            _base: Option<&str>,
+        ) -> WalletResult<f64> {
+            Ok(1.0)
+        }
+        async fn get_fiat_exchange_rates(
+            &self,
+            _target_currencies: &[String],
+        ) -> WalletResult<types::FiatExchangeRates> {
+            Ok(types::FiatExchangeRates::default())
+        }
+        fn get_services_call_history(&self, _reset: bool) -> types::ServicesCallHistory {
+            types::ServicesCallHistory { services: vec![] }
+        }
+        async fn get_beef_for_txid(&self, _txid: &str) -> WalletResult<Beef> {
+            Err(WalletError::NotImplemented("mock".to_string()))
+        }
+        fn hash_output_script(&self, _script: &[u8]) -> String {
+            String::new()
+        }
+        async fn is_utxo(
+            &self,
+            _locking_script: &[u8],
+            _txid: &str,
+            _vout: u32,
+        ) -> WalletResult<bool> {
+            Ok(false)
+        }
+    }
+
+    #[tokio::test]
+    async fn reconcile_tx_status_returns_service_error_on_wrapper_failure() {
+        // Exercise reconcile_tx_status via its only public caller,
+        // handle_permanent_broadcast_failure. With an InvalidTx input and a
+        // wrapper-failing status mock, the returned effective outcome must be
+        // ServiceError (NOT InvalidTx) and the error detail must propagate.
+        let (manager, concrete) = build_manager_pair().await;
+        let services = Arc::new(WrapperFailureStatusMock);
+
+        let (txid, _tx_id, parent_ids, failed_output_ids) =
+            seed_failing_tx_with_consumed_inputs(&manager, &concrete, 1, true).await;
+
+        let result = handle_permanent_broadcast_failure(
+            &manager,
+            &*services,
+            &txid,
+            &BroadcastOutcome::InvalidTx {
+                details: vec!["provider said reject".to_string()],
+            },
+        )
+        .await
+        .expect("handler should succeed");
+
+        match result {
+            BroadcastOutcome::ServiceError { details } => {
+                assert!(
+                    details.iter().any(|d| d.contains("all providers down")),
+                    "wrapper error detail must propagate into ServiceError: {:?}",
+                    details
+                );
+            }
+            other => panic!(
+                "wrapper failure must downgrade InvalidTx to ServiceError, got {:?}",
+                other
+            ),
+        }
+
+        // And the downgraded ServiceError must have applied the retry
+        // transition: req -> Sending with attempts bumped. The tx row is
+        // at Sending because the seed helper sets it there.
+        let req = get_req(&manager, &txid).await;
+        assert_eq!(
+            req.status,
+            ProvenTxReqStatus::Sending,
+            "downgraded ServiceError must flip req to Sending"
+        );
+        assert!(
+            req.attempts >= 1,
+            "downgraded ServiceError must bump req.attempts (got {})",
+            req.attempts
+        );
+
+        // Parent inputs and failed-tx outputs must NOT have been touched —
+        // the InvalidTx failure path was short-circuited before its writes.
+        for pid in &parent_ids {
+            let o = get_output(&manager, *pid).await;
+            assert!(
+                !o.spendable,
+                "wrapper-failure downgrade must NOT restore inputs (parent_id={})",
+                pid
+            );
+        }
+        for oid in &failed_output_ids {
+            let o = get_output(&manager, *oid).await;
+            assert!(
+                o.spendable,
+                "wrapper-failure downgrade must NOT mark failed-tx outputs unspendable (output_id={})",
+                oid
+            );
+        }
     }
 
 }

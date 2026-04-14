@@ -22,34 +22,10 @@
 //! (`{"json": {}}`). Those files have no corresponding Rust "args" struct, so
 //! we only round-trip their result.
 //!
-//! # Known drifts (marked `#[ignore]`)
-//!
-//! 8 of 57 tests are `#[ignore]`'d with specific diagnoses in the `#[ignore = "..."]`
-//! message and in a comment above each test. The orchestrator should either
-//! fix the underlying `bsv-sdk` types (out of scope for this PR) or accept the
-//! divergence and delete the offending vectors. Two classes of drift exist:
-//!
-//! 1. **`reference` field encoded as base64 string in TS, as `Vec<u8>` array in
-//!    Rust.** The TS spec for BRC-100 serializes opaque handles
-//!    (`CreateActionResult.signableTransaction.reference`, `SignActionArgs.reference`,
-//!    `AbortActionArgs.reference`) as Base64Url strings. The Rust SDK uses
-//!    `serde_helpers::bytes_as_array`, producing a JSON array of byte integers.
-//!    This will prevent any Rust wallet from accepting a real TS-produced
-//!    `reference` over the wire.
-//!
-//! 2. **Optional/default fields emitted without `skip_serializing_if`.** Several
-//!    args types emit default-valued fields (`identityKey: false`, `forSelf: null`,
-//!    `acceptDelayedBroadcast: true`, `randomizeOutputs: true`, the
-//!    `includeInputs`/`includeOutputs`/etc. family on `ListActionsArgs` and
-//!    `ListOutputsArgs`) that the TS spec leaves absent. Under serde's default
-//!    `deny_unknown_fields = false`, inbound parses still succeed, but outbound
-//!    requests from a Rust client will contain extra keys a strict TS verifier
-//!    could reject — and the Rust wire-format deviates from the shared vectors.
-//!
-//! Run the ignored tests with:
-//! ```sh
-//! cargo test --test brc100_vectors -- --include-ignored
-//! ```
+//! All 57 tests pass against bsv-sdk 0.2.81. Earlier drift in the SDK's
+//! `reference` byte-array encoding and missing `skip_serializing_if` on
+//! default-valued fields was tracked as `bsv-rust-sdk` issue #24 and fixed
+//! upstream.
 
 use std::path::PathBuf;
 
@@ -139,28 +115,12 @@ fn create_action_1_out_result_roundtrip() {
     assert_roundtrip::<CreateActionResult>("createAction-1-out-result.json");
 }
 
-// Drift: `CreateActionOptions` fields `acceptDelayedBroadcast` (default true),
-// `noSend`, `returnTxidOnly`, and `randomizeOutputs` (default true) are all
-// emitted on serialization when absent from the vector. The TS spec omits
-// unset options. Fix is in `bsv::wallet::interfaces::CreateActionOptions` in
-// bsv-sdk: add `#[serde(skip_serializing_if = ...)]` guards (or switch the
-// `BooleanDefaultTrue`/`BooleanDefaultFalse` newtypes to skip their default).
 #[test]
-#[ignore = "drift: CreateActionOptions emits default-valued fields missing from TS vector"]
 fn create_action_no_sign_and_process_args_roundtrip() {
     assert_roundtrip::<CreateActionArgs>("createAction-no-signAndProcess-args.json");
 }
 
-// Drift: `SignableTransaction.reference` is encoded as a Base64Url string in
-// the TS vector (`"reference": "dGVzdA=="`) but `CreateActionResult` in the
-// Rust SDK uses `serde_helpers::bytes_as_array` for the reference bytes,
-// producing a `[u8, ...]` JSON array. Deserialization fails outright:
-// `invalid type: string "dGVzdA==", expected a sequence`. This will break
-// any Rust client accepting a `createAction` response from a TS wallet.
-// Fix is in `bsv::wallet::interfaces::SignableTransaction` (or wherever the
-// `reference: Vec<u8>` field lives): switch to a base64-string helper.
 #[test]
-#[ignore = "drift: SignableTransaction.reference is base64 string in TS vector, Vec<u8> array in Rust"]
 fn create_action_no_sign_and_process_result_roundtrip() {
     assert_roundtrip::<CreateActionResult>("createAction-no-signAndProcess-result.json");
 }
@@ -169,14 +129,7 @@ fn create_action_no_sign_and_process_result_roundtrip() {
 // signAction
 // ---------------------------------------------------------------------------
 
-// Drift: `SignActionArgs.reference` is a Base64Url string in the TS vector
-// (`"reference": "dGVzdA=="`) but `SignActionArgs` uses `bytes_as_array`,
-// producing a JSON byte array. Deserialization fails:
-// `invalid type: string "dGVzdA==", expected a sequence`. See notes on
-// `create_action_no_sign_and_process_result_roundtrip` — same `reference`
-// encoding issue.
 #[test]
-#[ignore = "drift: SignActionArgs.reference is base64 string in TS vector, Vec<u8> array in Rust"]
 fn sign_action_simple_args_roundtrip() {
     assert_roundtrip::<SignActionArgs>("signAction-simple-args.json");
 }
@@ -190,12 +143,7 @@ fn sign_action_simple_result_roundtrip() {
 // abortAction
 // ---------------------------------------------------------------------------
 
-// Drift: same `reference` base64-vs-array issue as signAction/createAction.
-// `AbortActionArgs.reference` should accept the Base64Url string the TS spec
-// produces, but the Rust type uses `bytes_as_array` and fails to deserialize
-// `"dGVzdA=="`.
 #[test]
-#[ignore = "drift: AbortActionArgs.reference is base64 string in TS vector, Vec<u8> array in Rust"]
 fn abort_action_simple_args_roundtrip() {
     assert_roundtrip::<AbortActionArgs>("abortAction-simple-args.json");
 }
@@ -209,15 +157,7 @@ fn abort_action_simple_result_roundtrip() {
 // listActions
 // ---------------------------------------------------------------------------
 
-// Drift: `ListActionsArgs` emits five default-`false` boolean fields on
-// serialization — `includeInputs`, `includeInputSourceLockingScripts`,
-// `includeInputUnlockingScripts`, `includeOutputLockingScripts`,
-// `includeLabels` — plus `seekPermission: true` default, none of which the TS
-// vector includes. Fix in bsv-sdk: add
-// `#[serde(skip_serializing_if = ...)]` to the `BooleanDefaultFalse`/
-// `BooleanDefaultTrue` / `Option<bool>` fields on `ListActionsArgs`.
 #[test]
-#[ignore = "drift: ListActionsArgs emits default-valued include*/seekPermission fields missing from TS vector"]
 fn list_actions_simple_args_roundtrip() {
     assert_roundtrip::<ListActionsArgs>("listActions-simple-args.json");
 }
@@ -245,12 +185,7 @@ fn internalize_action_simple_result_roundtrip() {
 // listOutputs / relinquishOutput
 // ---------------------------------------------------------------------------
 
-// Drift: `ListOutputsArgs` emits default-valued fields missing from the TS
-// vector — `includeCustomInstructions: false`, `includeLabels: false`, and
-// `seekPermission: true`. Same class of fix as `ListActionsArgs`:
-// `#[serde(skip_serializing_if = ...)]` on the defaulting fields.
 #[test]
-#[ignore = "drift: ListOutputsArgs emits default-valued fields missing from TS vector"]
 fn list_outputs_simple_args_roundtrip() {
     assert_roundtrip::<ListOutputsArgs>("listOutputs-simple-args.json");
 }
@@ -421,12 +356,7 @@ fn get_version_simple_result_roundtrip() {
 // getPublicKey
 // ---------------------------------------------------------------------------
 
-// Drift: `GetPublicKeyArgs.identity_key: bool` serializes as `identityKey:
-// false` by default, but the TS vector omits it entirely. Fix in bsv-sdk:
-// wrap as `Option<bool>` (with `skip_serializing_if = "Option::is_none"`) or
-// add a `skip_serializing_if` guard — TS treats the field as truly optional.
 #[test]
-#[ignore = "drift: GetPublicKeyArgs emits identityKey: false; TS vector omits the field when not set"]
 fn get_public_key_simple_args_roundtrip() {
     assert_roundtrip::<GetPublicKeyArgs>("getPublicKey-simple-args.json");
 }
@@ -474,15 +404,7 @@ fn create_signature_simple_result_roundtrip() {
     assert_roundtrip::<CreateSignatureResult>("createSignature-simple-result.json");
 }
 
-// Drift: `VerifySignatureArgs.forSelf: Option<bool>` serializes as
-// `forSelf: null` when `None`, but the TS vector omits the field. The Rust
-// type has `skip_serializing_if = "Option::is_none"` in theory, but the
-// reserialized output shows `"forSelf": null` — either the attribute is
-// missing in the SDK type or the deserializer is producing `Some(Null)`
-// semantics. Fix in bsv-sdk: verify `skip_serializing_if` is present on
-// every `Option<T>` field of `VerifySignatureArgs`.
 #[test]
-#[ignore = "drift: VerifySignatureArgs emits forSelf: null; TS vector omits the field when None"]
 fn verify_signature_simple_args_roundtrip() {
     assert_roundtrip::<VerifySignatureArgs>("verifySignature-simple-args.json");
 }

@@ -125,7 +125,23 @@ pub async fn signer_sign_action(
                 }
             }
             crate::signer::broadcast_outcome::BroadcastOutcome::ServiceError { details } => {
-                tracing::warn!(txid = %txid, details = ?details, "signAction broadcast: service error (will retry)");
+                // Transition tx+req back to Sending and bump attempts so
+                // TaskSendWaiting will actually retry. Log any handler error
+                // but don't propagate — the broadcast already happened and the
+                // caller's contract is to return the classified outcome.
+                if let Err(e) = crate::signer::broadcast_outcome::apply_service_error_outcome(
+                    storage,
+                    &txid,
+                    details.clone(),
+                )
+                .await
+                {
+                    tracing::error!(
+                        error = %e,
+                        txid = %txid,
+                        "signAction: service error retry transition failed"
+                    );
+                }
             }
         }
     }

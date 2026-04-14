@@ -2081,10 +2081,11 @@ impl WalletStorageManager {
 
             log
         };
-        // Sync lock released — push changes to backups (non-fatal).
-        if let Err(e) = self.update_backups(None).await {
-            warn!("set_active: backup sync failed: {e}");
-        }
+        // Sync lock released — push changes to backups. Propagate the
+        // error so callers learn when replication failed instead of silently
+        // leaving backups stale. Matches Calhooon's pattern and the TS
+        // setActive contract (backup sync is part of the switch).
+        self.update_backups(None).await?;
 
         Ok(log)
     }
@@ -2117,10 +2118,10 @@ impl WalletStorageManager {
             // Instead call do_make_available() which runs without acquiring reader_lock.
             self.do_make_available().await?;
         }
-        // All locks released — sync active state to the newly added backup (non-fatal).
-        if let Err(e) = self.update_backups(None).await {
-            warn!("add_wallet_storage_provider: backup sync failed: {e}");
-        }
+        // All locks released — sync active state to the newly added backup.
+        // Propagate the error so callers learn when the newly-added backup
+        // failed to initialize rather than leaving it silently out of sync.
+        self.update_backups(None).await?;
 
         Ok(())
     }

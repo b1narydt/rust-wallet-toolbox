@@ -122,6 +122,24 @@ async fn reconcile_tx_status(
         .get_status_for_txids(&[txid.to_string()], false)
         .await;
 
+    // If the wrapper itself failed (all providers down, network error, etc.),
+    // we cannot conclude the tx is invalid. Downgrade to ServiceError so the
+    // caller's retry path (apply_service_error_outcome) runs instead of
+    // locking in a spurious InvalidTx/DoubleSpend verdict.
+    if status_result.status != "success" {
+        let detail = status_result
+            .error
+            .unwrap_or_else(|| "chain status query failed".to_string());
+        tracing::warn!(
+            txid = %txid,
+            detail = %detail,
+            "reconcile_tx_status: wrapper failure -- downgrading to ServiceError"
+        );
+        return BroadcastOutcome::ServiceError {
+            details: vec![detail],
+        };
+    }
+
     for r in &status_result.results {
         if r.status == "mined" || r.status == "known" {
             tracing::info!(
@@ -312,6 +330,64 @@ pub async fn apply_success_or_orphan_outcome(
     Ok(())
 }
 
+/// Apply state transitions for a ServiceError broadcast outcome.
+///
+/// Transitions both the ProvenTxReq and Transaction back to `Sending` and
+/// bumps `req.attempts` so `TaskSendWaiting` will pick the tx up on its
+/// next tick. Matches the TS `attemptToPostReqsToNetwork.ts:240-244`
+/// semantics for the `serviceError` case.
+///
+/// Without this transition, `process_action` leaves the req at
+/// `Unprocessed` prior to the broadcast and `TaskSendWaiting` only retries
+/// `[Unsent, Sending]` — so a ServiceError would otherwise leave the tx
+/// stuck. Errors from the underlying storage calls are propagated so the
+/// caller can log; a subsequent retry will have another chance.
+pub async fn apply_service_error_outcome(
+    storage: &WalletStorageManager,
+    txid: &str,
+    details: Vec<String>,
+) -> WalletResult<()> {
+    // 1. Look up the ProvenTxReq(s) for this txid.
+    let reqs = storage
+        .find_proven_tx_reqs(&crate::storage::find_args::FindProvenTxReqsArgs {
+            partial: crate::storage::find_args::ProvenTxReqPartial {
+                txid: Some(txid.to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await?;
+
+    // 2. Update each req: status=Sending, attempts=current+1.
+    for req in &reqs {
+        let new_attempts = req.attempts.saturating_add(1);
+        storage
+            .update_proven_tx_req(
+                req.proven_tx_req_id,
+                &crate::storage::find_args::ProvenTxReqPartial {
+                    status: Some(crate::status::ProvenTxReqStatus::Sending),
+                    attempts: Some(new_attempts),
+                    ..Default::default()
+                },
+            )
+            .await?;
+    }
+
+    // 3. Update Transaction: status=Sending.
+    storage
+        .update_transaction_status(txid, crate::status::TransactionStatus::Sending)
+        .await?;
+
+    // 4. Preserve ops visibility: warn with txid + provider details.
+    tracing::warn!(
+        txid = %txid,
+        details = ?details,
+        "broadcast: service error -- transitioned tx+req to Sending for retry"
+    );
+
+    Ok(())
+}
+
 /// Update transaction and output state after a broadcast, based on the classified outcome.
 ///
 /// - **Success**: tx -> Unproven, req -> Unmined (already handled in caller)
@@ -336,6 +412,16 @@ pub async fn handle_permanent_broadcast_failure(
     // If chain reconciliation overrode to Success, return — caller will handle
     // Success path. No writes needed.
     if matches!(effective, BroadcastOutcome::Success) {
+        return Ok(effective);
+    }
+
+    // If chain reconciliation downgraded a permanent failure to ServiceError
+    // (wrapper-level failure — we genuinely don't know whether the tx was
+    // accepted), run the ServiceError state transitions ourselves. The signer
+    // call site only dispatches to the original outcome's arm, so without
+    // this the downgrade would silently drop the retry.
+    if let BroadcastOutcome::ServiceError { details } = &effective {
+        apply_service_error_outcome(storage, txid, details.clone()).await?;
         return Ok(effective);
     }
 
