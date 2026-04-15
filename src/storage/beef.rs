@@ -39,6 +39,8 @@ struct CollectedTx {
     merkle_path: Option<Vec<u8>>,
     /// Whether this is a txid-only entry (trusted, no raw_tx needed in BEEF).
     txid_only: bool,
+    /// Stored inputBEEF from the transaction record (ancestor proof chain).
+    input_beef: Option<Vec<u8>>,
 }
 
 /// Build a valid BEEF for the given txid by recursively walking input chains.
@@ -141,6 +143,7 @@ async fn collect_tx_recursive(
                 txid: txid.to_string(),
                 merkle_path: None,
                 txid_only: true,
+                input_beef: None,
             });
         } else {
             collected.push(CollectedTx {
@@ -148,6 +151,7 @@ async fn collect_tx_recursive(
                 txid: txid.to_string(),
                 merkle_path: Some(ptx.merkle_path),
                 txid_only: false,
+                input_beef: None,
             });
         }
         return Ok(());
@@ -174,6 +178,7 @@ async fn collect_tx_recursive(
                     txid: txid.to_string(),
                     merkle_path: None,
                     txid_only: true,
+                    input_beef: None,
                 });
             }
             return Ok(());
@@ -187,6 +192,7 @@ async fn collect_tx_recursive(
             txid: txid.to_string(),
             merkle_path: None,
             txid_only: true,
+            input_beef: None,
         });
         return Ok(());
     }
@@ -202,11 +208,15 @@ async fn collect_tx_recursive(
                     txid: txid.to_string(),
                     merkle_path: None,
                     txid_only: true,
+                    input_beef: None,
                 });
             }
             return Ok(());
         }
     };
+
+    // Extract stored inputBEEF before consuming tx_record
+    let stored_input_beef = tx_record.input_beef.filter(|ib| !ib.is_empty());
 
     // Parse raw_tx to extract input txids for recursion
     let bsv_tx = {
@@ -228,6 +238,7 @@ async fn collect_tx_recursive(
                         txid: source_txid.clone(),
                         merkle_path: None,
                         txid_only: true,
+                        input_beef: None,
                     });
                 } else {
                     Box::pin(collect_tx_recursive(
@@ -245,12 +256,13 @@ async fn collect_tx_recursive(
     }
 
     // Add this transaction (not proven, with raw_tx, no merkle proof)
-    // Also merge inputBEEF if available
+    // Include stored inputBEEF so ancestor proof chains are preserved
     collected.push(CollectedTx {
         raw_tx,
         txid: txid.to_string(),
         merkle_path: None,
         txid_only: false,
+        input_beef: stored_input_beef,
     });
 
     Ok(())
@@ -303,6 +315,16 @@ fn build_beef_from_collected(collected: Vec<CollectedTx>) -> WalletResult<Option
             WalletError::Internal(format!("Failed to create BeefTx for {}: {}", ctx.txid, e))
         })?;
         beef.txs.push(beef_tx);
+
+        // Merge stored inputBEEF (ancestor proof chains from received payments)
+        if let Some(ref ib) = ctx.input_beef {
+            beef.merge_beef_from_binary(ib).map_err(|e| {
+                WalletError::Internal(format!(
+                    "Failed to merge stored inputBEEF for {}: {}",
+                    ctx.txid, e
+                ))
+            })?;
+        }
     }
 
     let mut buf = Vec::new();
@@ -350,6 +372,7 @@ async fn collect_tx_recursive_reader<S: StorageReader + ?Sized>(
                 txid: txid.to_string(),
                 merkle_path: None,
                 txid_only: true,
+                input_beef: None,
             });
         } else {
             collected.push(CollectedTx {
@@ -357,6 +380,7 @@ async fn collect_tx_recursive_reader<S: StorageReader + ?Sized>(
                 txid: txid.to_string(),
                 merkle_path: Some(ptx.merkle_path),
                 txid_only: false,
+                input_beef: None,
             });
         }
         return Ok(());
@@ -385,6 +409,7 @@ async fn collect_tx_recursive_reader<S: StorageReader + ?Sized>(
                     txid: txid.to_string(),
                     merkle_path: None,
                     txid_only: true,
+                    input_beef: None,
                 });
             }
             return Ok(());
@@ -397,6 +422,7 @@ async fn collect_tx_recursive_reader<S: StorageReader + ?Sized>(
             txid: txid.to_string(),
             merkle_path: None,
             txid_only: true,
+            input_beef: None,
         });
         return Ok(());
     }
@@ -410,11 +436,15 @@ async fn collect_tx_recursive_reader<S: StorageReader + ?Sized>(
                     txid: txid.to_string(),
                     merkle_path: None,
                     txid_only: true,
+                    input_beef: None,
                 });
             }
             return Ok(());
         }
     };
+
+    // Extract stored inputBEEF before consuming tx_record
+    let stored_input_beef = tx_record.input_beef.filter(|ib| !ib.is_empty());
 
     let bsv_tx = {
         let mut cursor = Cursor::new(&raw_tx);
@@ -433,6 +463,7 @@ async fn collect_tx_recursive_reader<S: StorageReader + ?Sized>(
                         txid: source_txid.clone(),
                         merkle_path: None,
                         txid_only: true,
+                        input_beef: None,
                     });
                 } else {
                     Box::pin(collect_tx_recursive_reader(
@@ -449,11 +480,13 @@ async fn collect_tx_recursive_reader<S: StorageReader + ?Sized>(
         }
     }
 
+    // Include stored inputBEEF so ancestor proof chains are preserved
     collected.push(CollectedTx {
         raw_tx,
         txid: txid.to_string(),
         merkle_path: None,
         txid_only: false,
+        input_beef: stored_input_beef,
     });
 
     Ok(())
