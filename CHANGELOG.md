@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.21] - 2026-04-15
+
+### Fixed
+
+- **Recursive BEEF inputBEEF merging** — `collect_tx_recursive` and
+  `collect_tx_recursive_reader` now merge stored `inputBEEF` from transaction
+  records during recursive BEEF construction. Previously, ancestor proof chains
+  stored on intermediate transactions (e.g. from received PeerPay payments) were
+  lost at recursion depth > 1, producing incomplete BEEF in rapid-spend scenarios.
+  This matches the TS SDK's `StorageProvider.getValidBeefForTxid` behavior where
+  `beef.mergeBeef(r.inputBEEF)` is called at every recursion level.
+
 ## [0.2.19] - 2026-04-13
 
 ### Added
