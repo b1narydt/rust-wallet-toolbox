@@ -152,7 +152,95 @@ mod beef_tests {
     }
 
     // -----------------------------------------------------------------------
-    // Test 4: Transaction without raw_tx and not in known_txids returns None
+    // Test 4: Transaction with input_beef merges ancestor proofs into output
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_beef_input_beef_is_merged_into_output() {
+        use bsv::transaction::beef::{Beef, BEEF_V2};
+        use bsv::transaction::beef_tx::BeefTx;
+        use bsv::transaction::transaction::Transaction as BsvTransaction;
+        use std::io::Cursor;
+
+        let storage = setup_storage().await.unwrap();
+        let user_id = insert_test_user(&storage, "02beef05").await;
+        let now = dt("2024-01-15 11:00:00");
+
+        // Build a minimal valid BEEF to serve as the stored inputBEEF.
+        // It contains TXID_A as a txid-only entry — simulating an ancestor proof chain.
+        let ancestor_beef_bytes = {
+            let mut beef = Beef::new(BEEF_V2);
+            let beef_tx = BeefTx::from_txid(TXID_A.to_string());
+            beef.txs.push(beef_tx);
+            let mut buf = Vec::new();
+            beef.to_binary(&mut buf).expect("BEEF serialization");
+            buf
+        };
+
+        // Minimal valid raw_tx (version + 0 inputs + 0 outputs + locktime).
+        // This parses successfully and has no inputs, so no recursion occurs.
+        let minimal_raw_tx = vec![
+            0x01, 0x00, 0x00, 0x00, // version 1
+            0x00, // 0 inputs
+            0x00, // 0 outputs
+            0x00, 0x00, 0x00, 0x00, // locktime 0
+        ];
+
+        // Compute the txid of our minimal raw_tx
+        let txid_c = {
+            let bsv_tx = BsvTransaction::from_binary(&mut Cursor::new(&minimal_raw_tx)).unwrap();
+            bsv_tx.id().expect("txid")
+        };
+
+        // Insert a Transaction with raw_tx and input_beef populated
+        let tx = Transaction {
+            created_at: now,
+            updated_at: now,
+            transaction_id: 0,
+            user_id,
+            proven_tx_id: None,
+            status: TransactionStatus::Completed,
+            reference: "ref-input-beef".to_string(),
+            is_outgoing: true,
+            satoshis: 1000,
+            description: "tx with inputBEEF".to_string(),
+            version: Some(1),
+            lock_time: Some(0),
+            txid: Some(txid_c.clone()),
+            input_beef: Some(ancestor_beef_bytes),
+            raw_tx: Some(minimal_raw_tx),
+        };
+        storage.insert_transaction(&tx, None).await.unwrap();
+
+        let known_txids = HashSet::new();
+        let result = get_valid_beef_for_txid(&storage, &txid_c, TrustSelf::No, &known_txids)
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_some(),
+            "should produce BEEF for tx with inputBEEF"
+        );
+
+        // Deserialize the output BEEF and verify TXID_A from the inputBEEF was merged in
+        let output_bytes = result.unwrap();
+        let parsed = Beef::from_binary(&mut Cursor::new(&output_bytes))
+            .expect("output BEEF should be parseable");
+
+        let txids: Vec<&str> = parsed.txs.iter().map(|t| t.txid.as_str()).collect();
+        assert!(
+            txids.contains(&TXID_A),
+            "output BEEF should contain TXID_A from merged inputBEEF, got: {:?}",
+            txids
+        );
+        assert!(
+            txids.contains(&txid_c.as_str()),
+            "output BEEF should contain the main transaction txid"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 5: Transaction without raw_tx and not in known_txids returns None
     // -----------------------------------------------------------------------
 
     #[tokio::test]

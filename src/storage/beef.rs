@@ -39,7 +39,7 @@ struct CollectedTx {
     merkle_path: Option<Vec<u8>>,
     /// Whether this is a txid-only entry (trusted, no raw_tx needed in BEEF).
     txid_only: bool,
-    /// Stored inputBEEF from the transaction record (ancestor proof chain).
+    /// Stored inputBEEF from the transaction record (serialized BEEF containing ancestor proofs).
     input_beef: Option<Vec<u8>>,
 }
 
@@ -215,7 +215,7 @@ async fn collect_tx_recursive(
         }
     };
 
-    // Extract stored inputBEEF before consuming tx_record
+    // Extract stored inputBEEF, filtering out empty values
     let stored_input_beef = tx_record.input_beef.filter(|ib| !ib.is_empty());
 
     // Parse raw_tx to extract input txids for recursion
@@ -316,7 +316,7 @@ fn build_beef_from_collected(collected: Vec<CollectedTx>) -> WalletResult<Option
         })?;
         beef.txs.push(beef_tx);
 
-        // Merge stored inputBEEF (ancestor proof chains from received payments)
+        // Merge stored inputBEEF (ancestor proof chains for this transaction's inputs)
         if let Some(ref ib) = ctx.input_beef {
             beef.merge_beef_from_binary(ib).map_err(|e| {
                 WalletError::Internal(format!(
@@ -443,7 +443,7 @@ async fn collect_tx_recursive_reader<S: StorageReader + ?Sized>(
         }
     };
 
-    // Extract stored inputBEEF before consuming tx_record
+    // Extract stored inputBEEF, filtering out empty values
     let stored_input_beef = tx_record.input_beef.filter(|ib| !ib.is_empty());
 
     let bsv_tx = {
