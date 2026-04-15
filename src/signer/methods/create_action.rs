@@ -146,8 +146,49 @@ pub async fn signer_create_action(
         is_active: None,
     };
     let storage_args = to_storage_args(args);
-    let dcr = storage.create_action(&auth_id, &storage_args).await?;
+    let mut dcr = storage.create_action(&auth_id, &storage_args).await?;
     let reference = dcr.reference.clone();
+
+    // Merge BEEF proof data for storage-allocated change inputs.
+    // Without this, the BEEF won't contain source tx merkle proofs
+    // and overlay hosts will reject it with SPV verification failure.
+    {
+        use bsv::transaction::beef::{Beef, BEEF_V2};
+        use crate::storage::beef::{get_valid_beef_for_txid, TrustSelf};
+
+        let active = storage.get_active().await?;
+        let mut beef = Beef::new(BEEF_V2);
+
+        if let Some(ref ib) = dcr.input_beef {
+            if !ib.is_empty() {
+                let _ = beef.merge_beef_from_binary(ib);
+            }
+        }
+
+        let known_txids = std::collections::HashSet::new();
+        for input in &dcr.inputs {
+            if input.provided_by == crate::types::StorageProvidedBy::Storage {
+                let txid = &input.source_txid;
+                if !txid.is_empty() && beef.find_txid(txid).is_none() {
+                    if let Ok(Some(tx_beef_bytes)) =
+                        get_valid_beef_for_txid(active.as_ref(), txid, TrustSelf::No, &known_txids).await
+                    {
+                        let _ = beef.merge_beef_from_binary(&tx_beef_bytes);
+                    }
+                }
+            }
+        }
+
+        if beef.txs.is_empty() {
+            dcr.input_beef = None;
+        } else {
+            let mut buf = Vec::new();
+            match beef.to_binary(&mut buf) {
+                Ok(()) => dcr.input_beef = Some(buf),
+                Err(_) => dcr.input_beef = None,
+            }
+        }
+    }
 
     // --- Step 2: Build unsigned transaction ---
     let (mut tx, amount, pdi) =
