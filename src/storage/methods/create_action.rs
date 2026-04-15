@@ -124,7 +124,7 @@ pub async fn storage_create_action<S: StorageReaderWriter + ?Sized>(
 pub async fn merge_input_beef(
     storage: &dyn StorageProvider,
     result: &mut StorageCreateActionResult,
-) {
+) -> WalletResult<()> {
     use bsv::transaction::beef::{Beef, BEEF_V2};
 
     let mut beef = Beef::new(BEEF_V2);
@@ -132,7 +132,12 @@ pub async fn merge_input_beef(
     // Merge caller-provided input_beef first (if any)
     if let Some(ref ib) = result.input_beef {
         if !ib.is_empty() {
-            let _ = beef.merge_beef_from_binary(ib);
+            beef.merge_beef_from_binary(ib).map_err(|e| {
+                WalletError::Internal(format!(
+                    "Failed to merge caller-provided inputBEEF ({} bytes): {e}",
+                    ib.len()
+                ))
+            })?;
         }
     }
 
@@ -148,7 +153,11 @@ pub async fn merge_input_beef(
                     get_valid_beef_for_storage_reader(storage, txid, TrustSelf::No, &known_txids)
                         .await
                 {
-                    let _ = beef.merge_beef_from_binary(&tx_beef_bytes);
+                    beef.merge_beef_from_binary(&tx_beef_bytes).map_err(|e| {
+                        WalletError::Internal(format!(
+                            "Failed to merge BEEF for storage input {txid}: {e}"
+                        ))
+                    })?;
                 }
             }
         }
@@ -159,11 +168,16 @@ pub async fn merge_input_beef(
         result.input_beef = None;
     } else {
         let mut buf = Vec::new();
-        match beef.to_binary(&mut buf) {
-            Ok(()) => result.input_beef = Some(buf),
-            Err(_) => result.input_beef = None,
-        }
+        beef.to_binary(&mut buf).map_err(|e| {
+            WalletError::Internal(format!(
+                "Failed to serialize merged BEEF ({} txs): {e}",
+                beef.txs.len()
+            ))
+        })?;
+        result.input_beef = Some(buf);
     }
+
+    Ok(())
 }
 
 /// Inner function that does all the work within the db transaction.
