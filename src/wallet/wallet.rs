@@ -994,7 +994,9 @@ impl WalletInterface for Wallet {
             if let Ok(beef) =
                 bsv::transaction::beef::Beef::from_binary(&mut std::io::Cursor::new(tx_bytes))
             {
-                let _ = beef_lock.beef.merge_beef(&beef);
+                if let Err(e) = beef_lock.beef.merge_beef(&beef) {
+                    tracing::warn!("BeefParty merge failed: {e}");
+                }
             }
         }
 

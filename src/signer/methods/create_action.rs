@@ -384,10 +384,10 @@ async fn merge_input_beef_signer(
     storage: &WalletStorageManager,
     dcr: &mut crate::storage::action_types::StorageCreateActionResult,
 ) -> WalletResult<()> {
-    use std::collections::HashSet;
-    use bsv::transaction::beef::{Beef, BEEF_V2};
     use crate::storage::beef::{get_valid_beef_for_txid, TrustSelf};
     use crate::types::StorageProvidedBy;
+    use bsv::transaction::beef::{Beef, BEEF_V2};
+    use std::collections::HashSet;
 
     let active = match storage.active() {
         Some(a) => a.clone(),
@@ -401,7 +401,8 @@ async fn merge_input_beef_signer(
         if !ib.is_empty() {
             beef.merge_beef_from_binary(ib).map_err(|e| {
                 WalletError::Internal(format!(
-                    "Failed to merge base input BEEF ({} bytes): {e}", ib.len()
+                    "Failed to merge base input BEEF ({} bytes): {e}",
+                    ib.len()
                 ))
             })?;
         }
@@ -413,25 +414,22 @@ async fn merge_input_beef_signer(
         if input.provided_by == StorageProvidedBy::Storage {
             let txid = &input.source_txid;
             if !txid.is_empty() && beef.find_txid(txid).is_none() {
-                let tx_beef_bytes = get_valid_beef_for_txid(
-                    &*active, txid, TrustSelf::No, &known_txids,
-                )
-                .await
-                .map_err(|e| {
-                    WalletError::Internal(format!(
-                        "Failed to fetch BEEF for storage input {txid}: {e}"
-                    ))
-                })?
-                .ok_or_else(|| {
-                    WalletError::Internal(format!(
-                        "No BEEF proof found for storage-provided input {txid}"
-                    ))
-                })?;
+                let tx_beef_bytes =
+                    get_valid_beef_for_txid(&*active, txid, TrustSelf::No, &known_txids)
+                        .await
+                        .map_err(|e| {
+                            WalletError::Internal(format!(
+                                "Failed to fetch BEEF for storage input {txid}: {e}"
+                            ))
+                        })?
+                        .ok_or_else(|| {
+                            WalletError::Internal(format!(
+                                "No BEEF proof found for storage-provided input {txid}"
+                            ))
+                        })?;
 
                 beef.merge_beef_from_binary(&tx_beef_bytes).map_err(|e| {
-                    WalletError::Internal(format!(
-                        "Failed to merge BEEF for input {txid}: {e}"
-                    ))
+                    WalletError::Internal(format!("Failed to merge BEEF for input {txid}: {e}"))
                 })?;
 
                 known_txids.insert(txid.clone());
@@ -455,7 +453,8 @@ async fn merge_input_beef_signer(
                 .await
                 .map_err(|e| {
                     WalletError::Internal(format!(
-                        "Failed to look up source tx {}: {e}", input.source_txid
+                        "Failed to look up source tx {}: {e}",
+                        input.source_txid
                     ))
                 })?;
 
@@ -481,7 +480,8 @@ async fn merge_input_beef_signer(
         let mut buf = Vec::new();
         beef.to_binary(&mut buf).map_err(|e| {
             WalletError::Internal(format!(
-                "Failed to serialize merged BEEF ({} txs): {e}", beef.txs.len()
+                "Failed to serialize merged BEEF ({} txs): {e}",
+                beef.txs.len()
             ))
         })?;
         dcr.input_beef = Some(buf);

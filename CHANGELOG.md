@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.22] - 2026-04-15
+
+### Fixed
+
+- **`merge_input_beef` silent failure elimination** — Changed return type from
+  `()` to `WalletResult<()>` and replaced `let _ =` error suppression with
+  proper `map_err()?` propagation. Previously, corrupt or malformed BEEF data
+  would be silently swallowed, producing incomplete BEEF with no diagnostics.
+  Affects caller-provided inputBEEF merge, storage-input BEEF merge, and BEEF
+  serialization. **Breaking:** callers must now handle the `WalletResult`.
+
+- **`wallet.rs` BeefParty merge logging** — Replaced `let _ =` with
+  `log::warn!` on `merge_beef` failure so merge errors are observable.
+
 ## [0.2.21] - 2026-04-15
 
 ### Fixed
