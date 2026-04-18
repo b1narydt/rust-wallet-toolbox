@@ -48,20 +48,19 @@ pub async fn build_signable_transaction_with_provider(
 
     // Build vout-to-index mapping
     let mut vout_to_index: Vec<usize> = vec![0; storage_outputs.len()];
-    for vout in 0..storage_outputs.len() {
+    for (vout, slot) in vout_to_index.iter_mut().enumerate() {
         let idx = storage_outputs
             .iter()
             .position(|o| o.vout == vout as u32)
             .ok_or_else(|| WalletError::InvalidParameter {
                 parameter: "output.vout".to_string(),
-                must_be: format!("sequential. {} is missing", vout),
+                must_be: format!("sequential. {vout} is missing"),
             })?;
-        vout_to_index[vout] = idx;
+        *slot = idx;
     }
 
     // Add outputs in vout order
-    for vout in 0..storage_outputs.len() {
-        let i = vout_to_index[vout];
+    for &i in &vout_to_index {
         let out = &storage_outputs[i];
 
         let is_change = out.provided_by == StorageProvidedBy::Storage
@@ -73,10 +72,7 @@ pub async fn build_signable_transaction_with_provider(
             })?;
 
             let script_bytes = provider
-                .derive_change_locking_script(
-                    &dcr.derivation_prefix,
-                    derivation_suffix,
-                )
+                .derive_change_locking_script(&dcr.derivation_prefix, derivation_suffix)
                 .await?;
             LockingScript::from_binary(&script_bytes)
         } else {

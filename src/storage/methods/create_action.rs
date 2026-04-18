@@ -358,7 +358,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
     // spent_by.is_none() incorrectly excluded UTXOs released after failed transactions
     // (where spent_by was set to 0 rather than NULL due to OutputPartial limitations).
     // Sort by satoshis ascending (prefer smaller)
-    available_change_outputs.sort_by(|a, b| a.satoshis.cmp(&b.satoshis));
+    available_change_outputs.sort_by_key(|a| a.satoshis);
 
     let available_change: Vec<AvailableChange> = available_change_outputs
         .iter()
@@ -531,8 +531,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
 
     // --- Build change input records ---
     let change_unlock_len = 107usize;
-    let mut change_vin = input_records.len() as u32;
-    for alloc_output in &allocated_outputs {
+    for (change_vin, alloc_output) in (input_records.len() as u32..).zip(allocated_outputs.iter()) {
         // Look up raw_tx for this change input's source transaction.
         // The signer needs sourceTransaction for signing (isSignAction path).
         // We also extract the locking script from raw_tx if it's not stored
@@ -596,7 +595,6 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             derivation_suffix: alloc_output.derivation_suffix.clone(),
             sender_identity_key: alloc_output.sender_identity_key.clone(),
         });
-        change_vin += 1;
     }
 
     // --- Update transaction satoshis ---

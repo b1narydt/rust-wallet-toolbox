@@ -446,7 +446,7 @@ fn transform_verifiable_certificates_with_trust(
     }
 
     // Sort by certifier trust descending
-    final_results.sort_by(|a, b| b.certifier_info.trust.cmp(&a.certifier_info.trust));
+    final_results.sort_by_key(|b| std::cmp::Reverse(b.certifier_info.trust));
 
     DiscoverCertificatesResult {
         total_certificates: final_results.len() as u32,
