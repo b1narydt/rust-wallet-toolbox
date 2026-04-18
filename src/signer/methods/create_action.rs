@@ -49,7 +49,7 @@ fn parse_outpoint_string(s: &str) -> StorageOutPoint {
 ///
 /// Strips unlocking scripts (storage only needs the length).
 /// Maps SDK CreateActionOptions to StorageCreateActionOptions.
-fn to_storage_args(args: &ValidCreateActionArgs) -> StorageCreateActionArgs {
+pub(crate) fn to_storage_args(args: &ValidCreateActionArgs) -> StorageCreateActionArgs {
     use bsv::wallet::types::{BooleanDefaultFalse, BooleanDefaultTrue};
 
     let opts = &args.options;
@@ -380,7 +380,7 @@ pub(crate) fn build_beef_bytes(
 /// Also merges any stored `inputBEEF` from source transactions (which may
 /// contain the original sender's BEEF chain, needed for full verification
 /// when our UTXOs came from received payments).
-async fn merge_input_beef_signer(
+pub(crate) async fn merge_input_beef_signer(
     storage: &WalletStorageManager,
     dcr: &mut crate::storage::action_types::StorageCreateActionResult,
 ) -> WalletResult<()> {
