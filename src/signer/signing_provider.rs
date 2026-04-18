@@ -28,7 +28,7 @@ use crate::error::WalletResult;
 ///   ECDSA signing over a network API.
 ///
 /// The trait never exposes private key material. Implementations receive
-/// a sighash and return a DER-encoded signature. Key derivation follows
+/// a sighash and return a complete P2PKH unlocking script. Key derivation follows
 /// BRC-42/43 conventions using `derivation_prefix` and `derivation_suffix`
 /// as the key ID components.
 ///
@@ -54,7 +54,7 @@ use crate::error::WalletResult;
 /// #[async_trait::async_trait]
 /// impl SigningProvider for MyRemoteSigner {
 ///     async fn derive_change_locking_script(
-///         &self, prefix: &str, suffix: &str, identity: &PublicKey,
+///         &self, prefix: &str, suffix: &str,
 ///     ) -> WalletResult<Vec<u8>> {
 ///         // Call remote signing service for BRC-42 derivation
 ///         # todo!()
@@ -83,7 +83,6 @@ pub trait SigningProvider: Send + Sync {
     /// # Arguments
     /// * `derivation_prefix` — Random per-transaction BRC-29 prefix.
     /// * `derivation_suffix` — Random per-output BRC-29 suffix.
-    /// * `identity_pub_key` — The wallet's identity public key.
     ///
     /// # Returns
     /// 25-byte P2PKH locking script (`OP_DUP OP_HASH160 <20> <hash> OP_EQUALVERIFY OP_CHECKSIG`).
@@ -91,7 +90,6 @@ pub trait SigningProvider: Send + Sync {
         &self,
         derivation_prefix: &str,
         derivation_suffix: &str,
-        identity_pub_key: &PublicKey,
     ) -> WalletResult<Vec<u8>>;
 
     /// Sign a transaction input and return a complete P2PKH unlocking script.

@@ -15,20 +15,6 @@ use crate::error::{WalletError, WalletResult};
 use crate::signer::signing_provider::SigningProvider;
 use crate::utility::script_template_brc29::ScriptTemplateBRC29;
 
-/// Simple hex decoding (no external dependency).
-fn hex_to_bytes(hex: &str) -> Vec<u8> {
-    (0..hex.len())
-        .step_by(2)
-        .filter_map(|i| {
-            if i + 2 <= hex.len() {
-                u8::from_str_radix(&hex[i..i + 2], 16).ok()
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
 /// Standard signing provider using a single private key via [`CachedKeyDeriver`].
 ///
 /// This is the reference implementation of [`SigningProvider`]. It delegates
@@ -79,11 +65,10 @@ impl SigningProvider for StandardSigningProvider {
         &self,
         derivation_prefix: &str,
         derivation_suffix: &str,
-        identity_pub_key: &PublicKey,
     ) -> WalletResult<Vec<u8>> {
         let template =
             ScriptTemplateBRC29::new(derivation_prefix.to_string(), derivation_suffix.to_string());
-        template.lock(self.key_deriver.root_key(), identity_pub_key)
+        template.lock(self.key_deriver.root_key(), &self.identity_pub_key)
     }
 
     async fn sign_input(
@@ -108,8 +93,7 @@ impl SigningProvider for StandardSigningProvider {
 
         let der = sig_obj.to_der();
         let pub_key = priv_key.to_public_key();
-        let pubkey_hex = pub_key.to_der_hex();
-        let pubkey_bytes = hex_to_bytes(&pubkey_hex);
+        let pubkey_bytes = pub_key.to_der();
 
         // Build P2PKH unlocking script: <push sig_len> <DER + hashtype> <push 33> <pubkey>
         let hashtype_byte = (sighash_type & 0xFF) as u8;

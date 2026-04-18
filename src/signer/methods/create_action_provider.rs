@@ -25,7 +25,9 @@ use crate::storage::manager::WalletStorageManager;
 use crate::wallet::types::AuthId;
 
 // Re-use helpers from the original create_action module.
-use super::create_action::{build_beef_bytes, merge_input_beef_signer, to_storage_args};
+use super::create_action::{
+    build_beef, build_beef_bytes, merge_input_beef_signer, serialize_beef_atomic, to_storage_args,
+};
 
 /// Execute the signer-level createAction flow using a [`SigningProvider`].
 ///
@@ -108,7 +110,10 @@ pub async fn signer_create_action_with_provider(
         .id()
         .map_err(|e| WalletError::Internal(format!("Compute txid: {e}")))?;
 
-    let beef_bytes = build_beef_bytes(&tx, &dcr.input_beef)?;
+    // Build BEEF, verify unlock scripts, then serialize
+    let beef = build_beef(&tx, &dcr.input_beef)?;
+    crate::signer::verify_unlock_scripts::verify_unlock_scripts(&txid, &beef)?;
+    let beef_bytes = serialize_beef_atomic(&beef, &txid)?;
 
     let no_send_change = if args.is_no_send {
         dcr.no_send_change_output_vouts
@@ -128,57 +133,70 @@ pub async fn signer_create_action_with_provider(
         reference: Some(reference),
         txid: Some(txid.clone()),
         raw_tx: Some(signed_tx_bytes),
-        send_with: vec![],
+        send_with: if args.is_send_with {
+            args.options.send_with.clone()
+        } else {
+            vec![]
+        },
     };
     let process_result = storage.process_action(&auth_id, &process_args).await?;
 
-    // Step 5: Broadcast if applicable
+    // Step 5: Broadcast and update status
     if !args.is_no_send && !args.is_delayed {
-        let reqs = storage
-            .find_proven_tx_reqs(&crate::storage::find_args::FindProvenTxReqsArgs {
-                partial: crate::storage::find_args::ProvenTxReqPartial {
-                    txid: Some(txid.clone()),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    txid = %txid,
-                    error = %e,
-                    "createAction broadcast: lookup of newly-created req failed"
-                );
-                e
-            })?;
+        let post_results = services
+            .post_beef(&beef_bytes, std::slice::from_ref(&txid))
+            .await;
 
-        match reqs.into_iter().next() {
-            Some(req) => {
-                if let Err(e) = crate::monitor::helpers::attempt_to_post_reqs_to_network(
-                    storage, services, &[req],
+        let outcome = crate::signer::broadcast_outcome::classify_broadcast_results(&post_results);
+
+        match &outcome {
+            crate::signer::broadcast_outcome::BroadcastOutcome::Success
+            | crate::signer::broadcast_outcome::BroadcastOutcome::OrphanMempool { .. } => {
+                let _ = crate::signer::broadcast_outcome::apply_success_or_orphan_outcome(
+                    storage, &txid, &outcome,
+                )
+                .await;
+            }
+            crate::signer::broadcast_outcome::BroadcastOutcome::DoubleSpend { .. }
+            | crate::signer::broadcast_outcome::BroadcastOutcome::InvalidTx { .. } => {
+                if let Err(e) =
+                    crate::signer::broadcast_outcome::handle_permanent_broadcast_failure(
+                        storage, services, &txid, &outcome,
+                    )
+                    .await
+                {
+                    tracing::error!(
+                        error = %e,
+                        txid = %txid,
+                        "createAction: permanent failure handler errored"
+                    );
+                }
+            }
+            crate::signer::broadcast_outcome::BroadcastOutcome::ServiceError { details } => {
+                if let Err(e) = crate::signer::broadcast_outcome::apply_service_error_outcome(
+                    storage,
+                    &txid,
+                    details.clone(),
                 )
                 .await
                 {
                     tracing::error!(
-                        txid = %txid,
                         error = %e,
-                        "createAction broadcast: attempt_to_post_reqs_to_network failed"
+                        txid = %txid,
+                        "createAction: service error retry transition failed"
                     );
-                    return Err(e);
                 }
-            }
-            None => {
-                tracing::warn!(
-                    txid = %txid,
-                    "createAction broadcast: could not find newly-created req"
-                );
             }
         }
     }
 
     let result = SignerCreateActionResult {
         txid: Some(txid),
-        tx: Some(beef_bytes),
+        tx: if args.options.return_txid_only.0.unwrap_or(false) {
+            None
+        } else {
+            Some(beef_bytes)
+        },
         no_send_change,
         send_with_results: process_result.send_with_results.unwrap_or_default(),
         not_delayed_results: process_result.not_delayed_results,

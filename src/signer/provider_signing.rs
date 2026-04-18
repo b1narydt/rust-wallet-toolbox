@@ -32,7 +32,7 @@ use crate::types::StorageProvidedBy;
 /// `ScriptTemplateBRC29::lock` directly, allowing non-local key derivation.
 ///
 /// All other logic — input/output ordering, fee calculation, pending input
-/// collection — is identical to the sync version.
+/// collection — follows the same algorithms as the sync version.
 ///
 /// [`build_signable_transaction`]: crate::signer::build_signable::build_signable_transaction
 pub async fn build_signable_transaction_with_provider(
@@ -42,8 +42,6 @@ pub async fn build_signable_transaction_with_provider(
 ) -> WalletResult<(Transaction, u64, Vec<PendingStorageInput>)> {
     let storage_inputs = &dcr.inputs;
     let storage_outputs = &dcr.outputs;
-    let identity_pub_key = provider.identity_public_key();
-
     let mut tx = Transaction::new();
     tx.version = dcr.version;
     tx.lock_time = dcr.lock_time;
@@ -78,12 +76,11 @@ pub async fn build_signable_transaction_with_provider(
                 .derive_change_locking_script(
                     &dcr.derivation_prefix,
                     derivation_suffix,
-                    identity_pub_key,
                 )
                 .await?;
             LockingScript::from_binary(&script_bytes)
         } else {
-            let script_bytes = hex_to_bytes(&out.locking_script);
+            let script_bytes = hex_to_bytes(&out.locking_script)?;
             LockingScript::from_binary(&script_bytes)
         };
 
@@ -151,18 +148,35 @@ pub async fn build_signable_transaction_with_provider(
                 });
             }
 
+            let vin = tx.inputs.len() as u32;
+
             pending_storage_inputs.push(PendingStorageInput {
-                vin: tx.inputs.len() as u32,
-                derivation_prefix: storage_input.derivation_prefix.clone().unwrap_or_default(),
-                derivation_suffix: storage_input.derivation_suffix.clone().unwrap_or_default(),
+                vin,
+                derivation_prefix: storage_input.derivation_prefix.clone().unwrap_or_else(|| {
+                    tracing::warn!(vin = vin, "missing derivation_prefix, defaulting to empty");
+                    String::new()
+                }),
+                derivation_suffix: storage_input.derivation_suffix.clone().unwrap_or_else(|| {
+                    tracing::warn!(vin = vin, "missing derivation_suffix, defaulting to empty");
+                    String::new()
+                }),
                 unlocker_pub_key: storage_input.sender_identity_key.clone(),
                 source_satoshis: storage_input.source_satoshis,
                 locking_script: storage_input.source_locking_script.clone(),
             });
-
             let source_tx = storage_input.source_transaction.as_ref().and_then(|raw| {
                 let mut cursor = Cursor::new(raw);
-                Transaction::from_binary(&mut cursor).ok().map(Box::new)
+                match Transaction::from_binary(&mut cursor) {
+                    Ok(tx) => Some(Box::new(tx)),
+                    Err(e) => {
+                        tracing::warn!(
+                            vin = vin,
+                            error = %e,
+                            "source transaction deserialization failed"
+                        );
+                        None
+                    }
+                }
             });
 
             let input = TransactionInput {
@@ -233,7 +247,7 @@ pub async fn complete_signed_transaction_with_provider(
             });
         }
 
-        let source_locking_script = LockingScript::from_binary(&hex_to_bytes(&pdi.locking_script));
+        let source_locking_script = LockingScript::from_binary(&hex_to_bytes(&pdi.locking_script)?);
 
         // Build source transaction stub for sighash computation
         let mut source_tx = Transaction::new();
@@ -297,14 +311,15 @@ pub async fn complete_signed_transaction_with_provider(
 }
 
 /// Simple hex decoding (no external dependency).
-fn hex_to_bytes(hex: &str) -> Vec<u8> {
+fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, WalletError> {
     (0..hex.len())
         .step_by(2)
-        .filter_map(|i| {
+        .map(|i| {
             if i + 2 <= hex.len() {
-                u8::from_str_radix(&hex[i..i + 2], 16).ok()
+                u8::from_str_radix(&hex[i..i + 2], 16)
+                    .map_err(|_| WalletError::Internal(format!("invalid hex at position {i}")))
             } else {
-                None
+                Err(WalletError::Internal("odd-length hex string".into()))
             }
         })
         .collect()
