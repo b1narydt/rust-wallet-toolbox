@@ -152,10 +152,17 @@ pub async fn signer_create_action_with_provider(
         match &outcome {
             crate::signer::broadcast_outcome::BroadcastOutcome::Success
             | crate::signer::broadcast_outcome::BroadcastOutcome::OrphanMempool { .. } => {
-                let _ = crate::signer::broadcast_outcome::apply_success_or_orphan_outcome(
+                if let Err(e) = crate::signer::broadcast_outcome::apply_success_or_orphan_outcome(
                     storage, &txid, &outcome,
                 )
-                .await;
+                .await
+                {
+                    tracing::error!(
+                        error = %e,
+                        txid = %txid,
+                        "createAction: failed to update status after successful broadcast"
+                    );
+                }
             }
             crate::signer::broadcast_outcome::BroadcastOutcome::DoubleSpend { .. }
             | crate::signer::broadcast_outcome::BroadcastOutcome::InvalidTx { .. } => {
