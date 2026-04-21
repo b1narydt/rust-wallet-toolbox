@@ -379,7 +379,7 @@ impl ChaintracksStorageQuery for MemoryStorage {
     async fn get_live_headers(&self) -> WalletResult<Vec<LiveBlockHeader>> {
         let inner = self.inner.read().unwrap();
         let mut all: Vec<LiveBlockHeader> = inner.headers.values().cloned().collect();
-        all.sort_by(|a, b| b.height.cmp(&a.height));
+        all.sort_by_key(|b| std::cmp::Reverse(b.height));
         Ok(all)
     }
 

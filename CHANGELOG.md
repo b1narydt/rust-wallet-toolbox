@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.23] - 2026-04-21
+
+### Added
+
+- **`SigningProvider` trait** — Async trait abstraction that lets the wallet
+  work with any signing backend (threshold signing, remote signer, HSM, etc.)
+  without changes to the transaction construction pipeline. Two methods:
+  `sign_input` (produces unlocking scripts) and `derive_change_locking_script`
+  (produces change outputs). Purely additive — existing APIs preserved.
+  - `StandardSigningProvider` — reference implementation wrapping
+    `CachedKeyDeriver` for the in-process signing path.
+  - `build_signable_transaction_with_provider` /
+    `complete_signed_transaction_with_provider` — async versions of the
+    transaction builders that route signing through a `SigningProvider`.
+  - `create_action_with_provider` — full `createAction` workflow using
+    the provider abstraction, including `verify_unlock_scripts` before BEEF
+    serialization, broadcast outcome classification and recovery handlers,
+    `return_txid_only` gating, and `send_with` txid forwarding.
+
+### Fixed
+
+- **Broadcast status-update logging consistency** — The `Success` /
+  `OrphanMempool` arm in the broadcast status update match was using
+  `let _` to discard the `Result` while other arms logged errors via
+  `tracing::error!`. All arms now log failures consistently.
+- **`hex_to_bytes` error propagation** — Returns `Result` and propagates
+  invalid-hex errors rather than panicking or silently producing empty
+  bytes.
+- **Transaction deserialization logging** — Failures are logged via
+  `tracing` instead of being swallowed; missing `derivation_prefix` /
+  `derivation_suffix` on change outputs are logged as warnings.
+
+### Changed
+
+- **`derive_change_locking_script` signature** — Removed redundant
+  `identity_pub_key` parameter; the derivation key is already carried
+  by the provider instance.
+- **`StandardSigningProvider` internals** — Eliminated an unnecessary
+  bytes → hex → bytes round-trip in the change-script derivation path.
+- **CI lint cleanup** — Replaced the remaining `sort_by(|a, b| ...)` in
+  `chaintracks/storage/memory.rs` with `sort_by_key(|b| Reverse(...))`
+  so `cargo clippy -D warnings` passes on Rust 1.95 stable
+  (`clippy::unnecessary_sort_by`). Signer-side lint fixups shipped in
+  the same series.
+
 ## [0.2.22] - 2026-04-15
 
 ### Fixed
