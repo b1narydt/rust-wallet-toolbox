@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.24]
+
+### Added
+- `SigningProvider::prepare_spend_contexts` — a defaulted (no-op) hook invoked on the inline create-action signing path before signing, giving providers the unsigned transaction and per-input prevout data so they can capture per-input spend context (used by MPC cosigner integrations to bind signatures to the transaction). Backward compatible; existing implementors inherit the default.
+
 ## [0.2.23] - 2026-04-21
 
 ### Added

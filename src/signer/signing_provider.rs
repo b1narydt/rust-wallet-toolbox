@@ -6,8 +6,10 @@
 
 use async_trait::async_trait;
 use bsv::primitives::public_key::PublicKey;
+use bsv::transaction::transaction::Transaction;
 
 use crate::error::WalletResult;
+use crate::signer::types::PendingStorageInput;
 
 /// Async trait for pluggable signing backends.
 ///
@@ -114,6 +116,19 @@ pub trait SigningProvider: Send + Sync {
         derivation_suffix: &str,
         unlocker_pub_key: &PublicKey,
     ) -> WalletResult<Vec<u8>>;
+
+    /// Hook invoked after a signable transaction is built and before inline
+    /// signing, providing the full unsigned transaction and its per-input
+    /// prevout data (`pending_inputs`). Implementations that bind signatures to
+    /// the transaction (for example MPC cosigners) can use this to capture
+    /// per-input spend context keyed by sighash. Defaults to a no-op.
+    async fn prepare_spend_contexts(
+        &self,
+        _tx: &Transaction,
+        _pending_inputs: &[PendingStorageInput],
+    ) -> WalletResult<()> {
+        Ok(())
+    }
 
     /// Get the wallet's identity public key.
     fn identity_public_key(&self) -> &PublicKey;

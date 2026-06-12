@@ -102,6 +102,9 @@ pub async fn signer_create_action_with_provider(
         return Ok((result, Some(pending)));
     }
 
+    // Step 3a: Let the provider capture per-input spend context (no-op by default).
+    provider.prepare_spend_contexts(&tx, &pdi).await?;
+
     // Step 3b: Immediate signing via provider
     let signed_tx_bytes =
         complete_signed_transaction_with_provider(&mut tx, &pdi, &HashMap::new(), provider).await?;
