@@ -279,6 +279,16 @@ mod sqlite_impl {
             self.update_output_impl(id, update, trx).await
         }
 
+        // FK-fix (relinquish_output): clear basket reference instead of
+        // writing basket_id: Some(0) which FK-violates against baskets.
+        async fn clear_output_basket(
+            &self,
+            output_id: i64,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
+            self.clear_output_basket_impl(output_id, trx).await
+        }
+
         async fn update_proven_tx(
             &self,
             id: i64,
@@ -1094,6 +1104,15 @@ macro_rules! impl_storage_rw_and_provider {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
                     self.update_output_impl(id, u, trx).await
+                }
+                // FK-fix (relinquish_output): clear basket reference instead
+                // of writing basket_id: Some(0) which FK-violates against baskets.
+                async fn clear_output_basket(
+                    &self,
+                    output_id: i64,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.clear_output_basket_impl(output_id, trx).await
                 }
                 async fn update_proven_tx(
                     &self,

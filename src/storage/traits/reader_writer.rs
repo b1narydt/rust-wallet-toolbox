@@ -216,6 +216,28 @@ pub trait StorageReaderWriter: StorageReader {
         trx: Option<&TrxToken>,
     ) -> WalletResult<i64>;
 
+    /// Set `basketId = NULL` on the matching output row. Returns rows affected.
+    ///
+    /// FK-fix for `relinquish_output`: the previous codepath wrote
+    /// `basket_id: Some(0)`, violating the
+    /// `outputs.basketId -> baskets.basketId` foreign key. This method does
+    /// the correct thing — null out the basket reference. Mirrors canonical
+    /// TS `StorageProvider.relinquishOutput`:
+    ///
+    /// ```ignore
+    /// // wallet-toolbox (TS) StorageProvider.relinquishOutput:
+    /// return await this.updateOutput(output.outputId, { basketId: undefined })
+    /// ```
+    ///
+    /// A dedicated method is required because the existing `OutputPartial` +
+    /// `update_output` convention treats `None` as "skip column" — there is
+    /// no way to express SET NULL through it.
+    async fn clear_output_basket(
+        &self,
+        output_id: i64,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64>;
+
     /// Update a proven transaction by ID. Returns the number of rows affected.
     async fn update_proven_tx(
         &self,

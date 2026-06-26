@@ -942,16 +942,18 @@ impl<T: StorageProvider> WalletStorageProvider for T {
             .await?,
         )?;
 
-        StorageReaderWriter::update_output(
-            self,
-            output.output_id,
-            &OutputPartial {
-                basket_id: Some(0), // 0 = no basket
-                ..Default::default()
-            },
-            None,
-        )
-        .await?;
+        // FK-fix: mirror canonical TS `StorageProvider.relinquishOutput`:
+        //     return await this.updateOutput(output.outputId, { basketId: undefined })
+        // → `UPDATE outputs SET basketId = NULL WHERE outputId = ?`.
+        //
+        // The previous codepath wrote `basket_id: Some(0)` which violated the
+        // `outputs.basketId -> baskets.basketId` foreign key (no basket has
+        // id 0). The dedicated `clear_output_basket` storage method is
+        // required because `OutputPartial`/`update_output` cannot express
+        // SET NULL (`None` = "skip column" in that convention; `Some(v)` =
+        // "set to v"). Go canonical (go-wallet-toolbox/pkg/internal/storage/
+        // repo/outputs.go:239-290) does the same logical thing via GORM nil.
+        StorageReaderWriter::clear_output_basket(self, output.output_id, None).await?;
 
         Ok(1)
     }
