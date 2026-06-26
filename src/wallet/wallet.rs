@@ -79,6 +79,7 @@ use crate::wallet::validation::validate_originator;
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Clone)]
 pub struct Wallet {
     /// BSV network chain this wallet operates on.
     pub chain: Chain,
@@ -93,14 +94,14 @@ pub struct Wallet {
     /// Optional privileged key manager for sensitive crypto operations.
     pub privileged_key_manager: Option<Arc<dyn PrivilegedKeyManager>>,
     /// Settings manager with cached TTL for wallet configuration.
-    pub settings_manager: WalletSettingsManager,
+    pub settings_manager: Arc<WalletSettingsManager>,
     /// Public identity key derived from the root private key.
     pub identity_key: PublicKey,
     /// Protocol wallet providing default WalletInterface implementations.
-    pub proto: ProtoWallet,
+    pub proto: Arc<ProtoWallet>,
 
     // BeefParty state
-    beef: tokio::sync::Mutex<BeefParty>,
+    beef: Arc<tokio::sync::Mutex<BeefParty>>,
     /// Whether to include all source transactions in BEEF output.
     pub include_all_source_transactions: bool,
     /// Whether to automatically add known txids from storage.
@@ -116,10 +117,10 @@ pub struct Wallet {
     user_party: String,
 
     /// In-memory pending sign actions awaiting deferred signing.
-    pub pending_sign_actions: tokio::sync::Mutex<HashMap<String, PendingSignAction>>,
+    pub pending_sign_actions: Arc<tokio::sync::Mutex<HashMap<String, PendingSignAction>>>,
 
     // Overlay discovery cache
-    overlay_cache: OverlayCache,
+    overlay_cache: Arc<OverlayCache>,
     /// Optional overlay lookup resolver for identity certificate discovery.
     pub lookup_resolver: Option<Arc<LookupResolver>>,
 
@@ -127,7 +128,7 @@ pub struct Wallet {
     pub random_vals: Option<Vec<f64>>,
 
     // Internal signer
-    signer: DefaultWalletSigner,
+    signer: Arc<DefaultWalletSigner>,
 }
 
 // ---------------------------------------------------------------------------
@@ -199,20 +200,20 @@ impl Wallet {
             services: args.services,
             monitor: args.monitor,
             privileged_key_manager: args.privileged_key_manager,
-            settings_manager,
+            settings_manager: Arc::new(settings_manager),
             identity_key,
-            proto,
-            beef: tokio::sync::Mutex::new(beef),
+            proto: Arc::new(proto),
+            beef: Arc::new(tokio::sync::Mutex::new(beef)),
             include_all_source_transactions: true,
             auto_known_txids: false,
             return_txid_only: false,
             trust_self: Some(TrustSelf::Known),
             user_party,
-            pending_sign_actions: tokio::sync::Mutex::new(HashMap::new()),
-            overlay_cache: OverlayCache::new(),
+            pending_sign_actions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            overlay_cache: Arc::new(OverlayCache::new()),
             lookup_resolver: args.lookup_resolver,
             random_vals: None,
-            signer,
+            signer: Arc::new(signer),
         })
     }
 
