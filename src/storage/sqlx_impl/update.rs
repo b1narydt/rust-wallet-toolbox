@@ -385,6 +385,23 @@ mod sqlite_impl {
             exec_update(self, &sql, &binds, trx).await
         }
 
+        /// FK-fix for `relinquish_output`: null out the basket reference on an
+        /// output. Mirrors canonical TS `StorageProvider.relinquishOutput`
+        /// (`{ basketId: undefined }` → `SET basketId = NULL`).
+        ///
+        /// A dedicated method is required because the existing `OutputPartial`
+        /// + `update_output_impl` convention treats `None` as "skip column" —
+        /// there is no way to express SET NULL through it.
+        pub(crate) async fn clear_output_basket_impl(
+            &self,
+            output_id: i64,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
+            let sql = "UPDATE outputs SET basketId = NULL, updated_at = datetime('now') WHERE outputId = ?";
+            let binds = [BindVal::Int64(output_id)];
+            exec_update(self, sql, &binds, trx).await
+        }
+
         pub(crate) async fn update_proven_tx_impl(
             &self,
             id: i64,
@@ -862,6 +879,15 @@ macro_rules! impl_update_methods {
                     sets.push(format!("updated_at = {}", $now_expr));
                     idx += 1; let sql = format!("UPDATE outputs SET {} WHERE outputId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
+                    exec_update(self, &sql, &binds, trx).await
+                }
+
+                /// FK-fix for `relinquish_output`: null out the basket reference on an
+                /// output. Mirrors canonical TS `StorageProvider.relinquishOutput`.
+                pub(crate) async fn clear_output_basket_impl(&self, output_id: i64, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                    let p1 = ph(1);
+                    let sql = format!("UPDATE outputs SET basketId = NULL, updated_at = {} WHERE outputId = {}", $now_expr, p1);
+                    let binds = [BindVal::Int64(output_id)];
                     exec_update(self, &sql, &binds, trx).await
                 }
 
