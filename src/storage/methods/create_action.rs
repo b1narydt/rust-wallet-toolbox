@@ -24,7 +24,7 @@ use crate::storage::methods::generate_change::{generate_change_sdk, AvailableCha
 use crate::storage::traits::provider::StorageProvider;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
 use crate::storage::{verify_one, TrxToken};
-use crate::tables::{Output, OutputBasket, Transaction, TxLabelMap};
+use crate::tables::{Output, OutputBasket, OutputTagMap, Transaction, TxLabelMap};
 use crate::types::StorageProvidedBy;
 
 /// Simple hex encoding (avoids hex crate dependency).
@@ -459,7 +459,27 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             script_offset: None,
             locking_script: Some(script_bytes.clone()),
         };
-        let _output_id = storage.insert_output(&new_output, trx_opt).await?;
+        let output_id = storage.insert_output(&new_output, trx_opt).await?;
+
+        // Persist output tags into output_tags_map.
+        // Parity with TS createAction.ts:467-476 and intra-port parity with
+        // internalize_action.rs:548-574; without this loop, CreateActionOutput.tags
+        // are silently dropped at the storage layer and any downstream caller
+        // filtering by tags (e.g. provider.get_utxos with tags=["funding"]) finds
+        // zero outputs even when matching outputs exist.
+        for tag in &output_spec.tags {
+            let output_tag = storage
+                .find_or_insert_output_tag(user_id, tag, trx_opt)
+                .await?;
+            let tag_map = OutputTagMap {
+                created_at: now,
+                updated_at: now,
+                output_id,
+                output_tag_id: output_tag.output_tag_id,
+                is_deleted: false,
+            };
+            let _ = storage.insert_output_tag_map(&tag_map, trx_opt).await;
+        }
 
         output_records.push(StorageCreateTransactionSdkOutput {
             vout,
