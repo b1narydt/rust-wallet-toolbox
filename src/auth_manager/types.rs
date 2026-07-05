@@ -58,6 +58,46 @@ pub struct Profile {
     pub linked_methods: Vec<LinkedMethod>,
 }
 
+/// The second UMP auth factor supplied by the caller to `complete_auth`,
+/// alongside the presentation key that `complete_auth` always obtains from
+/// the WAB server.
+///
+/// The WAB only ever hands out the presentation-key factor; it never sees
+/// the password or the recovery key, so it can never reconstruct a wallet
+/// key on its own. Which variant is valid depends on whether a `UMPToken`
+/// already exists on-chain for this presentation key (returning user) or
+/// not (new user):
+///
+/// - No existing token + `NewUserPassword` -> registers: builds a fresh
+///   `UMPToken` (all 3 factors known simultaneously at signup) and returns
+///   the freshly generated recovery key so the caller can show it to the
+///   user exactly once.
+/// - Existing token + `Password` -> unlocks via presentation+password.
+/// - Existing token + `Recovery` -> unlocks via presentation+recovery.
+#[derive(Debug, Clone)]
+pub enum SecondFactor {
+    /// New-user registration: caller-chosen password. A recovery key is
+    /// generated internally and returned via
+    /// `CompleteAuthOutcome::generated_recovery_key`.
+    NewUserPassword(String),
+    /// Returning-user login via presentation + password.
+    Password(String),
+    /// Returning-user login via presentation + recovery key (raw bytes).
+    Recovery(Vec<u8>),
+}
+
+/// Result of a successful `complete_auth` call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompleteAuthOutcome {
+    /// True if this call created a brand-new `UMPToken` (first-time signup).
+    pub is_new_user: bool,
+    /// Only `Some` for new users: the freshly generated 32-byte recovery
+    /// key. This is the *only* time it is ever exposed — the caller must
+    /// display/persist it immediately, since it is never derivable again
+    /// except by decrypting the on-chain `UMPToken` with 2 other factors.
+    pub generated_recovery_key: Option<Vec<u8>>,
+}
+
 /// Type alias for the async closure that constructs a wallet from key material.
 ///
 /// Called after authentication succeeds with the derived root key bytes and

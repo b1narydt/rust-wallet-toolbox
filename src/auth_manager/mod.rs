@@ -43,7 +43,8 @@ use crate::wab_client::types::{FaucetResponse, StartAuthResponse};
 use crate::wab_client::WABClient;
 use crate::WalletError;
 
-use types::{AuthState, StateSnapshot, WalletBuilderFn};
+use types::{AuthState, CompleteAuthOutcome, SecondFactor, StateSnapshot, WalletBuilderFn};
+use ump_token::{AuthFactors, UMPToken};
 
 /// Macro to delegate a WalletInterface method to the inner wallet, or return
 /// `WERR_NOT_ACTIVE` if no inner wallet is available (pre-authentication).
@@ -184,21 +185,39 @@ impl WalletAuthenticationManager {
     /// Complete the WAB authentication flow.
     ///
     /// On success:
-    /// 1. Retrieves final presentation key from WAB
-    /// 2. Looks up UMP token to determine new vs existing user
-    /// 3. Derives root key from presentation key
-    /// 4. Constructs inner wallet via wallet_builder
-    /// 5. Optionally redeems faucet for new users
-    /// 6. Signals authentication completion
+    /// 1. Retrieves final presentation key from WAB (the WAB never sees the
+    ///    password or recovery key — it only ever holds the presentation-key
+    ///    factor, so it can never reconstruct a wallet key on its own).
+    /// 2. Resolves the `rootPrimaryKey` via the real UMP 2-of-3 threshold
+    ///    scheme: for a new user (no `existing_ump_token`), builds a fresh
+    ///    `UMPToken` from presentation + password + a freshly generated
+    ///    recovery key; for a returning user, decrypts the existing token
+    ///    using presentation + password (or presentation + recovery).
+    /// 3. Constructs inner wallet via `wallet_builder` using the real root key.
+    /// 4. For new users, publishes the freshly built `UMPToken` on-chain.
+    /// 5. Signals authentication completion.
+    ///
+    /// Discovering `existing_ump_token` (looking up the on-chain token by
+    /// `presentationHash`) is the caller's responsibility — it requires a
+    /// public overlay lookup that is independent of any specific wallet's
+    /// local storage (see [`ump_token::lookup_ump_token`] and the module
+    /// docs there). Pass `None` for first-time signup.
     ///
     /// # Arguments
     /// * `interactor` - The auth method interactor
     /// * `payload` - Verification payload (e.g., SMS code)
+    /// * `second_factor` - The password (new signup or returning login) or
+    ///   recovery key the caller supplies, alongside the WAB-issued
+    ///   presentation key
+    /// * `existing_ump_token` - The on-chain `UMPToken` for this user, if
+    ///   the caller already looked one up; `None` for new-user signup
     pub async fn complete_auth(
         &self,
         interactor: &dyn AuthMethodInteractor,
         payload: serde_json::Value,
-    ) -> Result<(), WalletError> {
+        second_factor: SecondFactor,
+        existing_ump_token: Option<UMPToken>,
+    ) -> Result<CompleteAuthOutcome, WalletError> {
         let temp_key = {
             let mut pk = self.presentation_key.lock().await;
             pk.take().ok_or_else(|| {
@@ -231,36 +250,29 @@ impl WalletAuthenticationManager {
             *pk = Some(presentation_key_hex.clone());
         }
 
-        // Look up UMP token to determine new vs existing user
-        // For now, this always returns None (new user); full overlay integration later
         let presentation_key_bytes = hex_to_bytes(&presentation_key_hex)?;
-        let _is_new_user = {
-            let guard = self.inner.read().await;
-            if let Some(ref _w) = *guard {
-                // If we somehow already have a wallet, skip lookup
-                false
-            } else {
-                // No wallet yet; use presentation key bytes as root key placeholder
-                true
-            }
-        };
 
-        // Derive root key from presentation key bytes
-        // In the full CWI flow this would combine presentation key with password via UMP token
-        // For now, use presentation key bytes directly as root key material
-        let root_key = if presentation_key_bytes.len() >= 32 {
-            presentation_key_bytes.clone()
-        } else {
-            return Err(WalletError::Internal(
-                "Presentation key too short for root key derivation".to_string(),
-            ));
-        };
+        // Resolve the real rootPrimaryKey via the UMP 2-of-3 threshold
+        // scheme (build for new users, unlock via 2 factors for returning
+        // users) -- this replaces the old placeholder that used the
+        // presentation key bytes directly as the root key.
+        let resolved = resolve_root_key(
+            &presentation_key_bytes,
+            &second_factor,
+            existing_ump_token.as_ref(),
+        )?;
 
         // Build a placeholder PrivilegedKeyManager from root key
         let priv_key_manager = Arc::new(crate::wallet::privileged::NoOpPrivilegedKeyManager);
 
-        // Construct inner wallet
-        let wallet = (self.wallet_builder)(root_key, priv_key_manager).await?;
+        // Construct inner wallet using the real root key
+        let wallet = (self.wallet_builder)(resolved.root_key, priv_key_manager).await?;
+
+        // For new users, publish the freshly built UMP token on-chain now
+        // that we have a wallet capable of create_action.
+        if let Some(ref token) = resolved.token_to_publish {
+            ump_token::create_ump_token(wallet.as_ref(), token, &self.admin_originator).await?;
+        }
 
         // Store inner wallet
         {
@@ -277,7 +289,10 @@ impl WalletAuthenticationManager {
         // Signal authentication completion
         let _ = self.auth_tx.send(true);
 
-        Ok(())
+        Ok(CompleteAuthOutcome {
+            is_new_user: resolved.is_new_user,
+            generated_recovery_key: resolved.generated_recovery_key,
+        })
     }
 
     /// Serialize current state to a JSON byte vector for persistence.
@@ -442,6 +457,96 @@ impl WalletAuthenticationManager {
             .map_err(|e| WalletError::Internal(format!("Faucet sign_action failed: {e}")))?;
 
         Ok(())
+    }
+}
+
+/// Outcome of resolving the real UMP `rootPrimaryKey` from the presentation
+/// key plus a caller-supplied second factor, against an optional existing
+/// on-chain `UMPToken`.
+struct ResolvedAuth {
+    /// The wallet's real root key (never the presentation key bytes).
+    root_key: Vec<u8>,
+    /// Whether this resolution created a brand-new `UMPToken`.
+    is_new_user: bool,
+    /// The freshly generated recovery key, only for new users.
+    generated_recovery_key: Option<Vec<u8>>,
+    /// The freshly built `UMPToken` to publish on-chain, only for new users.
+    token_to_publish: Option<UMPToken>,
+}
+
+/// Core UMP 2-of-3 decision logic for `complete_auth`, factored out as a
+/// synchronous pure function (no WAB/network/wallet dependency) so it can
+/// be unit tested directly.
+///
+/// - `existing_ump_token = None` + `SecondFactor::NewUserPassword` builds a
+///   fresh `UMPToken` (presentation + chosen password + a freshly generated
+///   recovery key) and returns the generated recovery key for the caller to
+///   persist/display exactly once.
+/// - `existing_ump_token = Some(token)` + `SecondFactor::Password` or
+///   `SecondFactor::Recovery` decrypts the existing token's `rootPrimaryKey`
+///   via the matching 2-of-3 combination.
+/// - Any other pairing (e.g. a token already exists but the caller passed
+///   `NewUserPassword`, or no token exists but the caller passed `Recovery`)
+///   is a caller error.
+fn resolve_root_key(
+    presentation_key: &[u8],
+    second_factor: &SecondFactor,
+    existing_ump_token: Option<&UMPToken>,
+) -> Result<ResolvedAuth, WalletError> {
+    match (existing_ump_token, second_factor) {
+        (None, SecondFactor::NewUserPassword(password)) => {
+            let recovery_key = bsv::primitives::random::random_bytes(32);
+            let (token, root_key) =
+                ump_token::build_ump_token(password.as_bytes(), presentation_key, &recovery_key)?;
+            Ok(ResolvedAuth {
+                root_key,
+                is_new_user: true,
+                generated_recovery_key: Some(recovery_key),
+                token_to_publish: Some(token),
+            })
+        }
+        (None, SecondFactor::Password(_)) | (None, SecondFactor::Recovery(_)) => {
+            Err(WalletError::Internal(
+                "No UMP token found for this presentation key; first-time signup requires \
+                 SecondFactor::NewUserPassword"
+                    .to_string(),
+            ))
+        }
+        (Some(_), SecondFactor::NewUserPassword(_)) => Err(WalletError::Internal(
+            "A UMP token already exists for this presentation key; use SecondFactor::Password \
+             or SecondFactor::Recovery to log in"
+                .to_string(),
+        )),
+        (Some(token), SecondFactor::Password(password)) => {
+            let root_key = ump_token::unlock_root_primary_key(
+                token,
+                &AuthFactors::PresentationPassword {
+                    presentation_key: presentation_key.to_vec(),
+                    password: password.as_bytes().to_vec(),
+                },
+            )?;
+            Ok(ResolvedAuth {
+                root_key,
+                is_new_user: false,
+                generated_recovery_key: None,
+                token_to_publish: None,
+            })
+        }
+        (Some(token), SecondFactor::Recovery(recovery_key)) => {
+            let root_key = ump_token::unlock_root_primary_key(
+                token,
+                &AuthFactors::PresentationRecovery {
+                    presentation_key: presentation_key.to_vec(),
+                    recovery_key: recovery_key.clone(),
+                },
+            )?;
+            Ok(ResolvedAuth {
+                root_key,
+                is_new_user: false,
+                generated_recovery_key: None,
+                token_to_publish: None,
+            })
+        }
     }
 }
 
@@ -1044,6 +1149,154 @@ mod tests {
         assert!(
             auth.authenticated,
             "Should be authenticated after setting inner"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // resolve_root_key: the exact UMP 2-of-3 decision logic complete_auth
+    // wires up, tested directly (no WAB/network/wallet needed).
+    // ------------------------------------------------------------------
+
+    const TEST_PASSWORD: &str = "correct horse battery staple";
+
+    fn random_presentation_key() -> Vec<u8> {
+        bsv::primitives::random::random_bytes(32)
+    }
+
+    #[test]
+    fn test_new_user_builds_ump_token_and_returns_recovery_key() {
+        let presentation_key = random_presentation_key();
+
+        let resolved = resolve_root_key(
+            &presentation_key,
+            &SecondFactor::NewUserPassword(TEST_PASSWORD.to_string()),
+            None,
+        )
+        .expect("new user resolution should succeed");
+
+        assert!(resolved.is_new_user);
+        assert!(resolved.token_to_publish.is_some());
+        let recovery_key = resolved
+            .generated_recovery_key
+            .expect("new user must get a generated recovery key");
+        assert_eq!(recovery_key.len(), 32);
+        assert_eq!(resolved.root_key.len(), 32);
+        // Root key must not be the presentation key bytes (the old bug).
+        assert_ne!(
+            resolved.root_key, presentation_key,
+            "root key must never equal the raw presentation key bytes"
+        );
+    }
+
+    #[test]
+    fn test_returning_user_password_and_recovery_and_password_recovery_agree() {
+        let presentation_key = random_presentation_key();
+
+        // Step 1: sign up, capturing the built token + generated recovery key.
+        let signup = resolve_root_key(
+            &presentation_key,
+            &SecondFactor::NewUserPassword(TEST_PASSWORD.to_string()),
+            None,
+        )
+        .unwrap();
+        let token = signup.token_to_publish.clone().unwrap();
+        let recovery_key = signup.generated_recovery_key.clone().unwrap();
+        let root_key = signup.root_key.clone();
+
+        // Mode 1: presentation + password.
+        let via_password = resolve_root_key(
+            &presentation_key,
+            &SecondFactor::Password(TEST_PASSWORD.to_string()),
+            Some(&token),
+        )
+        .expect("presentation+password should unlock");
+        assert!(!via_password.is_new_user);
+        assert_eq!(via_password.root_key, root_key);
+
+        // Mode 2: presentation + recovery.
+        let via_recovery = resolve_root_key(
+            &presentation_key,
+            &SecondFactor::Recovery(recovery_key.clone()),
+            Some(&token),
+        )
+        .expect("presentation+recovery should unlock");
+        assert!(!via_recovery.is_new_user);
+        assert_eq!(via_recovery.root_key, root_key);
+
+        // Mode 3: password + recovery (the third 2-of-3 combination),
+        // exercised directly against the UMP token / cwi_logic layer since
+        // `complete_auth`'s SecondFactor is always paired with a WAB-issued
+        // presentation key.
+        let via_password_recovery = ump_token::unlock_root_primary_key(
+            &token,
+            &AuthFactors::PasswordRecovery {
+                password: TEST_PASSWORD.as_bytes().to_vec(),
+                recovery_key: recovery_key.clone(),
+            },
+        )
+        .expect("password+recovery should unlock");
+        assert_eq!(via_password_recovery, root_key);
+    }
+
+    #[test]
+    fn test_returning_user_wrong_password_fails() {
+        let presentation_key = random_presentation_key();
+        let signup = resolve_root_key(
+            &presentation_key,
+            &SecondFactor::NewUserPassword(TEST_PASSWORD.to_string()),
+            None,
+        )
+        .unwrap();
+        let token = signup.token_to_publish.unwrap();
+
+        let result = resolve_root_key(
+            &presentation_key,
+            &SecondFactor::Password("wrong-password".to_string()),
+            Some(&token),
+        );
+
+        assert!(
+            result.is_err(),
+            "wrong password must not unlock the root key"
+        );
+    }
+
+    #[test]
+    fn test_new_user_second_factor_recovery_without_token_is_rejected() {
+        let presentation_key = random_presentation_key();
+
+        let result = resolve_root_key(
+            &presentation_key,
+            &SecondFactor::Recovery(vec![0u8; 32]),
+            None,
+        );
+
+        assert!(
+            result.is_err(),
+            "a single factor (recovery only, no token) must never resolve a root key"
+        );
+    }
+
+    #[test]
+    fn test_signup_again_with_existing_token_is_rejected() {
+        let presentation_key = random_presentation_key();
+        let signup = resolve_root_key(
+            &presentation_key,
+            &SecondFactor::NewUserPassword(TEST_PASSWORD.to_string()),
+            None,
+        )
+        .unwrap();
+        let token = signup.token_to_publish.unwrap();
+
+        let result = resolve_root_key(
+            &presentation_key,
+            &SecondFactor::NewUserPassword("another-password".to_string()),
+            Some(&token),
+        );
+
+        assert!(
+            result.is_err(),
+            "signing up again over an existing token must be rejected"
         );
     }
 }

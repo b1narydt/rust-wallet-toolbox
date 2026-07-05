@@ -45,6 +45,31 @@ pub fn derive_key_from_password(password: &[u8], salt: &[u8], iterations: u32) -
     pbkdf2_hmac_sha512(password, salt, iterations, 64)
 }
 
+/// Number of output bytes for the UMP "password key" factor.
+///
+/// The password key must be exactly 32 bytes so it can be XORed against the
+/// (32-byte) presentation key and (32-byte) recovery key, and so the XOR
+/// result is a valid AES-256 `SymmetricKey`.
+pub const UMP_PASSWORD_KEY_SIZE: usize = 32;
+
+/// Derive the UMP **password key** factor from a password and salt.
+///
+/// This is `PBKDF2(password, salt, 7777, 32, 'sha512')`, matching the
+/// deployed `paragon-wab` / CWI UMP design: a 32-byte output so it is the
+/// same length as the presentation key and recovery key factors and can be
+/// XORed with either one to unlock a `UMPToken` primary-key slot.
+///
+/// This is distinct from [`derive_key_from_password`] (a more general
+/// 64-byte derivation) — the UMP threshold scheme specifically needs a
+/// 32-byte factor.
+///
+/// # Arguments
+/// * `password` - Raw password bytes
+/// * `salt` - PBKDF2 salt (the UMP token's `password_salt` field)
+pub fn derive_password_key(password: &[u8], salt: &[u8]) -> Vec<u8> {
+    pbkdf2_hmac_sha512(password, salt, PBKDF2_NUM_ROUNDS, UMP_PASSWORD_KEY_SIZE)
+}
+
 /// XOR two byte arrays of equal length.
 ///
 /// Used for combining password-derived key with presentation key or recovery key
@@ -321,6 +346,46 @@ mod tests {
         // XOR with zeros is identity
         let z = vec![0x00, 0x00, 0x00, 0x00];
         assert_eq!(xor_keys(&a, &z), a);
+    }
+
+    #[test]
+    fn test_derive_password_key_is_32_bytes() {
+        let password = b"correct horse battery staple";
+        let salt = b"some-ump-salt-32-bytes-of-noise";
+        let key = derive_password_key(password, salt);
+        assert_eq!(
+            key.len(),
+            UMP_PASSWORD_KEY_SIZE,
+            "UMP password key must be 32 bytes to XOR against presentation/recovery keys"
+        );
+    }
+
+    #[test]
+    fn test_derive_password_key_deterministic_and_salt_sensitive() {
+        let password = b"correct horse battery staple";
+        let salt_a = b"salt-a-000000000000000000000000";
+        let salt_b = b"salt-b-000000000000000000000000";
+
+        let key_a1 = derive_password_key(password, salt_a);
+        let key_a2 = derive_password_key(password, salt_a);
+        assert_eq!(
+            key_a1, key_a2,
+            "same password+salt must derive the same key"
+        );
+
+        let key_b = derive_password_key(password, salt_b);
+        assert_ne!(key_a1, key_b, "different salt must derive a different key");
+    }
+
+    #[test]
+    fn test_derive_password_key_wrong_password_differs() {
+        let salt = b"fixed-salt-0000000000000000000000";
+        let right = derive_password_key(b"the-real-password", salt);
+        let wrong = derive_password_key(b"not-the-real-password", salt);
+        assert_ne!(
+            right, wrong,
+            "a different password must derive a different key"
+        );
     }
 
     #[test]
