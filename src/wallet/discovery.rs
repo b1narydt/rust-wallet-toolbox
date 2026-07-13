@@ -12,7 +12,6 @@ use std::time::{Duration, Instant};
 use bsv::auth::certificates::certificate::AuthCertificate;
 use bsv::auth::certificates::verifiable::VerifiableCertificate;
 use bsv::primitives::public_key::PublicKey;
-use bsv::script::templates::push_drop::PushDrop;
 use bsv::services::overlay_tools::{LookupAnswer, LookupQuestion, LookupResolver};
 use bsv::transaction::beef::Beef;
 use bsv::wallet::interfaces::{
