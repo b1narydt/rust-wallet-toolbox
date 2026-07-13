@@ -7,10 +7,9 @@
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use bsv::primitives::private_key::PrivateKey;
 use bsv::script::locking_script::LockingScript;
-use bsv::script::templates::push_drop::PushDrop;
-use bsv::script::templates::ScriptTemplateLock;
+use bsv::script::templates::push_drop::{decode as decode_push_drop, LockPosition, PushDrop};
+use bsv::wallet::types::{Counterparty, CounterpartyType, Protocol};
 use bsv::wallet::interfaces::{
     CreateActionArgs, CreateActionOptions, CreateActionOutput, ListOutputsArgs, OutputInclude,
     QueryMode, WalletInterface,
@@ -149,7 +148,7 @@ pub async fn lookup_ump_token(
 
     // Parse the locking script as PushDrop to extract fields.
     let locking_script = LockingScript::from_binary(&script_bytes);
-    match PushDrop::decode(&locking_script) {
+    match decode_push_drop(&locking_script) {
         Ok(pd) => match decode_ump_token_fields(&pd.fields) {
             Ok(mut token) => {
                 token.current_outpoint = Some(output.outpoint.clone());
@@ -227,21 +226,58 @@ pub async fn create_ump_token(
 ) -> Result<(), WalletError> {
     let fields = encode_ump_token_fields(token);
 
-    // Create a temporary signing key for the PushDrop locking script.
-    // In the full flow, this would use protocol key derivation via the wallet,
-    // but PushDrop::lock() requires a PrivateKey directly. We use a deterministic
-    // key derived from the presentation hash so the token can be spent later.
-    let signing_key = PrivateKey::from_random().map_err(|e| {
-        WalletError::Internal(format!(
-            "Failed to generate signing key for UMP token: {}",
-            e
-        ))
-    })?;
+    // Lock to a key the WALLET derives under the UMP protocol, keyed on the
+    // presentation hash — so the holder of the wallet can actually spend (i.e.
+    // update or revoke) the token later.
+    //
+    // This previously called `PrivateKey::from_random()` and threw the key away.
+    // The comment claimed it was "a deterministic key derived from the presentation
+    // hash so the token can be spent later"; it was neither derived nor retained,
+    // so every UMP token ever minted was locked to a random key nobody holds and is
+    // PERMANENTLY UNSPENDABLE. The old `PushDrop::lock()` demanded a raw PrivateKey
+    // that `WalletInterface` cannot expose, and this was the workaround.
+    // bsv-sdk 0.3 makes PushDrop wallet-driven, so the real derivation is now
+    // expressible.
+    let key_id: String = token
+        .presentation_hash
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
 
-    let pushdrop = PushDrop::new(fields, signing_key);
-    let locking_script = pushdrop.lock().map_err(|e| {
-        WalletError::Internal(format!("Failed to create UMP token locking script: {}", e))
-    })?;
+    let locking_script = PushDrop::new(wallet, Some(admin_originator.to_string()))
+        .lock(
+            fields,
+            Protocol {
+                security_level: UMP_PROTOCOL_SECURITY_LEVEL,
+                protocol: UMP_PROTOCOL_NAME.to_string(),
+            },
+            &key_id,
+            Counterparty {
+                counterparty_type: CounterpartyType::Self_,
+                public_key: None,
+            },
+            false,
+            // include_signature = FALSE, deliberately, unlike most PushDrop callers.
+            //
+            // The UMP field layout is positional and open-ended: `decode_ump_token_fields`
+            // reads `fields[11]` as the OPTIONAL `profiles_encrypted`. A token without
+            // profiles has 11 fields, so an appended signature would land at index 11
+            // and be silently misread as profiles data. Every UMP token already on
+            // chain was minted without one (the old lock never appended a signature),
+            // so 11/12 is the established wire layout.
+            //
+            // Spending is still gated: the script's OP_CHECKSIG binds it to the
+            // wallet-derived key above. The signature field is a data attestation, not
+            // the spend guard — dropping it costs nothing here and keeps the wire
+            // stable. If UMP ever needs one, the field list must become
+            // self-describing first.
+            false,
+            LockPosition::Before,
+        )
+        .await
+        .map_err(|e| {
+            WalletError::Internal(format!("Failed to create UMP token locking script: {}", e))
+        })?;
     let script_bytes = locking_script.to_binary();
 
     // Build a tag from the presentation hash for lookup.
@@ -416,8 +452,8 @@ mod tests {
         assert_eq!(fields.len(), 11);
     }
 
-    #[test]
-    fn test_pushdrop_encode_decode_roundtrip() {
+    #[tokio::test]
+    async fn test_pushdrop_encode_decode_roundtrip() {
         // Verify that encoding as PushDrop and decoding recovers fields.
         let token = UMPToken {
             password_salt: vec![0xAA; 16],
@@ -436,12 +472,39 @@ mod tests {
         };
 
         let fields = encode_ump_token_fields(&token);
-        let key = PrivateKey::from_random().unwrap();
-        let pd = PushDrop::new(fields.clone(), key);
-        let script = pd.lock().expect("PushDrop lock should succeed");
 
-        let decoded_pd = PushDrop::decode(&script).expect("PushDrop decode should succeed");
-        assert_eq!(decoded_pd.fields.len(), fields.len());
+        // Lock the way production does: through a wallet, and WITHOUT the appended
+        // signature field (see `create_ump_token` — an extra field would land at
+        // index 11 and be misread as `profiles_encrypted`).
+        let w = bsv::wallet::proto_wallet::ProtoWallet::new(
+            bsv::primitives::private_key::PrivateKey::from_bytes(&[0x44u8; 32]).unwrap(),
+        );
+        let script = PushDrop::new(&w, None)
+            .lock(
+                fields.clone(),
+                Protocol {
+                    security_level: UMP_PROTOCOL_SECURITY_LEVEL,
+                    protocol: UMP_PROTOCOL_NAME.to_string(),
+                },
+                "test-key-id",
+                Counterparty {
+                    counterparty_type: CounterpartyType::Self_,
+                    public_key: None,
+                },
+                false,
+                false,
+                LockPosition::Before,
+            )
+            .await
+            .expect("PushDrop lock should succeed");
+
+        let decoded_pd = decode_push_drop(&script).expect("PushDrop decode should succeed");
+        assert_eq!(
+            decoded_pd.fields.len(),
+            fields.len(),
+            "no signature field: an 11-field token must decode as 11, or `profiles_encrypted` \
+             would pick up the signature"
+        );
         for (i, (original, decoded)) in fields.iter().zip(decoded_pd.fields.iter()).enumerate() {
             assert_eq!(original, decoded, "field {} mismatch", i);
         }

@@ -19,12 +19,11 @@
 //! - `BSV_CHAIN` - `"main"` for mainnet or `"test"` (default) for testnet.
 
 use bsv::primitives::private_key::PrivateKey;
-use bsv::script::templates::push_drop::PushDrop;
-use bsv::script::templates::ScriptTemplateLock;
+use bsv::script::templates::push_drop::{LockPosition, PushDrop};
 use bsv::wallet::interfaces::{
     CreateActionArgs, CreateActionOptions, CreateActionOutput, WalletInterface,
 };
-use bsv::wallet::types::BooleanDefaultFalse;
+use bsv::wallet::types::{BooleanDefaultFalse, Counterparty, CounterpartyType, Protocol};
 use bsv_wallet_toolbox::types::Chain;
 use bsv_wallet_toolbox::WalletBuilder;
 
@@ -87,16 +86,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         b"hello token".to_vec(), // Field 2: human-readable label
     ];
 
-    // Generate a signing key for the PushDrop. The holder of this key can
-    // spend (redeem) the token later. Here we use a random key for simplicity.
-    let signing_key = PrivateKey::from_random()?;
+    // The PushDrop token is locked to a key the WALLET derives under
+    // (protocol, keyID, counterparty) — so redeeming it needs the wallet, not a
+    // loose private key you have to save somewhere. (bsv-sdk < 0.3 took a raw
+    // PrivateKey here, which is why this example used to tell you to write one
+    // down.)
+    let protocol = Protocol {
+        security_level: 2,
+        protocol: "example pushdrop token".to_string(),
+    };
+    let key_id = "demo-token-1";
 
     println!("\nMinting PushDrop token...");
     println!("  Data fields: {} fields", data_fields.len());
-    println!("  Signing key (save to redeem): {}", signing_key.to_hex());
+    println!("  Locked to wallet-derived key: protocol={:?} keyID={key_id}", protocol.protocol);
 
-    let pushdrop = PushDrop::new(data_fields.clone(), signing_key.clone());
-    let locking_script = pushdrop.lock()?;
+    let locking_script = PushDrop::new(&setup.wallet, None)
+        .lock(
+            data_fields.clone(),
+            protocol,
+            key_id,
+            Counterparty {
+                counterparty_type: CounterpartyType::Self_,
+                public_key: None,
+            },
+            false,
+            true,
+            LockPosition::Before,
+        )
+        .await?;
     let script_bytes = locking_script.to_binary();
 
     println!("  Locking script: {} bytes", script_bytes.len());
@@ -153,7 +171,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Redemption Info ---");
     println!("To redeem this token in a future transaction:");
     println!("  1. Reference outpoint: {}.0", txid);
-    println!("  2. Use signing key: {}", signing_key.to_hex());
+    println!("  2. Redeem via the wallet (protocol \"example pushdrop token\", keyID {key_id}) — no loose key to save");
     println!("  3. Create a transaction input spending that outpoint");
     println!("  4. The PushDrop template will produce the unlocking script");
 

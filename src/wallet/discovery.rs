@@ -280,7 +280,7 @@ async fn parse_single_output(
         })?;
 
     // Decode PushDrop fields from the locking script using SDK 0.1.6 PushDrop::decode
-    let push_drop = PushDrop::decode(&tx_output.locking_script)
+    let push_drop = bsv::script::templates::push_drop::decode(&tx_output.locking_script)
         .map_err(|e| WalletError::Internal(format!("PushDrop decode failed: {}", e)))?;
     let fields = push_drop.fields;
 
