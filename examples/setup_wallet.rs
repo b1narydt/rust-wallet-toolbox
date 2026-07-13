@@ -68,8 +68,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(10_000);
 
     println!("=== Setup Wallet ===");
-    println!("Chain: {}", chain);
-    println!("Requested amount: {} satoshis", amount);
+    println!("Chain: {chain}");
+    println!("Requested amount: {amount} satoshis");
 
     // -----------------------------------------------------------------------
     // 1. Private key — read from env or generate
@@ -123,7 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Identity key: {}", setup.identity_key);
 
     let balance = setup.wallet.balance(None).await?;
-    println!("  Balance: {} satoshis", balance);
+    println!("  Balance: {balance} satoshis");
 
     if balance >= amount {
         println!("\nWallet already funded. Ready to run other examples.");
@@ -135,7 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // -----------------------------------------------------------------------
     let wallet_url =
         std::env::var("WALLET_URL").unwrap_or_else(|_| "http://localhost:3321".to_string());
-    println!("\nConnecting to desktop wallet at {}...", wallet_url);
+    println!("\nConnecting to desktop wallet at {wallet_url}...");
 
     let desktop = HttpWalletJson::new("rust-wallet-toolbox-examples", &wallet_url);
 
@@ -170,10 +170,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate random derivation parameters
     let derivation_prefix = base64_random(10);
     let derivation_suffix = base64_random(10);
-    println!(
-        "\n  Derivation: {} / {}",
-        derivation_prefix, derivation_suffix
-    );
+    println!("\n  Derivation: {derivation_prefix} / {derivation_suffix}");
 
     // Desktop wallet derives key for our Rust wallet as counterparty
     let derived_result = desktop
@@ -184,7 +181,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     security_level: 2,
                     protocol: "3241645161d8".to_string(),
                 }),
-                key_id: Some(format!("{} {}", derivation_prefix, derivation_suffix)),
+                key_id: Some(format!("{derivation_prefix} {derivation_suffix}")),
                 counterparty: Some(Counterparty {
                     counterparty_type: CounterpartyType::Other,
                     public_key: Some(receiver_pub_key.clone()),
@@ -211,7 +208,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // -----------------------------------------------------------------------
     // 6. Desktop wallet creates the payment transaction
     // -----------------------------------------------------------------------
-    println!("\n  Desktop wallet sending {} satoshis...", amount);
+    println!("\n  Desktop wallet sending {amount} satoshis...");
 
     let create_result = desktop
         .create_action(
@@ -242,7 +239,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let txid = create_result.txid.as_deref().unwrap_or("unknown");
-    println!("  Transaction created: {}", txid);
+    println!("  Transaction created: {txid}");
 
     let beef_bytes = create_result
         .tx
@@ -298,8 +295,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // -----------------------------------------------------------------------
     let new_balance = setup.wallet.balance(None).await?;
     println!("\n=== Wallet funded! ===");
-    println!("  Balance: {} satoshis", new_balance);
-    println!("  TXID: {}", txid);
+    println!("  Balance: {new_balance} satoshis");
+    println!("  TXID: {txid}");
     println!("\n  Ready to run other examples:");
     println!("    cargo run --example list_balance");
     println!("    cargo run --example chaintracks_sync");

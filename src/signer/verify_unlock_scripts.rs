@@ -18,7 +18,7 @@ pub fn verify_unlock_scripts(txid: &str, beef: &Beef) -> WalletResult<()> {
         .find_txid(txid)
         .ok_or_else(|| WalletError::InvalidParameter {
             parameter: "txid".to_string(),
-            must_be: format!("contained in beef, txid {}", txid),
+            must_be: format!("contained in beef, txid {txid}"),
         })?;
 
     let tx = beef_tx
@@ -39,13 +39,13 @@ pub fn verify_unlock_scripts(txid: &str, beef: &Beef) -> WalletResult<()> {
                 .source_txid
                 .as_ref()
                 .ok_or_else(|| WalletError::InvalidParameter {
-                    parameter: format!("inputs[{}].sourceTXID", i),
+                    parameter: format!("inputs[{i}].sourceTXID"),
                     must_be: "valid".to_string(),
                 })?;
 
         if input.unlocking_script.is_none() {
             return Err(WalletError::InvalidParameter {
-                parameter: format!("inputs[{}].unlockingScript", i),
+                parameter: format!("inputs[{i}].unlockingScript"),
                 must_be: "valid".to_string(),
             });
         }
@@ -70,7 +70,7 @@ pub fn verify_unlock_scripts(txid: &str, beef: &Beef) -> WalletResult<()> {
 
         if source_output_index >= source_tx.outputs.len() {
             return Err(WalletError::InvalidParameter {
-                parameter: format!("inputs[{}].sourceOutputIndex", i),
+                parameter: format!("inputs[{i}].sourceOutputIndex"),
                 must_be: format!("< {}", source_tx.outputs.len()),
             });
         }
@@ -105,14 +105,14 @@ pub fn verify_unlock_scripts(txid: &str, beef: &Beef) -> WalletResult<()> {
             Ok(true) => {} // Valid
             Ok(false) => {
                 return Err(WalletError::InvalidParameter {
-                    parameter: format!("inputs[{}].unlockScript", i),
+                    parameter: format!("inputs[{i}].unlockScript"),
                     must_be: "valid".to_string(),
                 });
             }
             Err(e) => {
                 return Err(WalletError::InvalidParameter {
-                    parameter: format!("inputs[{}].unlockScript", i),
-                    must_be: format!("valid. {}", e),
+                    parameter: format!("inputs[{i}].unlockScript"),
+                    must_be: format!("valid. {e}"),
                 });
             }
         }

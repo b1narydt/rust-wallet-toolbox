@@ -46,7 +46,7 @@ pub fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, WalletError> {
 pub fn bytes_to_hex(bytes: &[u8]) -> String {
     let mut hex = String::with_capacity(bytes.len() * 2);
     for b in bytes {
-        hex.push_str(&format!("{:02x}", b));
+        hex.push_str(&format!("{b:02x}"));
     }
     hex
 }
@@ -163,11 +163,11 @@ pub fn convert_proof_to_merkle_path(
 
     // Use MerklePath to serialize to binary
     let mp = bsv::transaction::MerklePath::new(block_height, path)
-        .map_err(|e| WalletError::Internal(format!("Failed to construct MerklePath: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to construct MerklePath: {e}")))?;
 
     let mut buf = Vec::new();
     mp.to_binary(&mut buf)
-        .map_err(|e| WalletError::Internal(format!("Failed to serialize MerklePath: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to serialize MerklePath: {e}")))?;
 
     Ok(buf)
 }
@@ -308,7 +308,7 @@ impl WhatsOnChain {
             Chain::Main => "main",
             Chain::Test => "test",
         };
-        let base_url = format!("https://api.whatsonchain.com/v1/bsv/{}", network);
+        let base_url = format!("https://api.whatsonchain.com/v1/bsv/{network}");
         Self {
             chain,
             api_key,
@@ -338,7 +338,7 @@ impl WhatsOnChain {
                 .request_builder(reqwest::Method::GET, url)
                 .send()
                 .await
-                .map_err(|e| WalletError::Internal(format!("HTTP request failed: {}", e)))?;
+                .map_err(|e| WalletError::Internal(format!("HTTP request failed: {e}")))?;
 
             if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS && retry < 1 {
                 tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
@@ -403,7 +403,7 @@ impl GetMerklePathProvider for WhatsOnChain {
             Err(e) => {
                 return GetMerklePathResult {
                     name: Some("WoCTsc".to_string()),
-                    error: Some(format!("Failed to read response body: {}", e)),
+                    error: Some(format!("Failed to read response body: {e}")),
                     ..Default::default()
                 };
             }
@@ -424,7 +424,7 @@ impl GetMerklePathProvider for WhatsOnChain {
                 Err(e) => {
                     return GetMerklePathResult {
                         name: Some("WoCTsc".to_string()),
-                        error: Some(format!("Failed to parse proof array: {}", e)),
+                        error: Some(format!("Failed to parse proof array: {e}")),
                         ..Default::default()
                     };
                 }
@@ -435,7 +435,7 @@ impl GetMerklePathProvider for WhatsOnChain {
                 Err(e) => {
                     return GetMerklePathResult {
                         name: Some("WoCTsc".to_string()),
-                        error: Some(format!("Failed to parse proof: {}", e)),
+                        error: Some(format!("Failed to parse proof: {e}")),
                         ..Default::default()
                     };
                 }
@@ -457,7 +457,7 @@ impl GetMerklePathProvider for WhatsOnChain {
             Err(e) => {
                 return GetMerklePathResult {
                     name: Some("WoCTsc".to_string()),
-                    error: Some(format!("hashToHeader failed: {}", e)),
+                    error: Some(format!("hashToHeader failed: {e}")),
                     ..Default::default()
                 };
             }
@@ -473,7 +473,7 @@ impl GetMerklePathProvider for WhatsOnChain {
             },
             Err(e) => GetMerklePathResult {
                 name: Some("WoCTsc".to_string()),
-                error: Some(format!("Failed to convert proof to MerklePath: {}", e)),
+                error: Some(format!("Failed to convert proof to MerklePath: {e}")),
                 ..Default::default()
             },
         }
@@ -529,7 +529,7 @@ impl GetRawTxProvider for WhatsOnChain {
                 return GetRawTxResult {
                     txid: txid.to_string(),
                     name: Some("WoC".to_string()),
-                    error: Some(format!("Failed to read response: {}", e)),
+                    error: Some(format!("Failed to read response: {e}")),
                     ..Default::default()
                 };
             }
@@ -550,7 +550,7 @@ impl GetRawTxProvider for WhatsOnChain {
                 return GetRawTxResult {
                     txid: txid.to_string(),
                     name: Some("WoC".to_string()),
-                    error: Some(format!("Failed to decode hex: {}", e)),
+                    error: Some(format!("Failed to decode hex: {e}")),
                     ..Default::default()
                 };
             }
@@ -599,7 +599,7 @@ impl PostBeefProvider for WhatsOnChain {
                 return PostBeefResult {
                     name: "WoC".to_string(),
                     status: "error".to_string(),
-                    error: Some(format!("Failed to parse BEEF: {}", e)),
+                    error: Some(format!("Failed to parse BEEF: {e}")),
                     txid_results: txids
                         .iter()
                         .map(|txid| PostTxResultForTxid {
@@ -666,7 +666,7 @@ impl PostBeefProvider for WhatsOnChain {
                         });
                         if result.status == "success" {
                             result.status = "error".to_string();
-                            result.error = Some(format!("Failed to serialize tx: {}", e));
+                            result.error = Some(format!("Failed to serialize tx: {e}"));
                         }
                         continue;
                     }
@@ -686,7 +686,7 @@ impl PostBeefProvider for WhatsOnChain {
                     });
                     if result.status == "success" {
                         result.status = "error".to_string();
-                        result.error = Some(format!("txid {} not found in BEEF", txid));
+                        result.error = Some(format!("txid {txid} not found in BEEF"));
                     }
                     continue;
                 }
@@ -822,7 +822,7 @@ impl GetUtxoStatusProvider for WhatsOnChain {
             let script_hash = match validate_script_hash(output, output_format.as_ref()) {
                 Ok(h) => h,
                 Err(e) => {
-                    r.error = Some(format!("Invalid script hash: {}", e));
+                    r.error = Some(format!("Invalid script hash: {e}"));
                     return r;
                 }
             };
@@ -833,7 +833,7 @@ impl GetUtxoStatusProvider for WhatsOnChain {
                 Ok(resp) => resp,
                 Err(e) => {
                     if retry > 2 {
-                        r.error = Some(format!("service failure: {}, error: {}", url, e));
+                        r.error = Some(format!("service failure: {url}, error: {e}"));
                         return r;
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
@@ -844,7 +844,7 @@ impl GetUtxoStatusProvider for WhatsOnChain {
             if !resp.status().is_success() {
                 let status = resp.status();
                 if retry > 2 {
-                    r.error = Some(format!("WoC getUtxoStatus response {}", status));
+                    r.error = Some(format!("WoC getUtxoStatus response {status}"));
                     return r;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
@@ -855,7 +855,7 @@ impl GetUtxoStatusProvider for WhatsOnChain {
                 Ok(d) => d,
                 Err(e) => {
                     if retry > 2 {
-                        r.error = Some(format!("Failed to parse response: {}", e));
+                        r.error = Some(format!("Failed to parse response: {e}"));
                         return r;
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
@@ -936,7 +936,7 @@ impl GetStatusForTxidsProvider for WhatsOnChain {
         {
             Ok(resp) => resp,
             Err(e) => {
-                r.error = Some(format!("HTTP request failed: {}", e));
+                r.error = Some(format!("HTTP request failed: {e}"));
                 return r;
             }
         };
@@ -952,7 +952,7 @@ impl GetStatusForTxidsProvider for WhatsOnChain {
         let data: Vec<WocTxsStatusEntry> = match resp.json().await {
             Ok(d) => d,
             Err(e) => {
-                r.error = Some(format!("Failed to parse response: {}", e));
+                r.error = Some(format!("Failed to parse response: {e}"));
                 return r;
             }
         };
@@ -1060,7 +1060,7 @@ impl WhatsOnChain {
         let be_hash = match reverse_hex_hash(hash) {
             Ok(h) => h,
             Err(e) => {
-                r.error = Some(format!("Invalid hash: {}", e));
+                r.error = Some(format!("Invalid hash: {e}"));
                 return r;
             }
         };
@@ -1074,8 +1074,7 @@ impl WhatsOnChain {
                 Err(e) => {
                     if retry > 2 {
                         r.error = Some(format!(
-                            "WoC getScriptHashHistory service failure: {}, error: {}",
-                            url, e
+                            "WoC getScriptHashHistory service failure: {url}, error: {e}"
                         ));
                         return r;
                     }
@@ -1101,7 +1100,7 @@ impl WhatsOnChain {
                 Ok(d) => d,
                 Err(e) => {
                     if retry > 2 {
-                        r.error = Some(format!("Failed to parse response: {}", e));
+                        r.error = Some(format!("Failed to parse response: {e}"));
                         return r;
                     }
                     continue;
@@ -1109,7 +1108,7 @@ impl WhatsOnChain {
             };
 
             if let Some(error) = data.error {
-                r.error = Some(format!("WoC getScriptHashHistory error {}", error));
+                r.error = Some(format!("WoC getScriptHashHistory error {error}"));
                 return r;
             }
 
@@ -1155,7 +1154,7 @@ impl WhatsOnChain {
         let woc: WocBlockHeader = resp
             .json()
             .await
-            .map_err(|e| WalletError::Internal(format!("Failed to parse block header: {}", e)))?;
+            .map_err(|e| WalletError::Internal(format!("Failed to parse block header: {e}")))?;
 
         let previous_hash = woc.previousblockhash.unwrap_or_else(|| {
             "0000000000000000000000000000000000000000000000000000000000000000".to_string()
@@ -1194,7 +1193,7 @@ impl WhatsOnChain {
         let woc_rate: WocExchangeRate = resp
             .json()
             .await
-            .map_err(|e| WalletError::Internal(format!("Failed to parse exchange rate: {}", e)))?;
+            .map_err(|e| WalletError::Internal(format!("Failed to parse exchange rate: {e}")))?;
 
         if woc_rate.currency != "USD" {
             return Err(WalletError::Internal(

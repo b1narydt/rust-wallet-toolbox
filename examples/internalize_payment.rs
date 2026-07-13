@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::from_filename("examples/.env").ok();
 
     let chain = get_chain();
-    println!("Chain: {}", chain);
+    println!("Chain: {chain}");
 
     // -----------------------------------------------------------------------
     // 1. Load both private keys and build wallets with separate SQLite files
@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sender_balance = sender_setup.wallet.balance(None).await?;
     println!("\nSender:");
     println!("  Identity key: {}", sender_setup.identity_key);
-    println!("  Balance:      {} satoshis", sender_balance);
+    println!("  Balance:      {sender_balance} satoshis");
     println!("Receiver:");
     println!("  Identity key: {}", receiver_setup.identity_key);
 
@@ -105,8 +105,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let derivation_suffix = random_base64(8);
 
     println!("\nBRC-29 derivation:");
-    println!("  Prefix: {}", derivation_prefix);
-    println!("  Suffix: {}", derivation_suffix);
+    println!("  Prefix: {derivation_prefix}");
+    println!("  Suffix: {derivation_suffix}");
 
     // -----------------------------------------------------------------------
     // 3. Create BRC-29 locking script for the receiver
@@ -119,10 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. Sender creates the BRC-29 payment transaction
     // -----------------------------------------------------------------------
     let payment_amount = 500;
-    println!(
-        "\nSender creating BRC-29 payment of {} satoshis...",
-        payment_amount
-    );
+    println!("\nSender creating BRC-29 payment of {payment_amount} satoshis...");
 
     let custom_instructions = serde_json::json!({
         "derivationPrefix": derivation_prefix,
@@ -160,7 +157,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let txid = result.txid.as_deref().unwrap_or("(none)");
-    println!("  TXID: {}", txid);
+    println!("  TXID: {txid}");
 
     let tx_bytes = result
         .tx
@@ -204,15 +201,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let receiver_balance_after = receiver_setup.wallet.balance(None).await?;
 
     println!("\n--- Results ---");
+    println!("Sender balance:   {sender_balance} -> {sender_balance_after} satoshis");
     println!(
-        "Sender balance:   {} -> {} satoshis",
-        sender_balance, sender_balance_after
+        "Receiver balance: {receiver_balance_after} satoshis (gained from internalized payment)"
     );
-    println!(
-        "Receiver balance: {} satoshis (gained from internalized payment)",
-        receiver_balance_after
-    );
-    println!("Payment TXID:     {}", txid);
+    println!("Payment TXID:     {txid}");
 
     Ok(())
 }

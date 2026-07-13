@@ -55,7 +55,7 @@ async fn test_full_wallet_lifecycle() {
             println!("list_actions returned {} actions", result.total_actions);
         }
         Err(e) => {
-            println!("list_actions returned error (acceptable): {}", e);
+            println!("list_actions returned error (acceptable): {e}");
         }
     }
 
@@ -86,7 +86,7 @@ async fn test_full_wallet_lifecycle() {
             );
         }
         Err(e) => {
-            println!("list_outputs returned error (acceptable): {}", e);
+            println!("list_outputs returned error (acceptable): {e}");
         }
     }
 
@@ -98,7 +98,7 @@ async fn test_full_wallet_lifecycle() {
         }
         Err(e) => {
             // Expected: default stub returns NotImplemented
-            println!("admin_stats returned error (expected): {}", e);
+            println!("admin_stats returned error (expected): {e}");
         }
     }
 

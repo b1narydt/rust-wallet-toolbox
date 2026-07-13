@@ -80,7 +80,7 @@ pub fn derive_identity_key(root_key: &[u8]) -> Result<String, WalletError> {
         )));
     }
     let pk = PrivateKey::from_bytes(&root_key[..32]).map_err(|e| {
-        WalletError::Internal(format!("Failed to create PrivateKey from root key: {}", e))
+        WalletError::Internal(format!("Failed to create PrivateKey from root key: {e}"))
     })?;
     let pub_key = pk.to_public_key();
     Ok(pub_key.to_der_hex())
@@ -143,8 +143,7 @@ pub fn restore_root_key_from_snapshot_bytes(
         SNAPSHOT_VERSION_1 => restore_v1(snapshot_bytes),
         SNAPSHOT_VERSION_2 => restore_v2(snapshot_bytes),
         _ => Err(WalletError::Internal(format!(
-            "Unsupported snapshot version: {}",
-            version
+            "Unsupported snapshot version: {version}"
         ))),
     }
 }
@@ -166,11 +165,11 @@ fn restore_v1(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), WalletError> {
     let encrypted_payload = &data[1 + SNAPSHOT_KEY_SIZE..];
 
     let sym_key = SymmetricKey::from_bytes(snapshot_key_bytes)
-        .map_err(|e| WalletError::Internal(format!("Invalid snapshot key: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Invalid snapshot key: {e}")))?;
 
     let decrypted = sym_key
         .decrypt(encrypted_payload)
-        .map_err(|e| WalletError::Internal(format!("Snapshot decryption failed: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Snapshot decryption failed: {e}")))?;
 
     if decrypted.len() < ROOT_KEY_SIZE {
         return Err(WalletError::Internal(format!(
@@ -205,11 +204,11 @@ fn restore_v2(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), WalletError> {
     let encrypted_payload = &data[1 + SNAPSHOT_KEY_SIZE + PROFILE_ID_SIZE..];
 
     let sym_key = SymmetricKey::from_bytes(snapshot_key_bytes)
-        .map_err(|e| WalletError::Internal(format!("Invalid snapshot key: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Invalid snapshot key: {e}")))?;
 
     let decrypted = sym_key
         .decrypt(encrypted_payload)
-        .map_err(|e| WalletError::Internal(format!("Snapshot decryption failed: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Snapshot decryption failed: {e}")))?;
 
     if decrypted.len() < ROOT_KEY_SIZE {
         return Err(WalletError::Internal(format!(
@@ -288,11 +287,11 @@ pub fn save_snapshot(
     // Generate a random snapshot key and encrypt the payload.
     let snapshot_key_bytes = random_bytes(SNAPSHOT_KEY_SIZE);
     let sym_key = SymmetricKey::from_bytes(&snapshot_key_bytes)
-        .map_err(|e| WalletError::Internal(format!("Failed to create snapshot key: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to create snapshot key: {e}")))?;
 
     let encrypted = sym_key
         .encrypt(&payload)
-        .map_err(|e| WalletError::Internal(format!("Snapshot encryption failed: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Snapshot encryption failed: {e}")))?;
 
     // Assemble: version(1) + snapshot_key(32) + profile_id(16) + encrypted_payload
     let mut result = Vec::with_capacity(1 + SNAPSHOT_KEY_SIZE + PROFILE_ID_SIZE + encrypted.len());
@@ -467,8 +466,7 @@ mod tests {
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("Unsupported snapshot version"),
-            "Error: {}",
-            err_msg
+            "Error: {err_msg}"
         );
     }
 
@@ -477,7 +475,7 @@ mod tests {
         let result = restore_root_key_from_snapshot_bytes(&[]);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("empty"), "Error: {}", err_msg);
+        assert!(err_msg.contains("empty"), "Error: {err_msg}");
     }
 
     #[test]
@@ -487,7 +485,7 @@ mod tests {
         let result = restore_root_key_from_snapshot_bytes(&data);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("too short"), "Error: {}", err_msg);
+        assert!(err_msg.contains("too short"), "Error: {err_msg}");
     }
 
     #[test]
@@ -496,7 +494,7 @@ mod tests {
         let result = restore_root_key_from_snapshot_bytes(&data);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("too short"), "Error: {}", err_msg);
+        assert!(err_msg.contains("too short"), "Error: {err_msg}");
     }
 
     #[test]

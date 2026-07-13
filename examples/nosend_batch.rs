@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::from_filename("examples/.env").ok();
 
     let chain = get_chain();
-    println!("Chain: {}", chain);
+    println!("Chain: {chain}");
 
     // -----------------------------------------------------------------------
     // 1. Load private key and build wallet
@@ -86,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Identity key: {}", setup.identity_key);
 
     let balance = setup.wallet.balance(None).await?;
-    println!("  Balance:      {} satoshis", balance);
+    println!("  Balance:      {balance} satoshis");
 
     if balance < 300 {
         eprintln!("\nBalance too low for batch example (need at least 300 satoshis).");
@@ -140,7 +140,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
 
         let txid = result.txid.as_deref().unwrap_or("(unknown)");
-        println!("  TXID: {}", txid);
+        println!("  TXID: {txid}");
         println!(
             "  Change outpoints: {} entries",
             result.no_send_change.len()
@@ -202,7 +202,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let final_txid = batch_result.txid.as_deref().unwrap_or("(none)");
-    println!("\nBatch trigger TXID: {}", final_txid);
+    println!("\nBatch trigger TXID: {final_txid}");
 
     // Print send_with results
     if !batch_result.send_with_results.is_empty() {
@@ -213,7 +213,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let balance_after = setup.wallet.balance(None).await?;
-    println!("\nBalance after batch: {} satoshis", balance_after);
+    println!("\nBalance after batch: {balance_after} satoshis");
 
     Ok(())
 }

@@ -230,8 +230,7 @@ mod beef_tests {
         let txids: Vec<&str> = parsed.txs.iter().map(|t| t.txid.as_str()).collect();
         assert!(
             txids.contains(&TXID_A),
-            "output BEEF should contain TXID_A from merged inputBEEF, got: {:?}",
-            txids
+            "output BEEF should contain TXID_A from merged inputBEEF, got: {txids:?}"
         );
         assert!(
             txids.contains(&txid_c.as_str()),

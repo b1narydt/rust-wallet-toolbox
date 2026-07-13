@@ -87,7 +87,7 @@ impl TaskArcSse {
         {
             Ok(r) => r,
             Err(e) => {
-                log.push_str(&format!("  error finding reqs: {}\n", e));
+                log.push_str(&format!("  error finding reqs: {e}\n"));
                 return log;
             }
         };

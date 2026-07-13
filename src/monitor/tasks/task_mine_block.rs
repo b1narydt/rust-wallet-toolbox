@@ -62,11 +62,11 @@ impl WalletMonitorTask for TaskMineBlock {
         let height = match self.services.get_height().await {
             Ok(h) => h,
             Err(e) => {
-                return Ok(format!("mine_block: error getting chain height: {}", e));
+                return Ok(format!("mine_block: error getting chain height: {e}"));
             }
         };
 
-        Ok(format!("mine_block: current chain height {}", height))
+        Ok(format!("mine_block: current chain height {height}"))
     }
 }
 

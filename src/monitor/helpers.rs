@@ -652,7 +652,7 @@ pub async fn get_proofs(
             if proven_tx_id > 0 {
                 result
                     .log
-                    .push_str(&format!("already linked to provenTxId {}.\n", proven_tx_id));
+                    .push_str(&format!("already linked to provenTxId {proven_tx_id}.\n"));
                 let update = ProvenTxReqPartial {
                     status: Some(ProvenTxReqStatus::Completed),
                     notified: Some(false),
@@ -725,7 +725,7 @@ pub async fn get_proofs(
                     result.proven.push(req.clone());
                 }
                 Err(e) => {
-                    result.log.push_str(&format!("error saving proof: {}\n", e));
+                    result.log.push_str(&format!("error saving proof: {e}\n"));
                 }
             }
         } else {

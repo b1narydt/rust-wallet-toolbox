@@ -9,11 +9,11 @@ use tracing::warn;
 
 use bsv::script::locking_script::LockingScript;
 use bsv::script::templates::push_drop::{decode as decode_push_drop, LockPosition, PushDrop};
-use bsv::wallet::types::{Counterparty, CounterpartyType, Protocol};
 use bsv::wallet::interfaces::{
     CreateActionArgs, CreateActionOptions, CreateActionOutput, ListOutputsArgs, OutputInclude,
     QueryMode, WalletInterface,
 };
+use bsv::wallet::types::{Counterparty, CounterpartyType, Protocol};
 
 use crate::WalletError;
 
@@ -131,7 +131,7 @@ pub async fn lookup_ump_token(
             None,
         )
         .await
-        .map_err(|e| WalletError::Internal(format!("UMP token lookup failed: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("UMP token lookup failed: {e}")))?;
 
     if result.outputs.is_empty() {
         return Ok(None);
@@ -241,7 +241,7 @@ pub async fn create_ump_token(
     let key_id: String = token
         .presentation_hash
         .iter()
-        .map(|b| format!("{:02x}", b))
+        .map(|b| format!("{b:02x}"))
         .collect();
 
     let locking_script = PushDrop::new(wallet, Some(admin_originator.to_string()))
@@ -276,7 +276,7 @@ pub async fn create_ump_token(
         )
         .await
         .map_err(|e| {
-            WalletError::Internal(format!("Failed to create UMP token locking script: {}", e))
+            WalletError::Internal(format!("Failed to create UMP token locking script: {e}"))
         })?;
     let script_bytes = locking_script.to_binary();
 
@@ -284,7 +284,7 @@ pub async fn create_ump_token(
     let presentation_hash_hex: String = token
         .presentation_hash
         .iter()
-        .map(|b| format!("{:02x}", b))
+        .map(|b| format!("{b:02x}"))
         .collect();
 
     wallet
@@ -313,7 +313,7 @@ pub async fn create_ump_token(
             Some(admin_originator),
         )
         .await
-        .map_err(|e| WalletError::Internal(format!("Failed to create UMP token action: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to create UMP token action: {e}")))?;
 
     Ok(())
 }
@@ -402,7 +402,7 @@ mod tests {
         let result = decode_ump_token_fields(&fields);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("at least 11 fields"), "Error: {}", msg);
+        assert!(msg.contains("at least 11 fields"), "Error: {msg}");
     }
 
     #[test]
@@ -506,7 +506,7 @@ mod tests {
              would pick up the signature"
         );
         for (i, (original, decoded)) in fields.iter().zip(decoded_pd.fields.iter()).enumerate() {
-            assert_eq!(original, decoded, "field {} mismatch", i);
+            assert_eq!(original, decoded, "field {i} mismatch");
         }
 
         let decoded_token =

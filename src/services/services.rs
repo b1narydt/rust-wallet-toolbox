@@ -601,7 +601,7 @@ impl WalletServices for Services {
         self.chain_tracker
             .current_height()
             .await
-            .map_err(|e| WalletError::Internal(format!("ChainTracker error: {}", e)))
+            .map_err(|e| WalletError::Internal(format!("ChainTracker error: {e}")))
     }
 
     async fn n_lock_time_is_final(&self, input: NLockTimeInput) -> WalletResult<bool> {
@@ -687,15 +687,14 @@ impl WalletServices for Services {
         let raw_result = self.get_raw_tx(txid, false).await;
         let raw_tx = raw_result.raw_tx.ok_or_else(|| {
             WalletError::Internal(format!(
-                "Could not retrieve raw transaction for txid {}",
-                txid
+                "Could not retrieve raw transaction for txid {txid}"
             ))
         })?;
 
         // Parse the raw transaction
         let tx = bsv::transaction::Transaction::from_binary(&mut std::io::Cursor::new(&raw_tx))
             .map_err(|e| {
-                WalletError::Internal(format!("Failed to parse transaction {}: {}", txid, e))
+                WalletError::Internal(format!("Failed to parse transaction {txid}: {e}"))
             })?;
 
         // Construct a simple Beef containing just this transaction
@@ -718,14 +717,14 @@ impl WalletServices for Services {
         bytes.reverse();
         let mut hex = String::with_capacity(bytes.len() * 2);
         for b in &bytes {
-            hex.push_str(&format!("{:02x}", b));
+            hex.push_str(&format!("{b:02x}"));
         }
         hex
     }
 
     async fn is_utxo(&self, locking_script: &[u8], txid: &str, vout: u32) -> WalletResult<bool> {
         let hash = self.hash_output_script(locking_script);
-        let outpoint = format!("{}.{}", txid, vout);
+        let outpoint = format!("{txid}.{vout}");
         let result = self
             .get_utxo_status(&hash, None, Some(&outpoint), false)
             .await;
@@ -1021,14 +1020,14 @@ impl Services {
             .get(currency)
             .ok_or_else(|| WalletError::InvalidParameter {
                 parameter: "currency".to_string(),
-                must_be: format!("valid fiat currency '{}' with an exchange rate", currency),
+                must_be: format!("valid fiat currency '{currency}' with an exchange rate"),
             })?;
         let b = cached
             .rates
             .get(base)
             .ok_or_else(|| WalletError::InvalidParameter {
                 parameter: "base".to_string(),
-                must_be: format!("valid fiat currency '{}' with an exchange rate", base),
+                must_be: format!("valid fiat currency '{base}' with an exchange rate"),
             })?;
 
         Ok(c / b)

@@ -151,10 +151,7 @@ async fn resolve_permission(
         Err(e) => {
             // Token lookup error -- complete as failure
             perm_cache
-                .complete_request(
-                    cache_key,
-                    Err(crate::WalletError::Internal(format!("{}", e))),
-                )
+                .complete_request(cache_key, Err(crate::WalletError::Internal(format!("{e}"))))
                 .await;
             return Err(e);
         }
@@ -197,14 +194,10 @@ async fn resolve_permission(
         }
         Err(e) => {
             perm_cache
-                .complete_request(
-                    cache_key,
-                    Err(crate::WalletError::Internal(format!("{}", e))),
-                )
+                .complete_request(cache_key, Err(crate::WalletError::Internal(format!("{e}"))))
                 .await;
             Err(bsv::wallet::error::WalletError::NotImplemented(format!(
-                "Callback error: {}",
-                e
+                "Callback error: {e}"
             )))
         }
     }
@@ -249,8 +242,7 @@ pub async fn ensure_protocol_permission(
     // 3. Block admin-reserved protocols
     if is_admin_protocol(protocol) {
         return Err(bsv::wallet::error::WalletError::NotImplemented(format!(
-            "Protocol \"{}\" is admin-only.",
-            protocol
+            "Protocol \"{protocol}\" is admin-only."
         )));
     }
 
@@ -267,7 +259,7 @@ pub async fn ensure_protocol_permission(
     }
 
     // Build cache key and filters
-    let details = format!("{}:{}:{}", protocol, security_level, effective_counterparty);
+    let details = format!("{protocol}:{security_level}:{effective_counterparty}");
     let cache_key = PermissionCache::build_cache_key(
         &PermissionType::ProtocolPermission,
         &normalized,
@@ -298,16 +290,14 @@ pub async fn ensure_protocol_permission(
         verifier: None,
         amount: None,
         description: Some(format!(
-            "Protocol permission for \"{}\" ({})",
-            protocol, usage_type
+            "Protocol permission for \"{protocol}\" ({usage_type})"
         )),
         labels: None,
         is_new_user: false,
     };
 
     let denial_msg = format!(
-        "Permission denied: protocol permission required for \"{}\" (originator: {})",
-        protocol, normalized
+        "Permission denied: protocol permission required for \"{protocol}\" (originator: {normalized})"
     );
 
     resolve_permission(
@@ -342,8 +332,7 @@ pub async fn ensure_basket_access(
     // Block admin-reserved baskets
     if is_admin_basket(basket_name) {
         return Err(bsv::wallet::error::WalletError::NotImplemented(format!(
-            "Basket \"{}\" is admin-only.",
-            basket_name
+            "Basket \"{basket_name}\" is admin-only."
         )));
     }
 
@@ -380,16 +369,14 @@ pub async fn ensure_basket_access(
         verifier: None,
         amount: None,
         description: Some(format!(
-            "Basket access for \"{}\" ({})",
-            basket_name, usage_type
+            "Basket access for \"{basket_name}\" ({usage_type})"
         )),
         labels: None,
         is_new_user: false,
     };
 
     let denial_msg = format!(
-        "Permission denied: basket access required for \"{}\" (originator: {})",
-        basket_name, normalized
+        "Permission denied: basket access required for \"{basket_name}\" (originator: {normalized})"
     );
 
     resolve_permission(
@@ -438,7 +425,7 @@ pub async fn ensure_certificate_access(
     }
 
     let verifier_str = verifier.unwrap_or("");
-    let details = format!("{}:{}", cert_type, verifier_str);
+    let details = format!("{cert_type}:{verifier_str}");
     let cache_key =
         PermissionCache::build_cache_key(&PermissionType::CertificateAccess, &normalized, &details);
 
@@ -461,16 +448,14 @@ pub async fn ensure_certificate_access(
         verifier: verifier.map(|v| v.to_string()),
         amount: None,
         description: Some(format!(
-            "Certificate access for type \"{}\" ({})",
-            cert_type, usage_type
+            "Certificate access for type \"{cert_type}\" ({usage_type})"
         )),
         labels: None,
         is_new_user: false,
     };
 
     let denial_msg = format!(
-        "Permission denied: certificate access required for type \"{}\" (originator: {})",
-        cert_type, normalized
+        "Permission denied: certificate access required for type \"{cert_type}\" (originator: {normalized})"
     );
 
     resolve_permission(
@@ -508,7 +493,7 @@ pub async fn ensure_spending_authorization(
     let cache_key = PermissionCache::build_cache_key(
         &PermissionType::SpendingAuthorization,
         &normalized,
-        &format!("amount:{}", amount),
+        &format!("amount:{amount}"),
     );
 
     let perm_cache = mgr.cache();
@@ -564,7 +549,7 @@ pub async fn ensure_spending_authorization(
         cert_fields: None,
         verifier: None,
         amount: Some(amount),
-        description: Some(format!("Spending authorization for {} satoshis", amount)),
+        description: Some(format!("Spending authorization for {amount} satoshis")),
         labels: None,
         is_new_user: false,
     };
@@ -587,8 +572,7 @@ pub async fn ensure_spending_authorization(
             Err(bsv::wallet::error::WalletError::NotImplemented(reason))
         }
         Err(e) => Err(bsv::wallet::error::WalletError::NotImplemented(format!(
-            "Callback error: {}",
-            e
+            "Callback error: {e}"
         ))),
     }
 }
@@ -626,13 +610,12 @@ pub async fn ensure_label_access(
         // Block admin-reserved labels
         if is_admin_label(label) {
             return Err(bsv::wallet::error::WalletError::NotImplemented(format!(
-                "Label \"{}\" is admin-only.",
-                label
+                "Label \"{label}\" is admin-only."
             )));
         }
 
         // Use protocol permission with label-derived protocol name
-        let label_protocol = format!("action label {}", label);
+        let label_protocol = format!("action label {label}");
         ensure_protocol_permission(
             mgr,
             originator,

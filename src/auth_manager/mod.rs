@@ -293,9 +293,8 @@ impl WalletAuthenticationManager {
             profile: None,
             is_new_user: None,
         };
-        serde_json::to_vec(&snapshot).map_err(|e| {
-            WalletError::Internal(format!("Failed to serialize state snapshot: {}", e))
-        })
+        serde_json::to_vec(&snapshot)
+            .map_err(|e| WalletError::Internal(format!("Failed to serialize state snapshot: {e}")))
     }
 
     // ========================================================================
@@ -338,7 +337,7 @@ impl WalletAuthenticationManager {
         let create_args = CreateActionArgs {
             input_beef: Some(tx_bytes),
             inputs: vec![bsv::wallet::interfaces::CreateActionInput {
-                outpoint: format!("{}.0", txid),
+                outpoint: format!("{txid}.0"),
                 unlocking_script_length: Some(108),
                 input_description: "Fund from faucet".to_string(),
                 unlocking_script: None,
@@ -359,7 +358,7 @@ impl WalletAuthenticationManager {
         let create_result = wallet
             .create_action(create_args, Some(&self.admin_originator))
             .await
-            .map_err(|e| WalletError::Internal(format!("Faucet create_action failed: {}", e)))?;
+            .map_err(|e| WalletError::Internal(format!("Faucet create_action failed: {e}")))?;
 
         let signable = create_result.signable_transaction.ok_or_else(|| {
             WalletError::Internal("No signable transaction from faucet create_action".to_string())
@@ -367,9 +366,9 @@ impl WalletAuthenticationManager {
 
         // Parse k-value for RPuzzle
         let k = BigNumber::from_hex(k_hex)
-            .map_err(|e| WalletError::Internal(format!("Failed to parse faucet k value: {}", e)))?;
+            .map_err(|e| WalletError::Internal(format!("Failed to parse faucet k value: {e}")))?;
         let random_key = PrivateKey::from_random().map_err(|e| {
-            WalletError::Internal(format!("Failed to generate random key for RPuzzle: {}", e))
+            WalletError::Internal(format!("Failed to generate random key for RPuzzle: {e}"))
         })?;
 
         // Create RPuzzle unlocking template with k value
@@ -377,11 +376,11 @@ impl WalletAuthenticationManager {
         let puzzle = RPuzzle::from_k(RPuzzleType::Raw, vec![], k, random_key);
 
         // Convert signable.tx bytes to hex for Transaction::from_beef
-        let tx_hex_str: String = signable.tx.iter().map(|b| format!("{:02x}", b)).collect();
+        let tx_hex_str: String = signable.tx.iter().map(|b| format!("{b:02x}")).collect();
 
         // Parse the signable transaction BEEF
         let tx = bsv::transaction::Transaction::from_beef(&tx_hex_str).map_err(|e| {
-            WalletError::Internal(format!("Failed to parse signable transaction BEEF: {}", e))
+            WalletError::Internal(format!("Failed to parse signable transaction BEEF: {e}"))
         })?;
 
         // Get the source output's locking script and satoshis from the transaction's
@@ -412,13 +411,13 @@ impl WalletAuthenticationManager {
                 &source_script,
             )
             .map_err(|e| {
-                WalletError::Internal(format!("Failed to compute sighash preimage: {}", e))
+                WalletError::Internal(format!("Failed to compute sighash preimage: {e}"))
             })?;
 
         // Unlock with RPuzzle (produces DER signature + sighash byte)
         let unlocking_script = puzzle
             .unlock(&preimage)
-            .map_err(|e| WalletError::Internal(format!("RPuzzle unlock failed: {}", e)))?;
+            .map_err(|e| WalletError::Internal(format!("RPuzzle unlock failed: {e}")))?;
 
         // Sign the action with the RPuzzle unlocking script (binary bytes)
         let mut spends = std::collections::HashMap::new();
@@ -440,7 +439,7 @@ impl WalletAuthenticationManager {
                 Some(&self.admin_originator),
             )
             .await
-            .map_err(|e| WalletError::Internal(format!("Faucet sign_action failed: {}", e)))?;
+            .map_err(|e| WalletError::Internal(format!("Faucet sign_action failed: {e}")))?;
 
         Ok(())
     }
@@ -458,7 +457,7 @@ fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, WalletError> {
         .step_by(2)
         .map(|i| {
             u8::from_str_radix(&hex[i..i + 2], 16)
-                .map_err(|e| WalletError::Internal(format!("Invalid hex at position {}: {}", i, e)))
+                .map_err(|e| WalletError::Internal(format!("Invalid hex at position {i}: {e}")))
         })
         .collect()
 }
@@ -1014,8 +1013,7 @@ mod tests {
         let err_str = err.to_string();
         assert!(
             err_str.contains("not authenticated") || err_str.contains("NOT_ACTIVE"),
-            "Expected NOT_ACTIVE error, got: {}",
-            err_str
+            "Expected NOT_ACTIVE error, got: {err_str}"
         );
     }
 

@@ -47,7 +47,7 @@ impl ChaintracksServiceClient {
                     Chain::Main => "mainnet",
                     Chain::Test => "testnet",
                 };
-                format!("https://{}-chaintracks.babbage.systems", net)
+                format!("https://{net}-chaintracks.babbage.systems")
             }
         };
 
@@ -85,8 +85,7 @@ impl ChaintracksServiceClient {
                 Ok(response) => {
                     let text = response.text().await.map_err(|e| {
                         WalletError::Internal(format!(
-                            "Failed to read response body from {}: {}",
-                            url, e
+                            "Failed to read response body from {url}: {e}"
                         ))
                     })?;
 
@@ -119,8 +118,7 @@ impl ChaintracksServiceClient {
                         || e.is_connect();
 
                     last_error = Some(WalletError::Internal(format!(
-                        "Chaintracks request failed for {}: {}",
-                        url, e
+                        "Chaintracks request failed for {url}: {e}"
                     )));
 
                     if !is_connection_reset || retry + 1 >= MAX_RETRIES {
@@ -144,13 +142,13 @@ impl ChaintracksServiceClient {
 
     /// Get a block header by height.
     pub async fn get_header_for_height(&self, height: u32) -> WalletResult<Option<BlockHeader>> {
-        self.get_json_or_none(&format!("/findHeaderHexForHeight?height={}", height))
+        self.get_json_or_none(&format!("/findHeaderHexForHeight?height={height}"))
             .await
     }
 
     /// Get a block header by block hash.
     pub async fn get_header_for_block_hash(&self, hash: &str) -> WalletResult<Option<BlockHeader>> {
-        self.get_json_or_none(&format!("/findHeaderHexForBlockHash?hash={}", hash))
+        self.get_json_or_none(&format!("/findHeaderHexForBlockHash?hash={hash}"))
             .await
     }
 
@@ -172,7 +170,7 @@ impl ChaintracksServiceClient {
         &self,
         base: &str,
     ) -> WalletResult<Option<FiatExchangeRates>> {
-        self.get_json_or_none(&format!("/api/v1/exchangeRates/{}", base))
+        self.get_json_or_none(&format!("/api/v1/exchangeRates/{base}"))
             .await
     }
 }

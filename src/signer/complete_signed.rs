@@ -69,7 +69,7 @@ pub fn complete_signed_transaction(
         if vin >= tx.inputs.len() {
             return Err(WalletError::InvalidParameter {
                 parameter: "spends".to_string(),
-                must_be: format!("valid input index. vin {} out of range", vin),
+                must_be: format!("valid input index. vin {vin} out of range"),
             });
         }
 
@@ -89,7 +89,7 @@ pub fn complete_signed_transaction(
         if vin >= tx.inputs.len() {
             return Err(WalletError::InvalidParameter {
                 parameter: "pendingInputs".to_string(),
-                must_be: format!("valid input index. vin {} out of range", vin),
+                must_be: format!("valid input index. vin {vin} out of range"),
             });
         }
 
@@ -100,7 +100,7 @@ pub fn complete_signed_transaction(
         // For received payments, it's the sender's identity key.
         let unlocker_pub_key = if let Some(ref pub_key_hex) = pdi.unlocker_pub_key {
             PublicKey::from_string(pub_key_hex)
-                .map_err(|e| WalletError::Internal(format!("Invalid unlocker pub key: {}", e)))?
+                .map_err(|e| WalletError::Internal(format!("Invalid unlocker pub key: {e}")))?
         } else {
             identity_pub_key.clone()
         };
@@ -139,7 +139,7 @@ pub fn complete_signed_transaction(
             pdi.source_satoshis,
             &source_locking_script,
         )
-        .map_err(|e| WalletError::Internal(format!("Failed to sign input {}: {}", vin, e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to sign input {vin}: {e}")))?;
     }
 
     // ---------------------------------------------------------------
@@ -147,7 +147,7 @@ pub fn complete_signed_transaction(
     // ---------------------------------------------------------------
     let mut buf = Vec::new();
     tx.to_binary(&mut buf)
-        .map_err(|e| WalletError::Internal(format!("Failed to serialize signed tx: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to serialize signed tx: {e}")))?;
 
     Ok(buf)
 }
@@ -198,7 +198,7 @@ mod tests {
         let lock_script_bytes = sabppp.lock(key_deriver.root_key(), &pub_key).unwrap();
         let lock_script_hex: String = lock_script_bytes
             .iter()
-            .map(|b| format!("{:02x}", b))
+            .map(|b| format!("{b:02x}"))
             .collect();
 
         // Build a transaction with one input that needs BRC-29 signing

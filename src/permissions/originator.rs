@@ -26,7 +26,7 @@ pub fn normalize_originator(originator: &str) -> String {
     let candidate = if has_scheme {
         trimmed.to_string()
     } else {
-        format!("https://{}", trimmed)
+        format!("https://{trimmed}")
     };
 
     // Attempt to parse as URL
@@ -37,7 +37,7 @@ pub fn normalize_originator(originator: &str) -> String {
             // Wrap IPv6 addresses in brackets
             let needs_brackets = hostname_lower.contains(':');
             let base_host = if needs_brackets {
-                format!("[{}]", hostname_lower)
+                format!("[{hostname_lower}]")
             } else {
                 hostname_lower
             };
@@ -56,7 +56,7 @@ pub fn normalize_originator(originator: &str) -> String {
                         return base_host;
                     }
                 }
-                format!("{}:{}", base_host, p)
+                format!("{base_host}:{p}")
             } else {
                 base_host
             }

@@ -770,8 +770,7 @@ fn timestamp_zero_millis_serializes_as_000z() {
     let created = json["created_at"].as_str().unwrap();
     assert!(
         created.ends_with(".000Z"),
-        "Expected timestamp to end with .000Z, got: {}",
-        created
+        "Expected timestamp to end with .000Z, got: {created}"
     );
 }
 
@@ -788,13 +787,11 @@ fn option_timestamp_serializes_with_z() {
     let max_updated = json["provenTx"]["maxUpdatedAt"].as_str().unwrap();
     assert!(
         max_updated.ends_with("Z"),
-        "Expected maxUpdatedAt to end with Z, got: {}",
-        max_updated
+        "Expected maxUpdatedAt to end with Z, got: {max_updated}"
     );
     assert!(
         max_updated.contains(".500Z"),
-        "Expected 3-digit ms .500Z in maxUpdatedAt, got: {}",
-        max_updated
+        "Expected 3-digit ms .500Z in maxUpdatedAt, got: {max_updated}"
     );
 }
 
@@ -1038,7 +1035,6 @@ fn sync_chunk_ts_fixture_roundtrip() {
     let nested_ts = proven_txs[0]["created_at"].as_str().unwrap();
     assert!(
         nested_ts.ends_with("Z"),
-        "Nested created_at must end with Z, got: {}",
-        nested_ts
+        "Nested created_at must end with Z, got: {nested_ts}"
     );
 }

@@ -639,7 +639,7 @@ impl ChaintracksManagement for Chaintracks {
 
         // Create output folder
         fs::create_dir_all(folder)
-            .map_err(|e| WalletError::Internal(format!("Failed to create export folder: {}", e)))?;
+            .map_err(|e| WalletError::Internal(format!("Failed to create export folder: {e}")))?;
 
         let mut file_num = 0;
         let mut height = 0u32;
@@ -669,13 +669,13 @@ impl ChaintracksManagement for Chaintracks {
                 continue;
             }
 
-            let filename = format!("{}/headers_{:08}.bin", folder, file_num);
+            let filename = format!("{folder}/headers_{file_num:08}.bin");
             let mut file = File::create(&filename).map_err(|e| {
-                WalletError::Internal(format!("Failed to create file {}: {}", filename, e))
+                WalletError::Internal(format!("Failed to create file {filename}: {e}"))
             })?;
 
             file.write_all(&header_bytes).map_err(|e| {
-                WalletError::Internal(format!("Failed to write to {}: {}", filename, e))
+                WalletError::Internal(format!("Failed to write to {filename}: {e}"))
             })?;
 
             tracing::debug!(
@@ -845,7 +845,7 @@ mod tests {
             WalletError::InvalidOperation(msg) => {
                 assert!(msg.contains("readonly"));
             }
-            other => panic!("Expected InvalidOperation, got: {:?}", other),
+            other => panic!("Expected InvalidOperation, got: {other:?}"),
         }
 
         // start_listening should fail in readonly mode

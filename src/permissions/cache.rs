@@ -177,7 +177,7 @@ impl PermissionCache {
     pub async fn complete_request(&self, key: &str, result: Result<bool, WalletError>) {
         let mut active = self.active_requests.lock().await;
         if let Some(req) = active.remove(key) {
-            let stored = result.map_err(|e| format!("{}", e));
+            let stored = result.map_err(|e| format!("{e}"));
             *req.result.lock().await = Some(stored);
             req.notify.notify_waiters();
         }
@@ -201,7 +201,7 @@ impl PermissionCache {
         originator: &str,
         details: &str,
     ) -> String {
-        format!("{:?}:{}:{}", permission_type, originator, details)
+        format!("{permission_type:?}:{originator}:{details}")
     }
 }
 

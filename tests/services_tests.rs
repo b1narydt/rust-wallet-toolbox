@@ -156,10 +156,7 @@ fn test_hash_output_script_known_value() {
     let expected_sha = bsv::primitives::hash::sha256(&script);
     let mut expected_bytes = expected_sha.to_vec();
     expected_bytes.reverse();
-    let expected_hex: String = expected_bytes
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect();
+    let expected_hex: String = expected_bytes.iter().map(|b| format!("{b:02x}")).collect();
     assert_eq!(hash, expected_hex);
 }
 

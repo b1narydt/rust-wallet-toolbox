@@ -90,7 +90,7 @@ pub fn parse_brc114_action_time_labels(
 
 /// Create a BRC-114 action time label from a UNIX millisecond timestamp.
 pub fn make_brc114_action_time_label(unix_millis: u64) -> String {
-    format!("action time {}", unix_millis)
+    format!("action time {unix_millis}")
 }
 
 #[cfg(test)]

@@ -982,7 +982,7 @@ impl_update_methods! {
     extract_trx = StorageSqlx::<sqlx::MySql>::extract_mysql_trx,
     now_expr = "NOW()",
     placeholder_fn = |_idx: usize| -> String { "?".to_string() },
-    quote_col_fn = |col: &str| -> String { format!("`{}`", col) }
+    quote_col_fn = |col: &str| -> String { format!("`{col}`") }
 }
 
 impl_update_methods! {
@@ -992,6 +992,6 @@ impl_update_methods! {
     args_ty = sqlx::postgres::PgArguments,
     extract_trx = StorageSqlx::<sqlx::Postgres>::extract_pg_trx,
     now_expr = "NOW()",
-    placeholder_fn = |idx: usize| -> String { format!("${}", idx) },
-    quote_col_fn = |col: &str| -> String { format!("\"{}\"", col) }
+    placeholder_fn = |idx: usize| -> String { format!("${idx}") },
+    quote_col_fn = |col: &str| -> String { format!("\"{col}\"") }
 }

@@ -370,7 +370,7 @@ mod sqlite_impl {
 
             let tx = txs.first().ok_or_else(|| WalletError::InvalidParameter {
                 parameter: "txid".to_string(),
-                must_be: format!("an existing transaction, '{}' not found", txid),
+                must_be: format!("an existing transaction, '{txid}' not found"),
             })?;
 
             // Update transaction status.
@@ -740,10 +740,7 @@ mod sqlite_impl {
                     use rand::RngCore;
                     let mut bytes = [0u8; 33];
                     rand::thread_rng().fill_bytes(&mut bytes);
-                    bytes
-                        .iter()
-                        .map(|b| format!("{:02x}", b))
-                        .collect::<String>()
+                    bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
                 } else {
                     self.storage_identity_key.clone()
                 };
@@ -803,7 +800,7 @@ mod sqlite_impl {
                 "users",
             ];
             for table in &tables {
-                let sql = format!("DELETE FROM {}", table);
+                let sql = format!("DELETE FROM {table}");
                 sqlx::query(&sql).execute(&self.write_pool).await?;
             }
             Ok(())

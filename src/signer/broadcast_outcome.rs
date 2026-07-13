@@ -730,7 +730,7 @@ mod tests {
                 assert_eq!(competing_txs, vec!["competing_tx_123"]);
                 assert!(!details.is_empty());
             }
-            other => panic!("Expected DoubleSpend, got {:?}", other),
+            other => panic!("Expected DoubleSpend, got {other:?}"),
         }
     }
 
@@ -775,7 +775,7 @@ mod tests {
                 panic!("Orphan mempool should NOT be classified as double-spend")
             }
             BroadcastOutcome::OrphanMempool { .. } => {} // correct
-            other => panic!("Expected OrphanMempool, got {:?}", other),
+            other => panic!("Expected OrphanMempool, got {other:?}"),
         }
     }
 }

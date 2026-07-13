@@ -41,7 +41,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
     let mut cursor = Cursor::new(&args.tx);
     let ab = Beef::from_binary(&mut cursor).map_err(|e| WalletError::InvalidParameter {
         parameter: "tx".to_string(),
-        must_be: format!("valid AtomicBEEF: {}", e),
+        must_be: format!("valid AtomicBEEF: {e}"),
     })?;
 
     // Validate merkle proofs via chain tracker
@@ -50,12 +50,12 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
         if let Some(bump_idx) = btx.bump_index {
             if let Some(bump) = ab.bumps.get(bump_idx) {
                 let merkle_root = bump.compute_root(Some(&btx.txid)).map_err(|e| {
-                    WalletError::Internal(format!("Failed to compute merkle root: {}", e))
+                    WalletError::Internal(format!("Failed to compute merkle root: {e}"))
                 })?;
                 let valid = chain_tracker
                     .is_valid_root_for_height(&merkle_root, bump.block_height)
                     .await
-                    .map_err(|e| WalletError::Internal(format!("Chain tracker error: {}", e)))?;
+                    .map_err(|e| WalletError::Internal(format!("Chain tracker error: {e}")))?;
                 if !valid {
                     return Err(WalletError::InvalidParameter {
                         parameter: "tx".to_string(),
@@ -89,11 +89,11 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
             .find(|t| t.txid == txid)
             .ok_or_else(|| WalletError::InvalidParameter {
                 parameter: "tx".to_string(),
-                must_be: format!("valid AtomicBEEF containing transaction {}", txid),
+                must_be: format!("valid AtomicBEEF containing transaction {txid}"),
             })?;
 
     let tx = beef_tx.tx.as_ref().ok_or_else(|| {
-        WalletError::Internal(format!("BEEF transaction {} has no raw tx data", txid))
+        WalletError::Internal(format!("BEEF transaction {txid} has no raw tx data"))
     })?;
 
     let num_outputs = tx.outputs.len();
@@ -264,7 +264,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
         if let Some(bump_idx) = beef_tx.bump_index {
             if let Some(bump) = ab.bumps.get(bump_idx) {
                 let merkle_root = bump.compute_root(Some(&txid)).map_err(|e| {
-                    WalletError::Internal(format!("Failed to compute merkle root: {}", e))
+                    WalletError::Internal(format!("Failed to compute merkle root: {e}"))
                 })?;
 
                 let now = Utc::now().naive_utc();
@@ -272,7 +272,7 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
 
                 let mut bump_bytes = Vec::new();
                 bump.to_binary(&mut bump_bytes).map_err(|e| {
-                    WalletError::Internal(format!("Failed to serialize merkle path: {}", e))
+                    WalletError::Internal(format!("Failed to serialize merkle path: {e}"))
                 })?;
 
                 // Check if ProvenTx already exists (may have been inserted above)

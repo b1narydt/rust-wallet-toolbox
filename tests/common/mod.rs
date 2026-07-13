@@ -322,7 +322,7 @@ pub async fn seed_outputs(
                 basket_id: Some(basket_id),
                 spendable: true,
                 change: false,
-                output_description: Some(format!("seed output {}", i)),
+                output_description: Some(format!("seed output {i}")),
                 vout: i as i32,
                 satoshis: satoshis as i64,
                 provided_by: StorageProvidedBy::You,

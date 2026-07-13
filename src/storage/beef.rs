@@ -221,9 +221,8 @@ async fn collect_tx_recursive(
     // Parse raw_tx to extract input txids for recursion
     let bsv_tx = {
         let mut cursor = Cursor::new(&raw_tx);
-        BsvTransaction::from_binary(&mut cursor).map_err(|e| {
-            WalletError::Internal(format!("Failed to parse raw_tx for {}: {}", txid, e))
-        })?
+        BsvTransaction::from_binary(&mut cursor)
+            .map_err(|e| WalletError::Internal(format!("Failed to parse raw_tx for {txid}: {e}")))?
     };
 
     // Recurse into each input's source txid
@@ -329,7 +328,7 @@ fn build_beef_from_collected(collected: Vec<CollectedTx>) -> WalletResult<Option
 
     let mut buf = Vec::new();
     beef.to_binary(&mut buf)
-        .map_err(|e| WalletError::Internal(format!("Failed to serialize BEEF: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to serialize BEEF: {e}")))?;
 
     Ok(Some(buf))
 }
@@ -448,9 +447,8 @@ async fn collect_tx_recursive_reader<S: StorageReader + ?Sized>(
 
     let bsv_tx = {
         let mut cursor = Cursor::new(&raw_tx);
-        BsvTransaction::from_binary(&mut cursor).map_err(|e| {
-            WalletError::Internal(format!("Failed to parse raw_tx for {}: {}", txid, e))
-        })?
+        BsvTransaction::from_binary(&mut cursor)
+            .map_err(|e| WalletError::Internal(format!("Failed to parse raw_tx for {txid}: {e}")))?
     };
 
     for input in &bsv_tx.inputs {

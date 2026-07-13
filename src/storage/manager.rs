@@ -1845,15 +1845,14 @@ impl WalletStorageManager {
         let new_active_idx = new_active_idx.ok_or_else(|| WalletError::InvalidParameter {
             parameter: "storage_identity_key".to_string(),
             must_be: format!(
-                "registered with this WalletStorageManager. {} does not match any managed store.",
-                storage_identity_key
+                "registered with this WalletStorageManager. {storage_identity_key} does not match any managed store."
             ),
         })?;
 
         // Step 2: Early return if already active and enabled
         let current_active_sik = self.get_active_store().await?;
         if current_active_sik == storage_identity_key && self.is_active_enabled().await {
-            return Ok(format!("{} unchanged\n", storage_identity_key));
+            return Ok(format!("{storage_identity_key} unchanged\n"));
         }
 
         let log = {
@@ -2070,10 +2069,7 @@ impl WalletStorageManager {
             self.do_make_available().await?;
 
             if let Some(cb) = prog_log {
-                let msg = format!(
-                    "set_active: complete, new active is {}",
-                    storage_identity_key
-                );
+                let msg = format!("set_active: complete, new active is {storage_identity_key}");
                 let s = cb(&msg);
                 log.push_str(&s);
                 log.push('\n');

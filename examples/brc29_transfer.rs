@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::from_filename("examples/.env").ok();
 
     let chain = get_chain();
-    println!("Chain: {}", chain);
+    println!("Chain: {chain}");
 
     // -----------------------------------------------------------------------
     // 1. Load both private keys and build wallets
@@ -83,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let sender_balance = sender_setup.wallet.balance(None).await?;
     println!("\nSender identity key: {}", sender_setup.identity_key);
-    println!("Sender balance:      {} satoshis", sender_balance);
+    println!("Sender balance:      {sender_balance} satoshis");
     println!("Receiver identity key: {}", receiver_setup.identity_key);
 
     if sender_balance < 1000 {
@@ -98,8 +98,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let derivation_suffix = random_base64(8);
 
     println!("\nBRC-29 derivation:");
-    println!("  Prefix: {}", derivation_prefix);
-    println!("  Suffix: {}", derivation_suffix);
+    println!("  Prefix: {derivation_prefix}");
+    println!("  Suffix: {derivation_suffix}");
 
     // -----------------------------------------------------------------------
     // 3. Create BRC-29 locking script
@@ -149,7 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let txid = result.txid.as_deref().unwrap_or("(none)");
-    println!("  TXID: {}", txid);
+    println!("  TXID: {txid}");
 
     let tx_bytes = result
         .tx
@@ -190,8 +190,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let receiver_balance_after = receiver_setup.wallet.balance(None).await?;
 
     println!("\nUpdated balances:");
-    println!("  Sender:   {} satoshis", sender_balance_after);
-    println!("  Receiver: {} satoshis", receiver_balance_after);
+    println!("  Sender:   {sender_balance_after} satoshis");
+    println!("  Receiver: {receiver_balance_after} satoshis");
 
     Ok(())
 }

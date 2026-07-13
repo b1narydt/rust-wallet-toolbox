@@ -36,7 +36,7 @@ async fn test_builder_missing_chain_returns_error() {
     match result {
         Err(e) => {
             let err = e.to_string();
-            assert!(err.contains("chain"), "Expected chain error, got: {}", err);
+            assert!(err.contains("chain"), "Expected chain error, got: {err}");
         }
         Ok(_) => panic!("Expected error for missing chain"),
     }
@@ -50,8 +50,7 @@ async fn test_builder_missing_root_key_returns_error() {
             let err = e.to_string();
             assert!(
                 err.contains("root_key"),
-                "Expected root_key error, got: {}",
-                err
+                "Expected root_key error, got: {err}"
             );
         }
         Ok(_) => panic!("Expected error for missing root_key"),
@@ -71,8 +70,7 @@ async fn test_builder_missing_storage_returns_error() {
             let err = e.to_string();
             assert!(
                 err.contains("storage"),
-                "Expected storage error, got: {}",
-                err
+                "Expected storage error, got: {err}"
             );
         }
         Ok(_) => panic!("Expected error for missing storage"),

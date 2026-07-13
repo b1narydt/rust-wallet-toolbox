@@ -796,7 +796,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<User>> {
             let (where_clause, binds) = build_users_where(args);
-            let sql = format!("SELECT * FROM users{}", where_clause);
+            let sql = format!("SELECT * FROM users{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -806,7 +806,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_users_where(args);
-            let sql = format!("SELECT COUNT(*) FROM users{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM users{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -816,7 +816,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<Certificate>> {
             let (where_clause, binds) = build_certificates_where(args);
-            let sql = format!("SELECT * FROM certificates{}", where_clause);
+            let sql = format!("SELECT * FROM certificates{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -826,7 +826,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_certificates_where(args);
-            let sql = format!("SELECT COUNT(*) FROM certificates{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM certificates{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -836,7 +836,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<CertificateField>> {
             let (where_clause, binds) = build_certificate_fields_where(args);
-            let sql = format!("SELECT * FROM certificate_fields{}", where_clause);
+            let sql = format!("SELECT * FROM certificate_fields{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -846,7 +846,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_certificate_fields_where(args);
-            let sql = format!("SELECT COUNT(*) FROM certificate_fields{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM certificate_fields{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -856,7 +856,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<Commission>> {
             let (where_clause, binds) = build_commissions_where(args);
-            let sql = format!("SELECT * FROM commissions{}", where_clause);
+            let sql = format!("SELECT * FROM commissions{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -866,7 +866,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_commissions_where(args);
-            let sql = format!("SELECT COUNT(*) FROM commissions{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM commissions{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -876,7 +876,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<MonitorEvent>> {
             let (where_clause, binds) = build_monitor_events_where(args);
-            let sql = format!("SELECT * FROM monitor_events{}", where_clause);
+            let sql = format!("SELECT * FROM monitor_events{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -886,7 +886,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_monitor_events_where(args);
-            let sql = format!("SELECT COUNT(*) FROM monitor_events{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM monitor_events{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -896,7 +896,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<OutputBasket>> {
             let (where_clause, binds) = build_output_baskets_where(args);
-            let sql = format!("SELECT * FROM output_baskets{}", where_clause);
+            let sql = format!("SELECT * FROM output_baskets{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -906,7 +906,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_output_baskets_where(args);
-            let sql = format!("SELECT COUNT(*) FROM output_baskets{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM output_baskets{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -916,7 +916,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<OutputTagMap>> {
             let (where_clause, binds) = build_output_tag_maps_where(args);
-            let sql = format!("SELECT * FROM output_tags_map{}", where_clause);
+            let sql = format!("SELECT * FROM output_tags_map{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -926,7 +926,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_output_tag_maps_where(args);
-            let sql = format!("SELECT COUNT(*) FROM output_tags_map{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM output_tags_map{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -936,7 +936,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<OutputTag>> {
             let (where_clause, binds) = build_output_tags_where(args);
-            let sql = format!("SELECT * FROM output_tags{}", where_clause);
+            let sql = format!("SELECT * FROM output_tags{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -946,7 +946,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_output_tags_where(args);
-            let sql = format!("SELECT COUNT(*) FROM output_tags{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM output_tags{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -956,7 +956,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<Output>> {
             let (where_clause, binds) = build_outputs_where(args);
-            let sql = format!("SELECT * FROM outputs{}", where_clause);
+            let sql = format!("SELECT * FROM outputs{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -966,7 +966,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_outputs_where(args);
-            let sql = format!("SELECT COUNT(*) FROM outputs{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM outputs{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -976,7 +976,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<ProvenTx>> {
             let (where_clause, binds) = build_proven_txs_where(args);
-            let sql = format!("SELECT * FROM proven_txs{}", where_clause);
+            let sql = format!("SELECT * FROM proven_txs{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -986,7 +986,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_proven_txs_where(args);
-            let sql = format!("SELECT COUNT(*) FROM proven_txs{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM proven_txs{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -996,7 +996,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<ProvenTxReq>> {
             let (where_clause, binds) = build_proven_tx_reqs_where(args);
-            let sql = format!("SELECT * FROM proven_tx_reqs{}", where_clause);
+            let sql = format!("SELECT * FROM proven_tx_reqs{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1006,7 +1006,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_proven_tx_reqs_where(args);
-            let sql = format!("SELECT COUNT(*) FROM proven_tx_reqs{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM proven_tx_reqs{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1016,7 +1016,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<Settings>> {
             let (where_clause, binds) = build_settings_where(args);
-            let sql = format!("SELECT * FROM settings{}", where_clause);
+            let sql = format!("SELECT * FROM settings{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1026,7 +1026,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_settings_where(args);
-            let sql = format!("SELECT COUNT(*) FROM settings{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM settings{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1036,7 +1036,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<SyncState>> {
             let (where_clause, binds) = build_sync_states_where(args);
-            let sql = format!("SELECT * FROM sync_states{}", where_clause);
+            let sql = format!("SELECT * FROM sync_states{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1046,7 +1046,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_sync_states_where(args);
-            let sql = format!("SELECT COUNT(*) FROM sync_states{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM sync_states{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1056,7 +1056,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<Transaction>> {
             let (where_clause, binds) = build_transactions_where(args);
-            let sql = format!("SELECT * FROM transactions{}", where_clause);
+            let sql = format!("SELECT * FROM transactions{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1066,7 +1066,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_transactions_where(args);
-            let sql = format!("SELECT COUNT(*) FROM transactions{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM transactions{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1076,7 +1076,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<TxLabelMap>> {
             let (where_clause, binds) = build_tx_label_maps_where(args);
-            let sql = format!("SELECT * FROM tx_labels_map{}", where_clause);
+            let sql = format!("SELECT * FROM tx_labels_map{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1086,7 +1086,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_tx_label_maps_where(args);
-            let sql = format!("SELECT COUNT(*) FROM tx_labels_map{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM tx_labels_map{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1096,7 +1096,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<TxLabel>> {
             let (where_clause, binds) = build_tx_labels_where(args);
-            let sql = format!("SELECT * FROM tx_labels{}", where_clause);
+            let sql = format!("SELECT * FROM tx_labels{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1106,7 +1106,7 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
             let (where_clause, binds) = build_tx_labels_where(args);
-            let sql = format!("SELECT COUNT(*) FROM tx_labels{}", where_clause);
+            let sql = format!("SELECT COUNT(*) FROM tx_labels{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
 

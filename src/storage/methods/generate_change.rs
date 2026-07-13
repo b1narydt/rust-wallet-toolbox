@@ -123,7 +123,7 @@ fn validate_params(args: &GenerateChangeSdkArgs) -> WalletResult<Option<usize>> 
         if o.satoshis == MAX_POSSIBLE_SATOSHIS {
             if has_max_possible_output.is_some() {
                 return Err(WalletError::InvalidParameter {
-                    parameter: format!("fixed_outputs[{}].satoshis", i),
+                    parameter: format!("fixed_outputs[{i}].satoshis"),
                     must_be:
                         "valid satoshis amount. Only one 'maxPossibleSatoshis' output allowed."
                             .to_string(),
@@ -496,7 +496,7 @@ pub fn generate_change_sdk(
         let more_needed = -fee_excess_now;
         release_all(&mut allocated_change_inputs, &mut storage);
         return Err(WalletError::InsufficientFunds {
-            message: format!("Insufficient funds: need {} more satoshis", more_needed),
+            message: format!("Insufficient funds: need {more_needed} more satoshis"),
             total_satoshis_needed: total_needed,
             more_satoshis_needed: more_needed,
         });
@@ -567,8 +567,7 @@ pub fn generate_change_sdk(
     );
     if actual_fee != expected_fee {
         return Err(WalletError::Internal(format!(
-            "generateChangeSdk error: required fee error {} !== {}",
-            expected_fee, actual_fee
+            "generateChangeSdk error: required fee error {expected_fee} !== {actual_fee}"
         )));
     }
 
@@ -684,7 +683,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             WalletError::InsufficientFunds { .. } => {}
-            other => panic!("Expected InsufficientFunds, got {:?}", other),
+            other => panic!("Expected InsufficientFunds, got {other:?}"),
         }
     }
 

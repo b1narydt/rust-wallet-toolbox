@@ -147,8 +147,7 @@ impl Wallet {
             return Err(WalletError::InvalidParameter {
                 parameter: "key_deriver".to_string(),
                 must_be: format!(
-                    "consistent with storage auth_id. key_deriver identity_key={} but storage auth_id={}",
-                    identity_key_hex, storage_auth_id
+                    "consistent with storage auth_id. key_deriver identity_key={identity_key_hex} but storage auth_id={storage_auth_id}"
                 ),
             });
         }
@@ -159,7 +158,7 @@ impl Wallet {
 
         // Derive user_party
         let root_pub_hex = args.key_deriver.root_key().to_public_key().to_der_hex();
-        let user_party = format!("user {}", root_pub_hex);
+        let user_party = format!("user {root_pub_hex}");
 
         // Initialize BeefParty
         let beef = BeefParty::new([user_party.clone()]);
@@ -293,7 +292,7 @@ impl Wallet {
         self.storage.destroy().await?;
         if let Some(ref pkm) = self.privileged_key_manager {
             pkm.destroy_key().await.map_err(|e| {
-                WalletError::Internal(format!("Failed to destroy privileged key: {}", e))
+                WalletError::Internal(format!("Failed to destroy privileged key: {e}"))
             })?;
         }
         Ok(())
@@ -621,9 +620,9 @@ fn random_base64(n: usize) -> String {
 
 fn to_sdk_error(e: WalletError) -> SdkWalletError {
     match e {
-        WalletError::InvalidParameter { parameter, must_be } => SdkWalletError::InvalidParameter(
-            format!("The {} parameter must be {}", parameter, must_be),
-        ),
+        WalletError::InvalidParameter { parameter, must_be } => {
+            SdkWalletError::InvalidParameter(format!("The {parameter} parameter must be {must_be}"))
+        }
         WalletError::NotImplemented(msg) => SdkWalletError::NotImplemented(msg),
         WalletError::InvalidOperation(msg) => SdkWalletError::Internal(msg),
         _ => SdkWalletError::Internal(e.to_string()),
@@ -1259,8 +1258,7 @@ impl WalletInterface for Wallet {
                         let mut cursor = Cursor::new(&beef_bytes);
                         let parsed = Beef::from_binary(&mut cursor).map_err(|e| {
                             to_sdk_error(crate::error::WalletError::Internal(format!(
-                                "Failed to parse BEEF for {}: {}",
-                                txid, e
+                                "Failed to parse BEEF for {txid}: {e}"
                             )))
                         })?;
                         // Merge bumps
@@ -1284,8 +1282,7 @@ impl WalletInterface for Wallet {
                     let mut buf = Vec::new();
                     merged_beef.to_binary(&mut buf).map_err(|e| {
                         to_sdk_error(crate::error::WalletError::Internal(format!(
-                            "Failed to serialize merged BEEF: {}",
-                            e
+                            "Failed to serialize merged BEEF: {e}"
                         )))
                     })?;
                     result.beef = Some(buf);
@@ -1400,9 +1397,9 @@ impl WalletInterface for Wallet {
 
         // Convert AcquireCertificateResult to SDK Certificate
         let subject_pk = PublicKey::from_string(&result.subject)
-            .map_err(|e| SdkWalletError::Internal(format!("Invalid subject key: {}", e)))?;
+            .map_err(|e| SdkWalletError::Internal(format!("Invalid subject key: {e}")))?;
         let certifier_pk = PublicKey::from_string(&result.certifier)
-            .map_err(|e| SdkWalletError::Internal(format!("Invalid certifier key: {}", e)))?;
+            .map_err(|e| SdkWalletError::Internal(format!("Invalid certifier key: {e}")))?;
 
         Ok(Certificate {
             cert_type: args.cert_type,

@@ -47,7 +47,7 @@ fn transaction_status_roundtrips_through_serde_json() {
     for status in statuses {
         let json = serde_json::to_string(&status).unwrap();
         let parsed: TransactionStatus = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, status, "Failed roundtrip for {:?}", status);
+        assert_eq!(parsed, status, "Failed roundtrip for {status:?}");
     }
 }
 

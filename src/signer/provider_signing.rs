@@ -223,7 +223,7 @@ pub async fn complete_signed_transaction_with_provider(
         if vin >= tx.inputs.len() {
             return Err(WalletError::InvalidParameter {
                 parameter: "spends".to_string(),
-                must_be: format!("valid input index. vin {} out of range", vin),
+                must_be: format!("valid input index. vin {vin} out of range"),
             });
         }
         tx.inputs[vin].unlocking_script =
@@ -239,7 +239,7 @@ pub async fn complete_signed_transaction_with_provider(
         if vin >= tx.inputs.len() {
             return Err(WalletError::InvalidParameter {
                 parameter: "pendingInputs".to_string(),
-                must_be: format!("valid input index. vin {} out of range", vin),
+                must_be: format!("valid input index. vin {vin} out of range"),
             });
         }
 

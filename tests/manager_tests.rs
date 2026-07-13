@@ -871,8 +871,7 @@ mod manager_tests {
             let remaining_conflicts = manager.get_conflicting_stores().await;
             assert!(
                 remaining_conflicts.is_empty(),
-                "Expected no conflicts after set_active, got: {:?}",
-                remaining_conflicts
+                "Expected no conflicts after set_active, got: {remaining_conflicts:?}"
             );
 
             // New active should be the target sik
@@ -1068,8 +1067,7 @@ mod manager_tests {
         let backups = manager.get_backup_stores().await;
         assert!(
             backups.contains(&sik_a),
-            "After swap1: swapped-out store (sik_a) must appear in backup_stores; got {:?}",
-            backups
+            "After swap1: swapped-out store (sik_a) must appear in backup_stores; got {backups:?}"
         );
 
         // Timestamp must advance in the backup-source store (store_a was the source of
@@ -1096,8 +1094,7 @@ mod manager_tests {
         let backups2 = manager.get_backup_stores().await;
         assert!(
             backups2.contains(&sik_b),
-            "After swap2: swapped-out store (sik_b) must appear in backup_stores; got {:?}",
-            backups2
+            "After swap2: swapped-out store (sik_b) must appear in backup_stores; got {backups2:?}"
         );
 
         let user_after_swap2 = manager.get_active_user().await.unwrap();

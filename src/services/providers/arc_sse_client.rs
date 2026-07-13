@@ -97,7 +97,7 @@ impl ArcSseClient {
                 .header("x-callback-token", &self.callback_token);
 
             if let Some(ref api_key) = self.arc_api_key {
-                request = request.header("Authorization", format!("Bearer {}", api_key));
+                request = request.header("Authorization", format!("Bearer {api_key}"));
             }
 
             if let Some(ref last_id) = self.last_event_id {

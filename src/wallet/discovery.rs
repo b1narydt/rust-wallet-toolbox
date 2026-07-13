@@ -210,7 +210,7 @@ async fn query_overlay(
     let answer = resolver
         .query(&question, None)
         .await
-        .map_err(|e| WalletError::Internal(format!("Overlay lookup failed: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Overlay lookup failed: {e}")))?;
 
     parse_results(answer).await
 }
@@ -264,11 +264,11 @@ async fn parse_single_output(
 ) -> Result<VerifiableCertificate, WalletError> {
     // Parse BEEF and extract the target transaction using SDK 0.1.6 into_transaction
     let beef = Beef::from_binary(&mut std::io::Cursor::new(&output.beef))
-        .map_err(|e| WalletError::Internal(format!("Failed to parse BEEF: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to parse BEEF: {e}")))?;
 
-    let tx = beef.into_transaction().map_err(|e| {
-        WalletError::Internal(format!("Failed to get transaction from BEEF: {}", e))
-    })?;
+    let tx = beef
+        .into_transaction()
+        .map_err(|e| WalletError::Internal(format!("Failed to get transaction from BEEF: {e}")))?;
 
     // Get the output at the specified index
     let tx_output = tx
@@ -280,7 +280,7 @@ async fn parse_single_output(
 
     // Decode PushDrop fields from the locking script using SDK 0.1.6 PushDrop::decode
     let push_drop = bsv::script::templates::push_drop::decode(&tx_output.locking_script)
-        .map_err(|e| WalletError::Internal(format!("PushDrop decode failed: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("PushDrop decode failed: {e}")))?;
     let fields = push_drop.fields;
 
     if fields.is_empty() {
@@ -291,10 +291,10 @@ async fn parse_single_output(
 
     // Parse JSON certificate from the first field
     let cert_json = String::from_utf8(fields[0].clone())
-        .map_err(|e| WalletError::Internal(format!("Invalid UTF-8 in certificate field: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Invalid UTF-8 in certificate field: {e}")))?;
 
     let cert_data: serde_json::Value = serde_json::from_str(&cert_json)
-        .map_err(|e| WalletError::Internal(format!("Invalid JSON in certificate: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Invalid JSON in certificate: {e}")))?;
 
     // Build the SDK Certificate from parsed JSON
     let cert_type_str = cert_data
@@ -334,9 +334,9 @@ async fn parse_single_output(
     let serial_bytes = base64_decode_to_32(serial_str);
 
     let subject = PublicKey::from_string(subject_str)
-        .map_err(|e| WalletError::Internal(format!("Invalid subject key: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Invalid subject key: {e}")))?;
     let certifier = PublicKey::from_string(certifier_str)
-        .map_err(|e| WalletError::Internal(format!("Invalid certifier key: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Invalid certifier key: {e}")))?;
 
     let sdk_cert = SdkCertificate {
         cert_type: bsv::wallet::interfaces::CertificateType(cert_type_bytes),
@@ -355,13 +355,13 @@ async fn parse_single_output(
     let decrypted = verifiable
         .decrypt_fields(anyone_wallet)
         .await
-        .map_err(|e| WalletError::Internal(format!("Field decryption failed: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Field decryption failed: {e}")))?;
     verifiable.decrypted_fields = Some(decrypted);
 
     // Verify the certificate signature
     let sig_valid = AuthCertificate::verify(&verifiable.certificate, anyone_wallet)
         .await
-        .map_err(|e| WalletError::Internal(format!("Certificate verification failed: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Certificate verification failed: {e}")))?;
 
     if !sig_valid {
         return Err(WalletError::Internal(

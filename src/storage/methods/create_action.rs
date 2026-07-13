@@ -29,7 +29,7 @@ use crate::types::StorageProvidedBy;
 
 /// Simple hex encoding (avoids hex crate dependency).
 fn bytes_to_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Simple hex decoding (avoids hex crate dependency).
@@ -250,7 +250,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             // Verify spendable
             if !output.spendable {
                 return Err(WalletError::InvalidParameter {
-                    parameter: format!("inputs[{}]", vin),
+                    parameter: format!("inputs[{vin}]"),
                     must_be: format!(
                         "spendable output. output {}:{} is not spendable.",
                         input.outpoint.txid, input.outpoint.vout
@@ -719,7 +719,7 @@ mod tests {
                 basket_id: Some(basket.basket_id),
                 spendable: true,
                 change: true,
-                output_description: Some(format!("change utxo {}", i)),
+                output_description: Some(format!("change utxo {i}")),
                 vout: i,
                 satoshis: 10_000 + (i as i64 * 5_000),
                 provided_by: StorageProvidedBy::Storage,
@@ -730,7 +730,7 @@ mod tests {
                 ),
                 sender_identity_key: None,
                 derivation_prefix: Some("testprefix".to_string()),
-                derivation_suffix: Some(format!("suffix{}", i)),
+                derivation_suffix: Some(format!("suffix{i}")),
                 custom_instructions: None,
                 spent_by: None,
                 sequence_number: None,

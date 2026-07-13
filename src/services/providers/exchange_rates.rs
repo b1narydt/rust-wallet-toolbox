@@ -40,11 +40,11 @@ pub async fn fetch_bsv_exchange_rate(client: &reqwest::Client) -> WalletResult<f
 
     let response =
         client.get(url).send().await.map_err(|e| {
-            WalletError::Internal(format!("Failed to fetch BSV exchange rate: {}", e))
+            WalletError::Internal(format!("Failed to fetch BSV exchange rate: {e}"))
         })?;
 
     let data: WocExchangeRateResponse = response.json().await.map_err(|e| {
-        WalletError::Internal(format!("Failed to parse BSV exchange rate response: {}", e))
+        WalletError::Internal(format!("Failed to parse BSV exchange rate response: {e}"))
     })?;
 
     Ok(data.rate)
@@ -85,19 +85,16 @@ async fn fetch_from_exchangeratesapi(
 
     let symbols_csv = symbols.join(",");
     let url = format!(
-        "https://api.exchangeratesapi.io/v1/latest?access_key={}&symbols={}",
-        api_key, symbols_csv
+        "https://api.exchangeratesapi.io/v1/latest?access_key={api_key}&symbols={symbols_csv}"
     );
 
-    let response = client.get(&url).send().await.map_err(|e| {
-        WalletError::Internal(format!("Failed to fetch fiat exchange rates: {}", e))
-    })?;
+    let response =
+        client.get(&url).send().await.map_err(|e| {
+            WalletError::Internal(format!("Failed to fetch fiat exchange rates: {e}"))
+        })?;
 
     let data: ExchangeRatesIoResponse = response.json().await.map_err(|e| {
-        WalletError::Internal(format!(
-            "Failed to parse fiat exchange rate response: {}",
-            e
-        ))
+        WalletError::Internal(format!("Failed to parse fiat exchange rate response: {e}"))
     })?;
 
     if !data.success {
@@ -132,7 +129,7 @@ async fn fetch_from_exchangeratesapi(
             1.0
         } else {
             *data.rates.get(currency.as_str()).ok_or_else(|| {
-                WalletError::BadRequest(format!("exchangeratesapi missing rate for '{}'", currency))
+                WalletError::BadRequest(format!("exchangeratesapi missing rate for '{currency}'"))
             })?
         };
 
@@ -159,7 +156,9 @@ pub async fn fetch_fiat_exchange_rate(
     let targets = vec![currency.to_string()];
     let rates = fetch_fiat_exchange_rates(client, api_key, base, &targets).await?;
 
-    rates.rates.get(currency).copied().ok_or_else(|| {
-        WalletError::Internal(format!("Rate for {} not found in response", currency))
-    })
+    rates
+        .rates
+        .get(currency)
+        .copied()
+        .ok_or_else(|| WalletError::Internal(format!("Rate for {currency} not found in response")))
 }

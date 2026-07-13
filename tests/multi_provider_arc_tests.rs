@@ -163,8 +163,7 @@ mod multi_provider_arc {
         assert_eq!(
             stores_via_a.len(),
             2,
-            "wallet_a must observe the new provider via the shared Arc; got {:?}",
-            stores_via_a
+            "wallet_a must observe the new provider via the shared Arc; got {stores_via_a:?}"
         );
         assert_eq!(
             stores_via_a, stores_via_b,
@@ -428,8 +427,7 @@ mod multi_provider_arc {
         // least some rows must have been synced to A.
         assert!(
             inserts > 0,
-            "update_backups after set_active must replicate new rows to backups (inserts={})",
-            inserts
+            "update_backups after set_active must replicate new rows to backups (inserts={inserts})"
         );
 
         // Verify via direct query on A that the newly-seeded outputs made it back

@@ -151,8 +151,7 @@ impl TaskUnFail {
                                     )
                                     .await;
                                 log.push_str(&format!(
-                                    "{}transaction {} status is now 'unproven'\n",
-                                    inner_pad, id
+                                    "{inner_pad}transaction {id} status is now 'unproven'\n"
                                 ));
 
                                 // Step 3: Parse raw_tx and match inputs to user's outputs
@@ -213,8 +212,7 @@ impl TaskUnFail {
                                                 }
                                                 _ => {
                                                     log.push_str(&format!(
-                                                        "{}input {} not matched to user's outputs\n",
-                                                        inner_pad, vin
+                                                        "{inner_pad}input {vin} not matched to user's outputs\n"
                                                     ));
                                                 }
                                             }
@@ -377,7 +375,7 @@ mod tests {
     #[test]
     fn test_script_extraction_logic() {
         // Simulate extracting script bytes from raw_tx using offset/length
-        let raw_tx = vec![0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let raw_tx = [0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9];
         let script_offset: usize = 3;
         let script_length: usize = 4;
         let end = script_offset + script_length;

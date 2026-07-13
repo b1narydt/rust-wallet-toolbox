@@ -26,7 +26,7 @@ use crate::wallet::types::AuthId;
 
 /// Simple bytes-to-hex encoding.
 fn bytes_to_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Parse an OutpointString ("txid.vout") into a StorageOutPoint.
@@ -158,9 +158,8 @@ pub async fn signer_create_action(
     if args.is_sign_action {
         // Serialize unsigned tx for later recovery
         let mut tx_bytes = Vec::new();
-        tx.to_binary(&mut tx_bytes).map_err(|e| {
-            WalletError::Internal(format!("Failed to serialize unsigned tx: {}", e))
-        })?;
+        tx.to_binary(&mut tx_bytes)
+            .map_err(|e| WalletError::Internal(format!("Failed to serialize unsigned tx: {e}")))?;
 
         let pending = PendingSignAction {
             reference: reference.clone(),
@@ -177,10 +176,10 @@ pub async fn signer_create_action(
         let no_send_change = if args.is_no_send {
             let txid = tx
                 .id()
-                .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {}", e)))?;
+                .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {e}")))?;
             dcr.no_send_change_output_vouts
                 .as_ref()
-                .map(|vouts| vouts.iter().map(|v| format!("{}.{}", txid, v)).collect())
+                .map(|vouts| vouts.iter().map(|v| format!("{txid}.{v}")).collect())
                 .unwrap_or_default()
         } else {
             vec![]
@@ -212,7 +211,7 @@ pub async fn signer_create_action(
 
     let txid = tx
         .id()
-        .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {e}")))?;
 
     // Build BEEF, verify unlock scripts, then serialize
     let beef = build_beef(&tx, &dcr.input_beef)?;
@@ -222,7 +221,7 @@ pub async fn signer_create_action(
     let no_send_change = if args.is_no_send {
         dcr.no_send_change_output_vouts
             .as_ref()
-            .map(|vouts| vouts.iter().map(|v| format!("{}.{}", txid, v)).collect())
+            .map(|vouts| vouts.iter().map(|v| format!("{txid}.{v}")).collect())
             .unwrap_or_default()
     } else {
         vec![]
@@ -337,15 +336,15 @@ pub(crate) fn build_beef(
     if let Some(ref input_beef_bytes) = input_beef {
         if !input_beef_bytes.is_empty() {
             beef.merge_beef_from_binary(input_beef_bytes)
-                .map_err(|e| WalletError::Internal(format!("Failed to merge input BEEF: {}", e)))?;
+                .map_err(|e| WalletError::Internal(format!("Failed to merge input BEEF: {e}")))?;
         }
     }
 
     let mut raw_tx = Vec::new();
     tx.to_binary(&mut raw_tx)
-        .map_err(|e| WalletError::Internal(format!("Failed to serialize tx: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to serialize tx: {e}")))?;
     beef.merge_raw_tx(&raw_tx, None)
-        .map_err(|e| WalletError::Internal(format!("Failed to merge raw tx: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to merge raw tx: {e}")))?;
 
     Ok(beef)
 }
@@ -353,7 +352,7 @@ pub(crate) fn build_beef(
 /// Serialize a Beef as Atomic BEEF bytes targeting a specific txid.
 pub(crate) fn serialize_beef_atomic(beef: &Beef, txid: &str) -> WalletResult<Vec<u8>> {
     beef.to_binary_atomic(txid)
-        .map_err(|e| WalletError::Internal(format!("Failed to serialize Atomic BEEF: {}", e)))
+        .map_err(|e| WalletError::Internal(format!("Failed to serialize Atomic BEEF: {e}")))
 }
 
 /// Build Atomic BEEF bytes containing the transaction and its input proofs.
@@ -367,7 +366,7 @@ pub(crate) fn build_beef_bytes(
 ) -> WalletResult<Vec<u8>> {
     let txid = tx
         .id()
-        .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {e}")))?;
     let beef = build_beef(tx, input_beef)?;
     serialize_beef_atomic(&beef, &txid)
 }

@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::from_filename("examples/.env").ok();
 
     let chain = get_chain();
-    println!("Chain: {}", chain);
+    println!("Chain: {chain}");
 
     // -----------------------------------------------------------------------
     // 1. Load private key and build wallet
@@ -86,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3. Also demonstrate the quick balance() convenience method
     // -----------------------------------------------------------------------
     let balance = setup.wallet.balance(None).await?;
-    println!("\nQuick balance check: {} satoshis", balance);
+    println!("\nQuick balance check: {balance} satoshis");
 
     Ok(())
 }

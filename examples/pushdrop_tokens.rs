@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::from_filename("examples/.env").ok();
 
     let chain = get_chain();
-    println!("Chain: {}", chain);
+    println!("Chain: {chain}");
 
     // -----------------------------------------------------------------------
     // 1. Load private key and build wallet
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Identity key: {}", setup.identity_key);
 
     let balance = setup.wallet.balance(None).await?;
-    println!("  Balance:      {} satoshis", balance);
+    println!("  Balance:      {balance} satoshis");
 
     if balance < 100 {
         eprintln!("\nBalance too low to mint a PushDrop token.");
@@ -99,7 +99,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nMinting PushDrop token...");
     println!("  Data fields: {} fields", data_fields.len());
-    println!("  Locked to wallet-derived key: protocol={:?} keyID={key_id}", protocol.protocol);
+    println!(
+        "  Locked to wallet-derived key: protocol={:?} keyID={key_id}",
+        protocol.protocol
+    );
 
     let locking_script = PushDrop::new(&setup.wallet, None)
         .lock(
@@ -152,8 +155,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let txid = mint_result.txid.as_deref().unwrap_or("(none)");
     println!("\n  Minted token!");
-    println!("  TXID: {}", txid);
-    println!("  Outpoint: {}.0", txid);
+    println!("  TXID: {txid}");
+    println!("  Outpoint: {txid}.0");
 
     // -----------------------------------------------------------------------
     // 4. Print token info and redemption instructions
@@ -170,7 +173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n--- Redemption Info ---");
     println!("To redeem this token in a future transaction:");
-    println!("  1. Reference outpoint: {}.0", txid);
+    println!("  1. Reference outpoint: {txid}.0");
     println!("  2. Redeem via the wallet (protocol \"example pushdrop token\", keyID {key_id}) — no loose key to save");
     println!("  3. Create a transaction input spending that outpoint");
     println!("  4. The PushDrop template will produce the unlocking script");
@@ -179,14 +182,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Embedded Data Fields ---");
     for (i, field) in data_fields.iter().enumerate() {
         if let Ok(s) = std::str::from_utf8(field) {
-            println!("  Field {}: {:?} (text: \"{}\")", i, field, s);
+            println!("  Field {i}: {field:?} (text: \"{s}\")");
         } else {
-            println!("  Field {}: {:?}", i, field);
+            println!("  Field {i}: {field:?}");
         }
     }
 
     let balance_after = setup.wallet.balance(None).await?;
-    println!("\nBalance after mint: {} satoshis", balance_after);
+    println!("\nBalance after mint: {balance_after} satoshis");
 
     Ok(())
 }

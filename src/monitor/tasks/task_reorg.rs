@@ -144,7 +144,7 @@ impl WalletMonitorTask for TaskReorg {
             let proven_txs = match self.storage.find_proven_txs(&find_args).await {
                 Ok(txs) => txs,
                 Err(e) => {
-                    log.push_str(&format!("    error finding proven txs: {}\n", e));
+                    log.push_str(&format!("    error finding proven txs: {e}\n"));
                     continue;
                 }
             };

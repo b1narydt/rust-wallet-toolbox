@@ -137,8 +137,7 @@ mod signer_flow_tests {
         let max = *max_concurrent.lock().await;
         assert_eq!(
             max, 1,
-            "spend_lock failed to serialize: observed {} concurrent holders",
-            max
+            "spend_lock failed to serialize: observed {max} concurrent holders"
         );
     }
 
@@ -195,8 +194,7 @@ mod signer_flow_tests {
         let max = *max_concurrent.lock().await;
         assert_eq!(
             max, 1,
-            "spend_lock is not shared across Arc<Manager> clones: observed {} concurrent holders",
-            max
+            "spend_lock is not shared across Arc<Manager> clones: observed {max} concurrent holders"
         );
     }
 
@@ -322,7 +320,7 @@ mod signer_flow_tests {
                     basket_id: Some(basket_id),
                     spendable: false, // consumed
                     change: false,
-                    output_description: Some(format!("parent output {}", i)),
+                    output_description: Some(format!("parent output {i}")),
                     vout: i as i32,
                     satoshis: 1000,
                     provided_by: StorageProvidedBy::You,
@@ -361,7 +359,7 @@ mod signer_flow_tests {
                     basket_id: Some(basket_id),
                     spendable: true,
                     change: i == 1,
-                    output_description: Some(format!("failed tx output {}", i)),
+                    output_description: Some(format!("failed tx output {i}")),
                     vout: i,
                     satoshis: 400,
                     provided_by: StorageProvidedBy::You,
@@ -506,8 +504,7 @@ mod signer_flow_tests {
             let o = get_output(&manager, *parent_id).await;
             assert!(
                 o.spendable,
-                "InvalidTx must restore parent input {} to spendable",
-                parent_id
+                "InvalidTx must restore parent input {parent_id} to spendable"
             );
             // spent_by is left as-is per the handler's current contract (no
             // explicit clear); we assert only the spendable flag.
@@ -518,8 +515,7 @@ mod signer_flow_tests {
             let o = get_output(&manager, *out_id).await;
             assert!(
                 !o.spendable,
-                "InvalidTx must mark failed tx output {} unspendable",
-                out_id
+                "InvalidTx must mark failed tx output {out_id} unspendable"
             );
         }
     }
@@ -1330,14 +1326,12 @@ mod signer_flow_tests {
             BroadcastOutcome::ServiceError { details } => {
                 assert!(
                     details.iter().any(|d| d.contains("all providers down")),
-                    "wrapper error detail must propagate into ServiceError: {:?}",
-                    details
+                    "wrapper error detail must propagate into ServiceError: {details:?}"
                 );
             }
-            other => panic!(
-                "wrapper failure must downgrade InvalidTx to ServiceError, got {:?}",
-                other
-            ),
+            other => {
+                panic!("wrapper failure must downgrade InvalidTx to ServiceError, got {other:?}")
+            }
         }
 
         // And the downgraded ServiceError must have applied the retry
@@ -1361,16 +1355,14 @@ mod signer_flow_tests {
             let o = get_output(&manager, *pid).await;
             assert!(
                 !o.spendable,
-                "wrapper-failure downgrade must NOT restore inputs (parent_id={})",
-                pid
+                "wrapper-failure downgrade must NOT restore inputs (parent_id={pid})"
             );
         }
         for oid in &failed_output_ids {
             let o = get_output(&manager, *oid).await;
             assert!(
                 o.spendable,
-                "wrapper-failure downgrade must NOT mark failed-tx outputs unspendable (output_id={})",
-                oid
+                "wrapper-failure downgrade must NOT mark failed-tx outputs unspendable (output_id={oid})"
             );
         }
     }

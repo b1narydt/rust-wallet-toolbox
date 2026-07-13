@@ -53,11 +53,11 @@ fn read_vector(name: &str) -> serde_json::Value {
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
     let wrapper: serde_json::Value = serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("{}: failed to parse outer JSON: {}", name, e));
+        .unwrap_or_else(|e| panic!("{name}: failed to parse outer JSON: {e}"));
     wrapper
         .get("json")
         .cloned()
-        .unwrap_or_else(|| panic!("{}: vector has no `json` key: {:#}", name, wrapper))
+        .unwrap_or_else(|| panic!("{name}: vector has no `json` key: {wrapper:#}"))
 }
 
 /// Round-trip the `json` payload of `vector_name` through `T`.

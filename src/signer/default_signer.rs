@@ -133,8 +133,7 @@ impl DefaultWalletSigner {
         // --- Step 4: Get raw_tx and input_beef from the transaction ---
         let raw_tx_bytes = tx_record.raw_tx.ok_or_else(|| {
             WalletError::Internal(format!(
-                "Transaction '{}' has no raw_tx stored for signing recovery",
-                reference
+                "Transaction '{reference}' has no raw_tx stored for signing recovery"
             ))
         })?;
         let input_beef = tx_record.input_beef;
@@ -143,8 +142,7 @@ impl DefaultWalletSigner {
         let mut cursor = Cursor::new(&raw_tx_bytes);
         let unsigned_tx = Transaction::from_binary(&mut cursor).map_err(|e| {
             WalletError::Internal(format!(
-                "Failed to parse stored unsigned transaction for reference '{}': {}",
-                reference, e
+                "Failed to parse stored unsigned transaction for reference '{reference}': {e}"
             ))
         })?;
 
@@ -190,7 +188,7 @@ impl DefaultWalletSigner {
                         .as_ref()
                         .map(|b| {
                             b.iter()
-                                .map(|byte| format!("{:02x}", byte))
+                                .map(|byte| format!("{byte:02x}"))
                                 .collect::<String>()
                         })
                         .unwrap_or_default();

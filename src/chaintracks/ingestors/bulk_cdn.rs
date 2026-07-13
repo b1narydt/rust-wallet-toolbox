@@ -125,7 +125,7 @@ impl BulkCdnIngestor {
     /// Build the full URL for a given resource path.
     fn build_url(&self, resource: &str) -> String {
         let base = self.options.cdn_url.trim_end_matches('/');
-        format!("{}/{}", base, resource)
+        format!("{base}/{resource}")
     }
 
     /// Fetch the JSON file listing from the CDN.

@@ -312,8 +312,7 @@ impl SqliteStorage {
 
         // First, clear previous_header_id references to prevent FK constraint violations
         let clear_refs_sql = format!(
-            "UPDATE chaintracks_live_headers SET previous_header_id = NULL WHERE previous_header_id IN ({})",
-            placeholders
+            "UPDATE chaintracks_live_headers SET previous_header_id = NULL WHERE previous_header_id IN ({placeholders})"
         );
         let mut clear_query = sqlx::query(&clear_refs_sql);
         for id in ids {
@@ -322,10 +321,8 @@ impl SqliteStorage {
         clear_query.execute(&self.pool).await?;
 
         // Now delete the headers
-        let delete_sql = format!(
-            "DELETE FROM chaintracks_live_headers WHERE header_id IN ({})",
-            placeholders
-        );
+        let delete_sql =
+            format!("DELETE FROM chaintracks_live_headers WHERE header_id IN ({placeholders})");
         let mut delete_query = sqlx::query(&delete_sql);
         for id in ids {
             delete_query = delete_query.bind(*id as i64);
@@ -405,10 +402,8 @@ impl SqliteStorage {
 
         for chunk in headers.chunks(chunk_size) {
             let placeholders: String = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-            let sql = format!(
-                "SELECT hash FROM chaintracks_live_headers WHERE hash IN ({})",
-                placeholders
-            );
+            let sql =
+                format!("SELECT hash FROM chaintracks_live_headers WHERE hash IN ({placeholders})");
             let mut query = sqlx::query_scalar::<_, String>(&sql);
             for h in chunk {
                 query = query.bind(&h.hash);
@@ -1100,7 +1095,7 @@ mod tests {
             hash: hash.to_string(),
             chain_work: "".to_string(),
             version: 1,
-            merkle_root: format!("merkle_{}", hash),
+            merkle_root: format!("merkle_{hash}"),
             time: 1234567890 + height,
             bits: 0x1d00ffff,
             nonce: 12345,
@@ -1311,7 +1306,7 @@ mod tests {
             } else {
                 format!("hash_{}", i - 1)
             };
-            let header = create_test_header(i, &prev_hash, &format!("hash_{}", i));
+            let header = create_test_header(i, &prev_hash, &format!("hash_{i}"));
             storage.insert_header(header).await.unwrap();
         }
 
@@ -1338,7 +1333,7 @@ mod tests {
             } else {
                 format!("hash_{}", i - 1)
             };
-            let header = create_test_header(i, &prev_hash, &format!("hash_{}", i));
+            let header = create_test_header(i, &prev_hash, &format!("hash_{i}"));
             storage.insert_header(header).await.unwrap();
         }
 
@@ -1485,7 +1480,7 @@ mod tests {
             } else {
                 format!("hash_{:04}", i - 1)
             };
-            headers.push(create_test_header(i, &prev_hash, &format!("hash_{:04}", i)));
+            headers.push(create_test_header(i, &prev_hash, &format!("hash_{i:04}")));
         }
 
         // Batch insert
@@ -1581,7 +1576,7 @@ mod tests {
             } else {
                 format!("hash_{}", i - 1)
             };
-            let header = create_test_header(i, &prev_hash, &format!("hash_{}", i));
+            let header = create_test_header(i, &prev_hash, &format!("hash_{i}"));
             storage.insert_header(header).await.unwrap();
         }
 
@@ -1618,7 +1613,7 @@ mod tests {
             } else {
                 format!("hash_{}", i - 1)
             };
-            let header = create_test_header(i, &prev_hash, &format!("hash_{}", i));
+            let header = create_test_header(i, &prev_hash, &format!("hash_{i}"));
             storage.insert_header(header).await.unwrap();
         }
 
@@ -1648,7 +1643,7 @@ mod tests {
             } else {
                 format!("hash_{}", i - 1)
             };
-            let header = create_test_header(i, &prev_hash, &format!("hash_{}", i));
+            let header = create_test_header(i, &prev_hash, &format!("hash_{i}"));
             storage.insert_header(header).await.unwrap();
         }
 
@@ -1701,7 +1696,7 @@ mod tests {
             } else {
                 format!("hash_{}", i - 1)
             };
-            let header = create_test_header(i, &prev_hash, &format!("hash_{}", i));
+            let header = create_test_header(i, &prev_hash, &format!("hash_{i}"));
             storage.insert_header(header).await.unwrap();
         }
 
@@ -1821,7 +1816,7 @@ mod tests {
             } else {
                 format!("hash_{}", i - 1)
             };
-            let header = create_test_header(i, &prev_hash, &format!("hash_{}", i));
+            let header = create_test_header(i, &prev_hash, &format!("hash_{i}"));
             storage.insert_header(header).await.unwrap();
         }
 
@@ -1855,7 +1850,7 @@ mod tests {
             } else {
                 format!("hash_{}", i - 1)
             };
-            let header = create_test_header(i, &prev_hash, &format!("hash_{}", i));
+            let header = create_test_header(i, &prev_hash, &format!("hash_{i}"));
             storage.insert_header(header).await.unwrap();
         }
 
@@ -1883,7 +1878,7 @@ mod tests {
             } else {
                 format!("hash_{:06}", i - 1)
             };
-            headers.push(create_test_header(i, &prev_hash, &format!("hash_{:06}", i)));
+            headers.push(create_test_header(i, &prev_hash, &format!("hash_{i:06}")));
         }
 
         let inserted = storage.insert_headers_batch(&headers).await.unwrap();
@@ -1913,7 +1908,7 @@ mod tests {
             } else {
                 format!("{:064x}", i - 1)
             };
-            let mut header = create_test_header(i, &prev_hash, &format!("{:064x}", i));
+            let mut header = create_test_header(i, &prev_hash, &format!("{i:064x}"));
             header.merkle_root = format!("{:064x}", i + 100);
             storage.insert_header(header).await.unwrap();
         }

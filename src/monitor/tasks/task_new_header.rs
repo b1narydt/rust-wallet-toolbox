@@ -82,7 +82,7 @@ impl WalletMonitorTask for TaskNewHeader {
         let current_height = match self.services.get_height().await {
             Ok(h) => h,
             Err(e) => {
-                return Ok(format!("error getting chain height: {}", e));
+                return Ok(format!("error getting chain height: {e}"));
             }
         };
 
@@ -95,7 +95,7 @@ impl WalletMonitorTask for TaskNewHeader {
             bits: 0,
             nonce: 0,
             height: current_height,
-            hash: format!("height_{}", current_height),
+            hash: format!("height_{current_height}"),
         };
 
         let old_header = self.header.clone();
@@ -117,7 +117,7 @@ impl WalletMonitorTask for TaskNewHeader {
             Some(old) if old.height < current_header.height => {
                 let skip = current_header.height - old.height - 1;
                 let skipped = if skip > 0 {
-                    format!(" SKIPPED {}", skip)
+                    format!(" SKIPPED {skip}")
                 } else {
                     String::new()
                 };

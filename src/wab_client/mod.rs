@@ -64,7 +64,7 @@ impl WABClient {
             .json(body)
             .send()
             .await
-            .map_err(|e| WalletError::Internal(format!("HTTP request to {} failed: {}", url, e)))?;
+            .map_err(|e| WalletError::Internal(format!("HTTP request to {url} failed: {e}")))?;
 
         if !response.status().is_success() {
             return Err(WalletError::Internal(format!(
@@ -74,9 +74,10 @@ impl WABClient {
             )));
         }
 
-        response.json::<T>().await.map_err(|e| {
-            WalletError::Internal(format!("Failed to parse response from {}: {}", url, e))
-        })
+        response
+            .json::<T>()
+            .await
+            .map_err(|e| WalletError::Internal(format!("Failed to parse response from {url}: {e}")))
     }
 
     // ========================================================================
@@ -91,12 +92,12 @@ impl WABClient {
             .get(&url)
             .send()
             .await
-            .map_err(|e| WalletError::Internal(format!("HTTP GET {} failed: {}", url, e)))?;
+            .map_err(|e| WalletError::Internal(format!("HTTP GET {url} failed: {e}")))?;
 
         response
             .json::<WABInfo>()
             .await
-            .map_err(|e| WalletError::Internal(format!("Failed to parse info response: {}", e)))
+            .map_err(|e| WalletError::Internal(format!("Failed to parse info response: {e}")))
     }
 
     /// Generate a random 256-bit presentation key as a hex string (client side).
@@ -105,7 +106,7 @@ impl WABClient {
     /// random key generation.
     pub fn generate_random_presentation_key() -> Result<String, WalletError> {
         let key = PrivateKey::from_random()
-            .map_err(|e| WalletError::Internal(format!("Failed to generate random key: {}", e)))?;
+            .map_err(|e| WalletError::Internal(format!("Failed to generate random key: {e}")))?;
         Ok(key.to_hex())
     }
 
@@ -309,8 +310,7 @@ mod tests {
         // Verify it is valid hex
         assert!(
             key.chars().all(|c| c.is_ascii_hexdigit()),
-            "Presentation key should be valid hex, got: {}",
-            key
+            "Presentation key should be valid hex, got: {key}"
         );
     }
 

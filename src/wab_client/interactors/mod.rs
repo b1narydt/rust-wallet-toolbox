@@ -66,7 +66,7 @@ pub(crate) async fn post_auth_request<T: serde::de::DeserializeOwned>(
         .json(&body)
         .send()
         .await
-        .map_err(|e| WalletError::Internal(format!("HTTP request to {} failed: {}", url, e)))?;
+        .map_err(|e| WalletError::Internal(format!("HTTP request to {url} failed: {e}")))?;
 
     if !response.status().is_success() {
         return Err(WalletError::Internal(format!(
@@ -79,7 +79,7 @@ pub(crate) async fn post_auth_request<T: serde::de::DeserializeOwned>(
     response
         .json::<T>()
         .await
-        .map_err(|e| WalletError::Internal(format!("Failed to parse response from {}: {}", url, e)))
+        .map_err(|e| WalletError::Internal(format!("Failed to parse response from {url}: {e}")))
 }
 
 #[cfg(test)]

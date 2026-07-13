@@ -92,14 +92,14 @@ impl ChaintracksChainTracker {
                 .get_header_for_block_hash(hash)
                 .await?
                 .ok_or_else(|| {
-                    WalletError::Internal(format!("No header found for block hash {}", hash))
+                    WalletError::Internal(format!("No header found for block hash {hash}"))
                 }),
             ChaintracksBackend::Local(ct) => ct
                 .find_header_for_block_hash(hash)
                 .await?
                 .map(BlockHeader::from)
                 .ok_or_else(|| {
-                    WalletError::Internal(format!("No header found for block hash {}", hash))
+                    WalletError::Internal(format!("No header found for block hash {hash}"))
                 }),
         }
     }
@@ -109,7 +109,7 @@ impl ChaintracksChainTracker {
         match &self.backend {
             ChaintracksBackend::Remote(client) => {
                 client.get_header_for_height(height).await?.ok_or_else(|| {
-                    WalletError::Internal(format!("No header found for height {}", height))
+                    WalletError::Internal(format!("No header found for height {height}"))
                 })
             }
             ChaintracksBackend::Local(ct) => ct
@@ -117,7 +117,7 @@ impl ChaintracksChainTracker {
                 .await?
                 .map(BlockHeader::from)
                 .ok_or_else(|| {
-                    WalletError::Internal(format!("No header found for height {}", height))
+                    WalletError::Internal(format!("No header found for height {height}"))
                 }),
         }
     }
@@ -133,12 +133,12 @@ impl ChaintracksChainTracker {
             ChaintracksBackend::Remote(client) => client
                 .get_header_for_height(height)
                 .await
-                .map_err(|e| TransactionError::InvalidFormat(format!("ChainTracker error: {}", e))),
+                .map_err(|e| TransactionError::InvalidFormat(format!("ChainTracker error: {e}"))),
             ChaintracksBackend::Local(ct) => ct
                 .find_header_for_height(height)
                 .await
                 .map(|opt| opt.map(BlockHeader::from))
-                .map_err(|e| TransactionError::InvalidFormat(format!("ChainTracker error: {}", e))),
+                .map_err(|e| TransactionError::InvalidFormat(format!("ChainTracker error: {e}"))),
         }
     }
 
@@ -189,11 +189,11 @@ impl ChainTracker for ChaintracksChainTracker {
             ChaintracksBackend::Remote(client) => client
                 .get_present_height()
                 .await
-                .map_err(|e| TransactionError::InvalidFormat(format!("ChainTracker error: {}", e))),
+                .map_err(|e| TransactionError::InvalidFormat(format!("ChainTracker error: {e}"))),
             ChaintracksBackend::Local(ct) => ct
                 .current_height()
                 .await
-                .map_err(|e| TransactionError::InvalidFormat(format!("ChainTracker error: {}", e))),
+                .map_err(|e| TransactionError::InvalidFormat(format!("ChainTracker error: {e}"))),
         }
     }
 }

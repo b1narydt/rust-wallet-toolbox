@@ -291,7 +291,7 @@ impl WalletBuilder {
                 let url = if path == ":memory:" {
                     "sqlite::memory:".to_string()
                 } else {
-                    format!("sqlite:{}", path)
+                    format!("sqlite:{path}")
                 };
                 let mut config = StorageConfig {
                     url,
@@ -453,7 +453,7 @@ pub fn get_key_pair(
 
     let private_key = key_deriver
         .derive_private_key(&protocol, key_id, &cp)
-        .map_err(|e| WalletError::Internal(format!("Key derivation failed: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Key derivation failed: {e}")))?;
 
     let public_key = private_key.to_public_key();
 
@@ -478,7 +478,7 @@ pub fn get_lock_p2pkh(
 
     let derived_pub = key_deriver
         .derive_public_key(&protocol, key_id, &cp, false)
-        .map_err(|e| WalletError::Internal(format!("Public key derivation failed: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Public key derivation failed: {e}")))?;
 
     use bsv::script::templates::p2pkh::P2PKH;
     use bsv::script::templates::ScriptTemplateLock;
@@ -491,7 +491,7 @@ pub fn get_lock_p2pkh(
     let p2pkh = P2PKH::from_public_key_hash(hash);
     let locking_script = p2pkh
         .lock()
-        .map_err(|e| WalletError::Internal(format!("P2PKH lock failed: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("P2PKH lock failed: {e}")))?;
     Ok(locking_script.to_binary())
 }
 
@@ -519,7 +519,7 @@ pub fn create_p2pkh_outputs(
         outputs.push(CreateActionOutput {
             locking_script: Some(locking_script),
             satoshis,
-            output_description: format!("p2pkh {}", i),
+            output_description: format!("p2pkh {i}"),
             basket: None,
             custom_instructions: None,
             tags: vec![],
@@ -558,7 +558,7 @@ pub async fn create_p2pkh_outputs_action(
             None,
         )
         .await
-        .map_err(|e| WalletError::Internal(format!("create_action failed: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("create_action failed: {e}")))?;
 
     Ok(result)
 }
@@ -605,7 +605,7 @@ fn parse_counterparty(counterparty: &str) -> WalletResult<Counterparty> {
             let pk = bsv::primitives::public_key::PublicKey::from_string(hex_str).map_err(|e| {
                 WalletError::InvalidParameter {
                     parameter: "counterparty".to_string(),
-                    must_be: format!("'self', 'anyone', or a valid public key hex: {}", e),
+                    must_be: format!("'self', 'anyone', or a valid public key hex: {e}"),
                 }
             })?;
             Ok(Counterparty {
@@ -672,7 +672,7 @@ mod tests {
         match result {
             Err(e) => {
                 let err = e.to_string();
-                assert!(err.contains("chain"), "Expected chain error, got: {}", err);
+                assert!(err.contains("chain"), "Expected chain error, got: {err}");
             }
             Ok(_) => panic!("Expected error for missing chain"),
         }
@@ -690,8 +690,7 @@ mod tests {
                 let err = e.to_string();
                 assert!(
                     err.contains("root_key"),
-                    "Expected root_key error, got: {}",
-                    err
+                    "Expected root_key error, got: {err}"
                 );
             }
             Ok(_) => panic!("Expected error for missing root_key"),
@@ -716,8 +715,7 @@ mod tests {
                 let err = e.to_string();
                 assert!(
                     err.contains("storage"),
-                    "Expected storage error, got: {}",
-                    err
+                    "Expected storage error, got: {err}"
                 );
             }
             Ok(_) => panic!("Expected error for missing storage"),
@@ -753,7 +751,7 @@ mod tests {
         for (i, o) in outputs.iter().enumerate() {
             assert_eq!(o.satoshis, 1000);
             assert!(o.locking_script.is_some());
-            assert_eq!(o.output_description, format!("p2pkh {}", i));
+            assert_eq!(o.output_description, format!("p2pkh {i}"));
         }
     }
 

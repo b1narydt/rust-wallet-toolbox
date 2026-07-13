@@ -31,8 +31,8 @@ impl Dialect {
     /// MySQL uses backticks, PostgreSQL uses double quotes, SQLite accepts both.
     pub fn quote_column(self, col: &str) -> String {
         match self {
-            Dialect::Mysql | Dialect::Sqlite => format!("`{}`", col),
-            Dialect::Postgres => format!("\"{}\"", col),
+            Dialect::Mysql | Dialect::Sqlite => format!("`{col}`"),
+            Dialect::Postgres => format!("\"{col}\""),
         }
     }
 }
@@ -43,7 +43,7 @@ impl Dialect {
 pub fn placeholder(dialect: Dialect, index: usize) -> String {
     match dialect {
         Dialect::Sqlite | Dialect::Mysql => "?".to_string(),
-        Dialect::Postgres => format!("${}", index),
+        Dialect::Postgres => format!("${index}"),
     }
 }
 
@@ -133,14 +133,14 @@ impl WhereBuilder {
     pub fn add_eq(&mut self, column: &str) {
         let ph = self.next_placeholder();
         let qc = self.dialect.quote_column(column);
-        self.clauses.push(format!("{} = {}", qc, ph));
+        self.clauses.push(format!("{qc} = {ph}"));
     }
 
     /// Add a greater-than-or-equal condition: `` `column` >= ? ``
     pub fn add_gte(&mut self, column: &str) {
         let ph = self.next_placeholder();
         let qc = self.dialect.quote_column(column);
-        self.clauses.push(format!("{} >= {}", qc, ph));
+        self.clauses.push(format!("{qc} >= {ph}"));
     }
 
     /// Add a less-than-or-equal condition: `` `column` <= ? ``
@@ -148,7 +148,7 @@ impl WhereBuilder {
     pub fn add_lte(&mut self, column: &str) {
         let ph = self.next_placeholder();
         let qc = self.dialect.quote_column(column);
-        self.clauses.push(format!("{} <= {}", qc, ph));
+        self.clauses.push(format!("{qc} <= {ph}"));
     }
 
     /// Add a LIKE condition: `` `column` LIKE ? ``
@@ -156,7 +156,7 @@ impl WhereBuilder {
     pub fn add_like(&mut self, column: &str) {
         let ph = self.next_placeholder();
         let qc = self.dialect.quote_column(column);
-        self.clauses.push(format!("{} LIKE {}", qc, ph));
+        self.clauses.push(format!("{qc} LIKE {ph}"));
     }
 
     /// Add an IN condition: `` `column` IN (?, ?, ...) ``
@@ -226,9 +226,9 @@ impl WhereBuilder {
     /// or use `dialect.quote_column()`.
     pub fn build_order_by(column: &str, desc: bool) -> String {
         if desc {
-            format!(" ORDER BY {} DESC", column)
+            format!(" ORDER BY {column} DESC")
         } else {
-            format!(" ORDER BY {} ASC", column)
+            format!(" ORDER BY {column} ASC")
         }
     }
 

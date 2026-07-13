@@ -116,7 +116,7 @@ impl GetMerklePathProvider for Bitails {
             Err(e) => {
                 return GetMerklePathResult {
                     name: Some("BitailsTsc".to_string()),
-                    error: Some(format!("HTTP request failed: {}", e)),
+                    error: Some(format!("HTTP request failed: {e}")),
                     ..Default::default()
                 };
             }
@@ -142,7 +142,7 @@ impl GetMerklePathProvider for Bitails {
             Err(e) => {
                 return GetMerklePathResult {
                     name: Some("BitailsTsc".to_string()),
-                    error: Some(format!("Failed to parse proof: {}", e)),
+                    error: Some(format!("Failed to parse proof: {e}")),
                     ..Default::default()
                 };
             }
@@ -154,7 +154,7 @@ impl GetMerklePathProvider for Bitails {
             Err(e) => {
                 return GetMerklePathResult {
                     name: Some("BitailsTsc".to_string()),
-                    error: Some(format!("hashToHeader failed: {}", e)),
+                    error: Some(format!("hashToHeader failed: {e}")),
                     ..Default::default()
                 };
             }
@@ -170,7 +170,7 @@ impl GetMerklePathProvider for Bitails {
             },
             Err(e) => GetMerklePathResult {
                 name: Some("BitailsTsc".to_string()),
-                error: Some(format!("Failed to convert proof: {}", e)),
+                error: Some(format!("Failed to convert proof: {e}")),
                 ..Default::default()
             },
         }
@@ -196,7 +196,7 @@ impl PostBeefProvider for Bitails {
                 return PostBeefResult {
                     name: "Bitails".to_string(),
                     status: "error".to_string(),
-                    error: Some(format!("Failed to parse BEEF: {}", e)),
+                    error: Some(format!("Failed to parse BEEF: {e}")),
                     txid_results: txids
                         .iter()
                         .map(|txid| PostTxResultForTxid {
@@ -272,7 +272,7 @@ impl PostBeefProvider for Bitails {
             Ok(r) => r,
             Err(e) => {
                 result.status = "error".to_string();
-                result.error = Some(format!("HTTP request failed: {}", e));
+                result.error = Some(format!("HTTP request failed: {e}"));
                 for tr in &mut result.txid_results {
                     tr.status = "error".to_string();
                     tr.service_error = Some(true);
@@ -296,7 +296,7 @@ impl PostBeefProvider for Bitails {
             Ok(d) => d,
             Err(e) => {
                 result.status = "error".to_string();
-                result.error = Some(format!("Failed to parse response: {}", e));
+                result.error = Some(format!("Failed to parse response: {e}"));
                 return result;
             }
         };

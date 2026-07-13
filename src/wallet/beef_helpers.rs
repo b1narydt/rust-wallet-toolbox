@@ -57,8 +57,7 @@ pub fn verify_returned_txid_only(
                 // We do this by merging the whole wallet beef (merge_beef handles dedup)
                 if let Err(e) = beef.merge_beef(&wallet_beef.beef) {
                     return Err(WalletError::Internal(format!(
-                        "unable to merge txid {} into beef: {}",
-                        txid, e
+                        "unable to merge txid {txid} into beef: {e}"
                     )));
                 }
                 continue;
@@ -66,8 +65,7 @@ pub fn verify_returned_txid_only(
         }
 
         return Err(WalletError::Internal(format!(
-            "unable to merge txid {} into beef",
-            txid
+            "unable to merge txid {txid} into beef"
         )));
     }
 
@@ -113,7 +111,7 @@ pub fn verify_returned_txid_only_atomic_beef(
 
     let mut cursor = Cursor::new(beef_bytes);
     let mut beef = Beef::from_binary(&mut cursor)
-        .map_err(|e| WalletError::Internal(format!("failed to parse AtomicBEEF: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("failed to parse AtomicBEEF: {e}")))?;
 
     let atomic_txid = beef
         .atomic_txid
@@ -123,7 +121,7 @@ pub fn verify_returned_txid_only_atomic_beef(
     verify_returned_txid_only(&mut beef, wallet_beef, return_txid_only, known_txids)?;
 
     beef.to_binary_atomic(&atomic_txid)
-        .map_err(|e| WalletError::Internal(format!("failed to serialize AtomicBEEF: {}", e)))
+        .map_err(|e| WalletError::Internal(format!("failed to serialize AtomicBEEF: {e}")))
 }
 
 /// Verify and resolve txid-only entries in a BEEF (binary format).
@@ -147,13 +145,13 @@ pub fn verify_returned_txid_only_beef(
 
     let mut cursor = Cursor::new(beef_bytes);
     let mut beef = Beef::from_binary(&mut cursor)
-        .map_err(|e| WalletError::Internal(format!("failed to parse BEEF: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("failed to parse BEEF: {e}")))?;
 
     verify_returned_txid_only(&mut beef, wallet_beef, return_txid_only, None)?;
 
     let mut output = Vec::new();
     beef.to_binary(&mut output)
-        .map_err(|e| WalletError::Internal(format!("failed to serialize BEEF: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("failed to serialize BEEF: {e}")))?;
     Ok(output)
 }
 

@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::from_filename("examples/.env").ok();
 
     let chain = get_chain();
-    println!("Chain: {}", chain);
+    println!("Chain: {chain}");
 
     // -----------------------------------------------------------------------
     // 1. Load both private keys from env
@@ -80,11 +80,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nSender:");
     println!("  Identity key: {}", sender_setup.identity_key);
-    println!("  Balance:      {} satoshis", sender_balance);
+    println!("  Balance:      {sender_balance} satoshis");
 
     println!("Receiver:");
     println!("  Identity key: {}", receiver_setup.identity_key);
-    println!("  Balance:      {} satoshis", receiver_balance);
+    println!("  Balance:      {receiver_balance} satoshis");
 
     if sender_balance < 42 {
         eprintln!("\nSender balance too low. Fund the sender wallet first.");
@@ -141,7 +141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // -----------------------------------------------------------------------
     if let Some(ref txid) = result.txid {
         println!("\nTransaction sent!");
-        println!("  TXID: {}", txid);
+        println!("  TXID: {txid}");
     } else {
         println!("\nTransaction created (no txid returned -- check sign_and_process option).");
     }
@@ -150,8 +150,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let receiver_balance_after = receiver_setup.wallet.balance(None).await?;
 
     println!("\nUpdated balances:");
-    println!("  Sender:   {} satoshis", sender_balance_after);
-    println!("  Receiver: {} satoshis", receiver_balance_after);
+    println!("  Sender:   {sender_balance_after} satoshis");
+    println!("  Receiver: {receiver_balance_after} satoshis");
 
     Ok(())
 }

@@ -80,8 +80,7 @@ mod tests {
         assert!(!result.is_empty());
         assert!(
             result.contains("T"),
-            "Expected ISO timestamp, got: {}",
-            result
+            "Expected ISO timestamp, got: {result}"
         );
     }
 

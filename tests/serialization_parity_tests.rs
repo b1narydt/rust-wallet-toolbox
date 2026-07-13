@@ -556,9 +556,7 @@ fn test_status_enum_serialization_matches_ts_brc100() {
         assert_eq!(
             serde_json::to_value(status).unwrap(),
             *expected,
-            "TransactionStatus::{:?} must serialize as '{}'",
-            status,
-            expected
+            "TransactionStatus::{status:?} must serialize as '{expected}'"
         );
     }
 
@@ -579,9 +577,7 @@ fn test_status_enum_serialization_matches_ts_brc100() {
         assert_eq!(
             serde_json::to_value(status).unwrap(),
             *expected,
-            "SyncStatus::{:?} must serialize as '{}'",
-            status,
-            expected
+            "SyncStatus::{status:?} must serialize as '{expected}'"
         );
     }
 }

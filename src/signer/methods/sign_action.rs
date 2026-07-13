@@ -37,7 +37,7 @@ pub async fn signer_sign_action(
     // --- Step 1: Reconstruct the unsigned transaction ---
     let mut cursor = Cursor::new(&pending.tx);
     let mut tx = Transaction::from_binary(&mut cursor)
-        .map_err(|e| WalletError::Internal(format!("Failed to reconstruct unsigned tx: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to reconstruct unsigned tx: {e}")))?;
 
     // Merge prior createAction options: use signAction's value if explicitly set,
     // otherwise inherit from createAction.  This matches TS mergePriorOptions
@@ -57,7 +57,7 @@ pub async fn signer_sign_action(
 
     let txid = tx
         .id()
-        .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {e}")))?;
 
     // --- Step 3: Build BEEF, verify unlock scripts, then serialize ---
     let beef = super::create_action::build_beef(&tx, &pending.dcr.input_beef)?;

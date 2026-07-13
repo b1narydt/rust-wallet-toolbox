@@ -157,11 +157,11 @@ impl<W: WalletInterface + Clone + Send + Sync + 'static> StorageClient<W> {
         headers.insert("content-type".to_string(), "application/json".to_string());
 
         let response = {
-            let mut fetch = self.auth_fetch.lock().await;
+            let fetch = self.auth_fetch.lock().await;
             fetch
                 .fetch(&self.endpoint_url, "POST", Some(body_bytes), Some(headers))
                 .await
-                .map_err(|e| WalletError::Internal(format!("auth fetch: {}", e)))?
+                .map_err(|e| WalletError::Internal(format!("auth fetch: {e}")))?
         };
 
         if response.status >= 400 {
@@ -782,14 +782,11 @@ mod tests {
         for (rust_name, wire_name) in mappings {
             assert!(
                 !wire_name.is_empty(),
-                "{} must have a non-empty wire name",
-                rust_name
+                "{rust_name} must have a non-empty wire name"
             );
             assert!(
                 !wire_name.contains('_'),
-                "wire name '{}' for '{}' must be camelCase (no underscores)",
-                wire_name,
-                rust_name
+                "wire name '{wire_name}' for '{rust_name}' must be camelCase (no underscores)"
             );
             // camelCase: must start with a lowercase letter
             assert!(
@@ -798,9 +795,7 @@ mod tests {
                     .next()
                     .map(|c| c.is_lowercase())
                     .unwrap_or(false),
-                "wire name '{}' for '{}' must start with a lowercase letter (camelCase)",
-                wire_name,
-                rust_name
+                "wire name '{wire_name}' for '{rust_name}' must start with a lowercase letter (camelCase)"
             );
         }
 

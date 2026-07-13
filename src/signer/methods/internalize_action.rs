@@ -51,12 +51,11 @@ pub async fn signer_internalize_action(
     // 1. Parse AtomicBEEF to get the subject transaction
     // -----------------------------------------------------------------------
     let beef = Beef::from_binary(&mut Cursor::new(&args.tx))
-        .map_err(|e| WalletError::Internal(format!("Failed to parse AtomicBEEF: {}", e)))?;
+        .map_err(|e| WalletError::Internal(format!("Failed to parse AtomicBEEF: {e}")))?;
 
     let tx = beef.into_transaction().map_err(|e| {
         WalletError::Internal(format!(
-            "Failed to extract subject transaction from BEEF: {}",
-            e
+            "Failed to extract subject transaction from BEEF: {e}"
         ))
     })?;
 
@@ -111,7 +110,7 @@ pub async fn signer_internalize_action(
                 base64::engine::general_purpose::STANDARD.encode(&payment.derivation_prefix);
             let derivation_suffix =
                 base64::engine::general_purpose::STANDARD.encode(&payment.derivation_suffix);
-            let key_id = format!("{} {}", derivation_prefix, derivation_suffix);
+            let key_id = format!("{derivation_prefix} {derivation_suffix}");
 
             // The sender's identity key is the counterparty for derivation
             let counterparty = Counterparty {
@@ -125,8 +124,7 @@ pub async fn signer_internalize_action(
                 .derive_public_key(&protocol, &key_id, &counterparty, true)
                 .map_err(|e| {
                     WalletError::Internal(format!(
-                        "BRC-29 key derivation failed for output {}: {}",
-                        output_index, e
+                        "BRC-29 key derivation failed for output {output_index}: {e}"
                     ))
                 })?;
 
@@ -137,8 +135,7 @@ pub async fn signer_internalize_action(
             let p2pkh = P2PKH::from_public_key_hash(hash);
             let expected_script = p2pkh.lock().map_err(|e| {
                 WalletError::Internal(format!(
-                    "Failed to build expected P2PKH script for output {}: {}",
-                    output_index, e
+                    "Failed to build expected P2PKH script for output {output_index}: {e}"
                 ))
             })?;
             let expected_bytes = expected_script.to_binary();
@@ -146,8 +143,7 @@ pub async fn signer_internalize_action(
             // Compare expected vs actual
             if actual_script != expected_bytes {
                 return Err(WalletError::InvalidOperation(format!(
-                    "Wallet payment output {} has locking script that doesn't match BRC-29 derivation. The wallet cannot spend this output.",
-                    output_index
+                    "Wallet payment output {output_index} has locking script that doesn't match BRC-29 derivation. The wallet cannot spend this output."
                 )));
             }
         }

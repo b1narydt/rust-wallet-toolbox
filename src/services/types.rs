@@ -140,7 +140,7 @@ impl PostBeefResult {
         PostBeefResult {
             name: provider_name.to_string(),
             status: "error".to_string(),
-            error: Some(format!("Service timeout after {}ms", timeout_ms)),
+            error: Some(format!("Service timeout after {timeout_ms}ms")),
             txid_results: txids
                 .iter()
                 .map(|txid| PostTxResultForTxid {

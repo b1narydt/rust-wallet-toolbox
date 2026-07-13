@@ -93,7 +93,7 @@ mod tests {
         for state in &states {
             let json = serde_json::to_string(state).expect("serialize AuthState");
             let back: AuthState = serde_json::from_str(&json).expect("deserialize AuthState");
-            assert_eq!(&back, state, "AuthState round-trip failed for {:?}", state);
+            assert_eq!(&back, state, "AuthState round-trip failed for {state:?}");
         }
     }
 

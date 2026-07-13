@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::from_filename("examples/.env").ok();
 
     let chain = get_chain();
-    println!("Chain: {}", chain);
+    println!("Chain: {chain}");
 
     // -----------------------------------------------------------------------
     // 1. Load private key and build wallet with SQLite storage
@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let db_path = "examples/data/backup_example.db";
-    println!("Building wallet with SQLite storage at '{}'...", db_path);
+    println!("Building wallet with SQLite storage at '{db_path}'...");
 
     let setup = WalletBuilder::new()
         .chain(chain.clone())
@@ -70,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Identity key: {}", setup.identity_key);
 
     let balance = setup.wallet.balance(None).await?;
-    println!("  Balance:      {} satoshis", balance);
+    println!("  Balance:      {balance} satoshis");
 
     // -----------------------------------------------------------------------
     // 2. Run update_backups on the storage manager
@@ -88,10 +88,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nRunning update_backups...");
     let (inserts, updates, log) = setup.storage.update_backups(None).await?;
 
-    println!("  Inserts: {}", inserts);
-    println!("  Updates: {}", updates);
+    println!("  Inserts: {inserts}");
+    println!("  Updates: {updates}");
     if !log.is_empty() {
-        println!("  Log:\n{}", log);
+        println!("  Log:\n{log}");
     } else {
         println!("  Log: (empty -- no backup providers configured)");
     }
@@ -102,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_file = std::path::Path::new(db_path);
     if db_file.exists() {
         let metadata = std::fs::metadata(db_file)?;
-        println!("\nDatabase file: {}", db_path);
+        println!("\nDatabase file: {db_path}");
         println!(
             "  Size: {} bytes ({:.1} KB)",
             metadata.len(),

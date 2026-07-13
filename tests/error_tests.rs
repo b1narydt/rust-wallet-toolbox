@@ -17,11 +17,10 @@ use bsv_wallet_toolbox::error::{WalletError, WalletErrorObject, WalletResult};
 #[test]
 fn internal_error_displays_with_werr_prefix() {
     let err = WalletError::Internal("something broke".to_string());
-    let display = format!("{}", err);
+    let display = format!("{err}");
     assert!(
         display.starts_with("WERR_INTERNAL:"),
-        "Expected WERR_INTERNAL prefix, got: {}",
-        display
+        "Expected WERR_INTERNAL prefix, got: {display}"
     );
     assert!(display.contains("something broke"));
 }
@@ -32,11 +31,10 @@ fn invalid_parameter_displays_with_werr_prefix_and_details() {
         parameter: "amount".to_string(),
         must_be: "a positive integer".to_string(),
     };
-    let display = format!("{}", err);
+    let display = format!("{err}");
     assert!(
         display.starts_with("WERR_INVALID_PARAMETER:"),
-        "Expected WERR_INVALID_PARAMETER prefix, got: {}",
-        display
+        "Expected WERR_INVALID_PARAMETER prefix, got: {display}"
     );
     assert!(display.contains("amount"));
     assert!(display.contains("a positive integer"));
@@ -45,11 +43,10 @@ fn invalid_parameter_displays_with_werr_prefix_and_details() {
 #[test]
 fn missing_parameter_displays_with_werr_prefix() {
     let err = WalletError::MissingParameter("foo".to_string());
-    let display = format!("{}", err);
+    let display = format!("{err}");
     assert!(
         display.starts_with("WERR_MISSING_PARAMETER:"),
-        "Expected WERR_MISSING_PARAMETER prefix, got: {}",
-        display
+        "Expected WERR_MISSING_PARAMETER prefix, got: {display}"
     );
     assert!(display.contains("foo"));
 }
@@ -57,32 +54,32 @@ fn missing_parameter_displays_with_werr_prefix() {
 #[test]
 fn not_implemented_displays_with_werr_prefix() {
     let err = WalletError::NotImplemented("feature X".to_string());
-    let display = format!("{}", err);
+    let display = format!("{err}");
     assert!(display.starts_with("WERR_NOT_IMPLEMENTED:"));
 }
 
 #[test]
 fn bad_request_displays_with_werr_prefix() {
     let err = WalletError::BadRequest("bad input".to_string());
-    assert!(format!("{}", err).starts_with("WERR_BAD_REQUEST:"));
+    assert!(format!("{err}").starts_with("WERR_BAD_REQUEST:"));
 }
 
 #[test]
 fn unauthorized_displays_with_werr_prefix() {
     let err = WalletError::Unauthorized("no token".to_string());
-    assert!(format!("{}", err).starts_with("WERR_UNAUTHORIZED:"));
+    assert!(format!("{err}").starts_with("WERR_UNAUTHORIZED:"));
 }
 
 #[test]
 fn not_active_displays_with_werr_prefix() {
     let err = WalletError::NotActive("wallet inactive".to_string());
-    assert!(format!("{}", err).starts_with("WERR_NOT_ACTIVE:"));
+    assert!(format!("{err}").starts_with("WERR_NOT_ACTIVE:"));
 }
 
 #[test]
 fn invalid_operation_displays_with_werr_prefix() {
     let err = WalletError::InvalidOperation("cannot do that".to_string());
-    assert!(format!("{}", err).starts_with("WERR_INVALID_OPERATION:"));
+    assert!(format!("{err}").starts_with("WERR_INVALID_OPERATION:"));
 }
 
 #[test]
@@ -92,7 +89,7 @@ fn insufficient_funds_displays_with_werr_prefix() {
         total_satoshis_needed: 1000,
         more_satoshis_needed: 500,
     };
-    let display = format!("{}", err);
+    let display = format!("{err}");
     assert!(display.starts_with("WERR_INSUFFICIENT_FUNDS:"));
     assert!(display.contains("not enough"));
 }
@@ -100,13 +97,13 @@ fn insufficient_funds_displays_with_werr_prefix() {
 #[test]
 fn broadcast_unavailable_displays_with_werr_prefix() {
     let err = WalletError::BroadcastUnavailable;
-    assert!(format!("{}", err).starts_with("WERR_BROADCAST_UNAVAILABLE:"));
+    assert!(format!("{err}").starts_with("WERR_BROADCAST_UNAVAILABLE:"));
 }
 
 #[test]
 fn network_chain_displays_with_werr_prefix() {
     let err = WalletError::NetworkChain("wrong chain".to_string());
-    assert!(format!("{}", err).starts_with("WERR_NETWORK_CHAIN:"));
+    assert!(format!("{err}").starts_with("WERR_NETWORK_CHAIN:"));
 }
 
 #[test]
@@ -115,7 +112,7 @@ fn invalid_public_key_displays_with_werr_prefix() {
         message: "bad key format".to_string(),
         key: "abc123".to_string(),
     };
-    assert!(format!("{}", err).starts_with("WERR_INVALID_PUBLIC_KEY:"));
+    assert!(format!("{err}").starts_with("WERR_INVALID_PUBLIC_KEY:"));
 }
 
 // -- code() method tests --
@@ -246,8 +243,7 @@ fn optional_fields_are_omitted_when_none() {
     // None fields should not appear in the JSON at all
     assert!(
         !json.contains("\"parameter\""),
-        "parameter should be omitted when None, got: {}",
-        json
+        "parameter should be omitted when None, got: {json}"
     );
     assert!(
         !json.contains("\"totalSatoshisNeeded\""),
@@ -301,7 +297,7 @@ fn from_io_error_converts_to_wallet_error() {
     let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
     let wallet_err: WalletError = io_err.into();
     assert_eq!(wallet_err.code(), "WERR_INTERNAL");
-    assert!(format!("{}", wallet_err).contains("file not found"));
+    assert!(format!("{wallet_err}").contains("file not found"));
 }
 
 #[test]

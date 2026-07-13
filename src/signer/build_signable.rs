@@ -68,7 +68,7 @@ pub fn build_signable_transaction(
             .position(|o| o.vout == vout as u32)
             .ok_or_else(|| WalletError::InvalidParameter {
                 parameter: "output.vout".to_string(),
-                must_be: format!("sequential. {} is missing", vout),
+                must_be: format!("sequential. {vout} is missing"),
             })?;
         *slot = idx;
     }

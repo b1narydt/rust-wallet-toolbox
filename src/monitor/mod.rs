@@ -385,7 +385,7 @@ impl Monitor {
         }
         Err(WalletError::InvalidParameter {
             parameter: "name".to_string(),
-            must_be: format!("an existing task name, '{}' not found", name),
+            must_be: format!("an existing task name, '{name}' not found"),
         })
     }
 
@@ -468,8 +468,7 @@ impl Monitor {
         let name = task.name().to_string();
         if self.tasks.iter().any(|t| t.name() == name) {
             return Err(WalletError::BadRequest(format!(
-                "task {} has already been added",
-                name
+                "task {name} has already been added"
             )));
         }
         self.tasks.push(task);
@@ -930,8 +929,7 @@ mod tests {
         match result {
             Err(e) => assert!(
                 e.to_string().contains("chain"),
-                "Expected chain error, got: {}",
-                e
+                "Expected chain error, got: {e}"
             ),
             Ok(_) => panic!("Expected error for missing chain"),
         }
@@ -942,8 +940,7 @@ mod tests {
         match result {
             Err(e) => assert!(
                 e.to_string().contains("storage"),
-                "Expected storage error, got: {}",
-                e
+                "Expected storage error, got: {e}"
             ),
             Ok(_) => panic!("Expected error for missing storage"),
         }

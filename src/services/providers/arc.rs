@@ -124,7 +124,7 @@ pub fn build_arc_headers(config: &ArcConfig) -> HeaderMap {
 
     if let Some(ref api_key) = config.api_key {
         if !api_key.is_empty() {
-            if let Ok(val) = HeaderValue::from_str(&format!("Bearer {}", api_key)) {
+            if let Ok(val) = HeaderValue::from_str(&format!("Bearer {api_key}")) {
                 headers.insert("Authorization", val);
             }
         }
@@ -346,7 +346,7 @@ impl PostBeefProvider for ArcProvider {
                                 && !tx_status.is_empty()
                                 && (is_double_spend || !status_code.is_success())
                             {
-                                Some(format!("{} {}", tx_status, extra_info))
+                                Some(format!("{tx_status} {extra_info}"))
                             } else {
                                 None
                             },
@@ -363,7 +363,7 @@ impl PostBeefProvider for ArcProvider {
                         PostBeefResult {
                             name: self.name.clone(),
                             status: "error".to_string(),
-                            error: Some(format!("HTTP {} - parse error: {}", status_code, e)),
+                            error: Some(format!("HTTP {status_code} - parse error: {e}")),
                             txid_results: txids
                                 .iter()
                                 .map(|txid| PostTxResultForTxid {
@@ -387,7 +387,7 @@ impl PostBeefProvider for ArcProvider {
                 PostBeefResult {
                     name: self.name.clone(),
                     status: "error".to_string(),
-                    error: Some(format!("Request failed: {}", e)),
+                    error: Some(format!("Request failed: {e}")),
                     txid_results: txids
                         .iter()
                         .map(|txid| PostTxResultForTxid {

@@ -671,7 +671,7 @@ mod tests {
         LiveBlockHeader {
             version: 1,
             previous_hash: prev_hash.to_string(),
-            merkle_root: format!("merkle_{}", hash),
+            merkle_root: format!("merkle_{hash}"),
             time: 1231006505 + height,
             bits: 0x1d00ffff,
             nonce: height,

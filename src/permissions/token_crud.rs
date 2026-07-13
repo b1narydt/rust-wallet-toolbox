@@ -303,31 +303,31 @@ fn build_tags_for_request(request: &PermissionRequest) -> Vec<String> {
     match request.permission_type {
         PermissionType::ProtocolPermission => {
             let privileged = request.privileged.unwrap_or(false);
-            tags.push(format!("privileged {}", privileged));
+            tags.push(format!("privileged {privileged}"));
             if let Some(ref proto) = request.protocol {
-                tags.push(format!("protocolName {}", proto));
+                tags.push(format!("protocolName {proto}"));
             }
             if let Some(sec) = request.security_level {
-                tags.push(format!("protocolSecurityLevel {}", sec));
+                tags.push(format!("protocolSecurityLevel {sec}"));
                 if sec == 2 {
                     let cpty = request.counterparty.as_deref().unwrap_or("self");
-                    tags.push(format!("counterparty {}", cpty));
+                    tags.push(format!("counterparty {cpty}"));
                 }
             }
         }
         PermissionType::BasketAccess => {
             if let Some(ref basket) = request.basket_name {
-                tags.push(format!("basket {}", basket));
+                tags.push(format!("basket {basket}"));
             }
         }
         PermissionType::CertificateAccess => {
             let privileged = request.privileged.unwrap_or(false);
-            tags.push(format!("privileged {}", privileged));
+            tags.push(format!("privileged {privileged}"));
             if let Some(ref ct) = request.cert_type {
-                tags.push(format!("type {}", ct));
+                tags.push(format!("type {ct}"));
             }
             if let Some(ref v) = request.verifier {
-                tags.push(format!("verifier {}", v));
+                tags.push(format!("verifier {v}"));
             }
         }
         PermissionType::SpendingAuthorization => {
@@ -367,34 +367,34 @@ pub async fn lookup_permission_tokens(
         match permission_type {
             PermissionType::ProtocolPermission => {
                 if let Some(ref priv_flag) = filters.privileged {
-                    tags.push(format!("privileged {}", priv_flag));
+                    tags.push(format!("privileged {priv_flag}"));
                 }
                 if let Some(ref proto) = filters.protocol {
-                    tags.push(format!("protocolName {}", proto));
+                    tags.push(format!("protocolName {proto}"));
                 }
                 if let Some(sec) = filters.security_level {
-                    tags.push(format!("protocolSecurityLevel {}", sec));
+                    tags.push(format!("protocolSecurityLevel {sec}"));
                 }
                 if let Some(ref cpty) = filters.counterparty {
                     if filters.security_level == Some(2) {
-                        tags.push(format!("counterparty {}", cpty));
+                        tags.push(format!("counterparty {cpty}"));
                     }
                 }
             }
             PermissionType::BasketAccess => {
                 if let Some(ref bn) = filters.basket_name {
-                    tags.push(format!("basket {}", bn));
+                    tags.push(format!("basket {bn}"));
                 }
             }
             PermissionType::CertificateAccess => {
                 if let Some(ref priv_flag) = filters.privileged {
-                    tags.push(format!("privileged {}", priv_flag));
+                    tags.push(format!("privileged {priv_flag}"));
                 }
                 if let Some(ref ct) = filters.cert_type {
-                    tags.push(format!("type {}", ct));
+                    tags.push(format!("type {ct}"));
                 }
                 if let Some(ref v) = filters.verifier {
-                    tags.push(format!("verifier {}", v));
+                    tags.push(format!("verifier {v}"));
                 }
             }
             PermissionType::SpendingAuthorization => {
@@ -620,7 +620,7 @@ pub async fn revoke_permission_token(
     basket_name: &str,
     admin_originator: &str,
 ) -> Result<(), bsv::wallet::error::WalletError> {
-    let outpoint = format!("{}.{}", txid, output_index);
+    let outpoint = format!("{txid}.{output_index}");
     inner
         .relinquish_output(
             RelinquishOutputArgs {

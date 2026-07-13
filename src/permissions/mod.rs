@@ -762,7 +762,7 @@ impl WalletInterface for WalletPermissionsManager {
             ensure::ensure_protocol_permission(
                 self,
                 o,
-                &format!("certificate acquisition {}", cert_type_str),
+                &format!("certificate acquisition {cert_type_str}"),
                 1,
                 "self",
                 args.privileged,
@@ -844,7 +844,7 @@ impl WalletInterface for WalletPermissionsManager {
             ensure::ensure_protocol_permission(
                 self,
                 o,
-                &format!("certificate relinquishment {}", cert_type_str),
+                &format!("certificate relinquishment {cert_type_str}"),
                 1,
                 "self",
                 false,

@@ -98,8 +98,7 @@ async fn test_admin_stats_returns_not_implemented() {
     let err = result.unwrap_err().to_string();
     assert!(
         err.contains("admin_stats") || err.contains("NotImplemented"),
-        "Error should mention admin_stats or NotImplemented, got: {}",
-        err
+        "Error should mention admin_stats or NotImplemented, got: {err}"
     );
     setup.wallet.destroy().await.unwrap();
 }

@@ -63,7 +63,7 @@ pub fn offset_pub_key(
 /// Generate a random private key for use as a commission key offset.
 pub fn generate_key_offset() -> WalletResult<PrivateKey> {
     PrivateKey::from_random()
-        .map_err(|e| WalletError::Internal(format!("Failed to generate random key offset: {}", e)))
+        .map_err(|e| WalletError::Internal(format!("Failed to generate random key offset: {e}")))
 }
 
 #[cfg(test)]

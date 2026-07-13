@@ -50,9 +50,7 @@ async fn sqlite_migrations_create_all_16_tables() {
     for expected in &expected_tables {
         assert!(
             table_names.contains(expected),
-            "Table '{}' not found. Found tables: {:?}",
-            expected,
-            table_names
+            "Table '{expected}' not found. Found tables: {table_names:?}"
         );
     }
     assert_eq!(
@@ -209,9 +207,7 @@ async fn sqlite_key_columns_exist() {
     for expected in &expected_cols {
         assert!(
             col_names.contains(expected),
-            "Column '{}' not found in outputs table. Found: {:?}",
-            expected,
-            col_names
+            "Column '{expected}' not found in outputs table. Found: {col_names:?}"
         );
     }
 }

@@ -49,8 +49,8 @@ pub enum WsError {
 impl std::fmt::Display for WsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WsError::ConnectionFailed(msg) => write!(f, "WebSocket connection failed: {}", msg),
-            WsError::MessageParseFailed(msg) => write!(f, "Failed to parse message: {}", msg),
+            WsError::ConnectionFailed(msg) => write!(f, "WebSocket connection failed: {msg}"),
+            WsError::MessageParseFailed(msg) => write!(f, "Failed to parse message: {msg}"),
             WsError::IdleTimeout => write!(f, "WebSocket idle timeout"),
             WsError::Stopped => write!(f, "WebSocket stopped"),
         }
@@ -321,7 +321,7 @@ impl LiveWebSocketIngestor {
 
         let (ws_stream, _) = connect_async(url)
             .await
-            .map_err(|e| WalletError::NetworkChain(format!("WebSocket connect failed: {}", e)))?;
+            .map_err(|e| WalletError::NetworkChain(format!("WebSocket connect failed: {e}")))?;
 
         info!("WebSocket connected");
 
@@ -331,7 +331,7 @@ impl LiveWebSocketIngestor {
         write
             .send(Message::Text("{}".to_string()))
             .await
-            .map_err(|e| WalletError::NetworkChain(format!("WebSocket send failed: {}", e)))?;
+            .map_err(|e| WalletError::NetworkChain(format!("WebSocket send failed: {e}")))?;
 
         let mut last_message_time = std::time::Instant::now();
         let idle_timeout = std::time::Duration::from_millis(self.options.idle_timeout_ms);
@@ -466,7 +466,7 @@ impl LiveWebSocketIngestor {
 
         if let Some(data) = header_data {
             let woc_header: WocWsBlockHeader = serde_json::from_value(data.clone())
-                .map_err(|e| WalletError::Internal(format!("Invalid header data: {}", e)))?;
+                .map_err(|e| WalletError::Internal(format!("Invalid header data: {e}")))?;
 
             let header = ws_header_to_block_header(&woc_header);
             info!(

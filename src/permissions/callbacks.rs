@@ -96,7 +96,7 @@ pub async fn fire_permission_callback(
         Err(e) => {
             tracing::warn!("Permission callback error (swallowed): {}", e);
             Ok(PermissionResponse::Deny {
-                reason: format!("Callback error: {}", e),
+                reason: format!("Callback error: {e}"),
             })
         }
     }
