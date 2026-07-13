@@ -172,13 +172,8 @@ impl MemoryStorage {
             }
             // Walk back
             current_id = inner.headers.get(&cid).and_then(|h| {
-                h.previous_header_id.and_then(|pid| {
-                    if inner.headers.contains_key(&pid) {
-                        Some(pid)
-                    } else {
-                        None
-                    }
-                })
+                h.previous_header_id
+                    .filter(|&pid| inner.headers.contains_key(&pid))
             });
         }
 
@@ -202,13 +197,8 @@ impl MemoryStorage {
             }
             // Walk back
             current_id = inner.headers.get(&cid).and_then(|h| {
-                h.previous_header_id.and_then(|pid| {
-                    if inner.headers.contains_key(&pid) {
-                        Some(pid)
-                    } else {
-                        None
-                    }
-                })
+                h.previous_header_id
+                    .filter(|&pid| inner.headers.contains_key(&pid))
             });
         }
 
@@ -274,13 +264,13 @@ impl MemoryStorage {
                     None => return None,
                 },
             };
-            cur1 = match headers.get(&prev1_id) {
-                Some(h) => h.clone(),
-                None => return None,
+            cur1 = {
+                let h = headers.get(&prev1_id)?;
+                h.clone()
             };
-            cur2 = match headers.get(&prev2_id) {
-                Some(h) => h.clone(),
-                None => return None,
+            cur2 = {
+                let h = headers.get(&prev2_id)?;
+                h.clone()
             };
         }
 
