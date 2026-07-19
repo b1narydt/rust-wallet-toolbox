@@ -7,6 +7,10 @@
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+use bsv::primitives::hash::sha256;
+use bsv::primitives::private_key::PrivateKey;
+use bsv::primitives::random::random_bytes;
+use bsv::primitives::symmetric_key::SymmetricKey;
 use bsv::script::locking_script::LockingScript;
 use bsv::script::templates::push_drop::{decode as decode_push_drop, LockPosition, PushDrop};
 use bsv::wallet::interfaces::{
@@ -15,7 +19,12 @@ use bsv::wallet::interfaces::{
 };
 use bsv::wallet::types::{Counterparty, CounterpartyType, Protocol};
 
+use super::cwi_logic::{derive_password_key, xor_keys};
 use crate::WalletError;
+
+/// Expected byte length of each UMP auth factor (presentation key, recovery
+/// key, and the derived password key) and of the root primary/privileged keys.
+pub const UMP_FACTOR_SIZE: usize = 32;
 
 /// Admin basket name for UMP tokens (matching TS constant).
 pub const UMP_BASKET: &str = "admin user management token";
@@ -350,9 +359,422 @@ pub fn decode_ump_token_fields(fields: &[Vec<u8>]) -> Result<UMPToken, WalletErr
     })
 }
 
+// ============================================================================
+// 2-of-3 UMP threshold scheme (XOR + AES-GCM symmetric encryption, NOT Shamir)
+// ============================================================================
+//
+// The wallet's `rootPrimaryKey` is stored three times in the token, each
+// encrypted under the XOR of a *pair* of the three auth factors
+// (presentation key, password key, recovery key):
+//
+//   password_presentation_primary = SymEnc(rootPrimaryKey, XOR(presentation, password))
+//   password_recovery_primary     = SymEnc(rootPrimaryKey, XOR(password,     recovery))
+//   presentation_recovery_primary = SymEnc(rootPrimaryKey, XOR(presentation, recovery))
+//
+// Any 2 of the 3 factors reconstruct the XOR key and decrypt the root key.
+// A parallel `rootPrivilegedKey` is protected by the two combinations that
+// don't require re-deriving the root key first: `password + rootPrimaryKey`
+// and `presentation + recovery`. The three raw factors are also each backed
+// up encrypted directly under the privileged key so they can be recovered
+// once the privileged key is known (e.g. for a password change).
+
+/// The two factors an existing user supplies to unlock a `UMPToken`'s
+/// `rootPrimaryKey`. Any of the three 2-of-3 combinations works and all
+/// yield the identical root key.
+pub enum AuthFactors {
+    /// Presentation key (from the WAB, after an Auth Method passes) + password.
+    PresentationPassword {
+        /// 256-bit presentation key bytes.
+        presentation_key: Vec<u8>,
+        /// Raw password bytes (PBKDF2'd internally against the token's salt).
+        password: Vec<u8>,
+    },
+    /// Password + user-held recovery key (no WAB interaction needed).
+    PasswordRecovery {
+        /// Raw password bytes (PBKDF2'd internally against the token's salt).
+        password: Vec<u8>,
+        /// 256-bit recovery key bytes.
+        recovery_key: Vec<u8>,
+    },
+    /// Presentation key + recovery key (password forgotten / not needed).
+    PresentationRecovery {
+        /// 256-bit presentation key bytes.
+        presentation_key: Vec<u8>,
+        /// 256-bit recovery key bytes.
+        recovery_key: Vec<u8>,
+    },
+}
+
+/// Validate that a factor byte slice is exactly [`UMP_FACTOR_SIZE`] bytes.
+fn require_factor_size(name: &str, bytes: &[u8]) -> Result<(), WalletError> {
+    if bytes.len() != UMP_FACTOR_SIZE {
+        return Err(WalletError::Internal(format!(
+            "{} must be {} bytes, got {}",
+            name,
+            UMP_FACTOR_SIZE,
+            bytes.len()
+        )));
+    }
+    Ok(())
+}
+
+/// Build a brand-new `UMPToken` for a first-time user, given all three
+/// factors: the presentation key just released by the WAB, a password the
+/// user just chose, and a recovery key just generated for them.
+///
+/// Generates a fresh random `rootPrimaryKey` (the wallet's actual root key)
+/// and a fresh random `rootPrivilegedKey`, then populates every encrypted
+/// UMP token field so that:
+/// - any 2 of {presentation, password, recovery} unlock the root primary key
+/// - {password, rootPrimaryKey} or {presentation, recovery} unlock the root
+///   privileged key
+/// - all three raw factors are recoverable once the privileged key is known
+///
+/// # Returns
+/// `(token, root_primary_key)` — the caller is responsible for publishing
+/// the token on-chain (via [`create_ump_token`]) and for using
+/// `root_primary_key` to construct the user's wallet.
+///
+/// # Arguments
+/// * `password` - Raw password bytes chosen by the user
+/// * `presentation_key` - 32-byte presentation key released by the WAB
+/// * `recovery_key` - 32-byte recovery key (generate randomly for new users)
+pub fn build_ump_token(
+    password: &[u8],
+    presentation_key: &[u8],
+    recovery_key: &[u8],
+) -> Result<(UMPToken, Vec<u8>), WalletError> {
+    require_factor_size("presentation_key", presentation_key)?;
+    require_factor_size("recovery_key", recovery_key)?;
+
+    let root_primary_key = random_bytes(UMP_FACTOR_SIZE);
+    let root_privileged_key = random_bytes(UMP_FACTOR_SIZE);
+    let password_salt = random_bytes(UMP_FACTOR_SIZE);
+    let password_key = derive_password_key(password, &password_salt);
+    require_factor_size("derived password_key", &password_key)?;
+
+    let xor_pw_pres = xor_keys(presentation_key, &password_key);
+    let xor_pw_rec = xor_keys(&password_key, recovery_key);
+    let xor_pres_rec = xor_keys(presentation_key, recovery_key);
+
+    let password_presentation_primary = sym_encrypt(&xor_pw_pres, &root_primary_key)?;
+    let password_recovery_primary = sym_encrypt(&xor_pw_rec, &root_primary_key)?;
+    let presentation_recovery_primary = sym_encrypt(&xor_pres_rec, &root_primary_key)?;
+
+    let xor_pw_primary = xor_keys(&password_key, &root_primary_key);
+    let password_primary_privileged = sym_encrypt(&xor_pw_primary, &root_privileged_key)?;
+    let presentation_recovery_privileged = sym_encrypt(&xor_pres_rec, &root_privileged_key)?;
+
+    let presentation_key_encrypted = sym_encrypt(&root_privileged_key, presentation_key)?;
+    let password_key_encrypted = sym_encrypt(&root_privileged_key, &password_key)?;
+    let recovery_key_encrypted = sym_encrypt(&root_privileged_key, recovery_key)?;
+
+    let token = UMPToken {
+        password_salt,
+        password_presentation_primary,
+        password_recovery_primary,
+        presentation_recovery_primary,
+        password_primary_privileged,
+        presentation_recovery_privileged,
+        presentation_hash: sha256(presentation_key).to_vec(),
+        recovery_hash: sha256(recovery_key).to_vec(),
+        presentation_key_encrypted,
+        password_key_encrypted,
+        recovery_key_encrypted,
+        profiles_encrypted: None,
+        current_outpoint: None,
+    };
+
+    Ok((token, root_primary_key))
+}
+
+/// Unlock (decrypt) an existing `UMPToken`'s `rootPrimaryKey` using any 2 of
+/// the 3 auth factors.
+///
+/// Derives the password key from the token's stored salt when a password is
+/// supplied, XORs the appropriate factor pair, and uses the result as an
+/// AES-256 key to decrypt the matching primary-key slot. A wrong password
+/// (or wrong recovery/presentation key) produces a different XOR key, which
+/// fails AEAD decryption and returns an `Err`.
+///
+/// # Arguments
+/// * `token` - The on-chain `UMPToken` to unlock
+/// * `factors` - The 2 factors supplied by the caller
+pub fn unlock_root_primary_key(
+    token: &UMPToken,
+    factors: &AuthFactors,
+) -> Result<Vec<u8>, WalletError> {
+    let (xor_key, ciphertext) = match factors {
+        AuthFactors::PresentationPassword {
+            presentation_key,
+            password,
+        } => {
+            require_factor_size("presentation_key", presentation_key)?;
+            let password_key = derive_password_key(password, &token.password_salt);
+            (
+                xor_keys(presentation_key, &password_key),
+                &token.password_presentation_primary,
+            )
+        }
+        AuthFactors::PasswordRecovery {
+            password,
+            recovery_key,
+        } => {
+            require_factor_size("recovery_key", recovery_key)?;
+            let password_key = derive_password_key(password, &token.password_salt);
+            (
+                xor_keys(&password_key, recovery_key),
+                &token.password_recovery_primary,
+            )
+        }
+        AuthFactors::PresentationRecovery {
+            presentation_key,
+            recovery_key,
+        } => {
+            require_factor_size("presentation_key", presentation_key)?;
+            require_factor_size("recovery_key", recovery_key)?;
+            (
+                xor_keys(presentation_key, recovery_key),
+                &token.presentation_recovery_primary,
+            )
+        }
+    };
+
+    sym_decrypt(&xor_key, ciphertext)
+}
+
+/// Encrypt `plaintext` with `key_bytes` as an AES-256 `SymmetricKey`.
+fn sym_encrypt(key_bytes: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, WalletError> {
+    let key = SymmetricKey::from_bytes(key_bytes)
+        .map_err(|e| WalletError::Internal(format!("Invalid UMP symmetric key: {e}")))?;
+    key.encrypt(plaintext)
+        .map_err(|e| WalletError::Internal(format!("UMP symmetric encryption failed: {e}")))
+}
+
+/// Decrypt `ciphertext` with `key_bytes` as an AES-256 `SymmetricKey`.
+fn sym_decrypt(key_bytes: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, WalletError> {
+    let key = SymmetricKey::from_bytes(key_bytes)
+        .map_err(|e| WalletError::Internal(format!("Invalid UMP symmetric key: {e}")))?;
+    key.decrypt(ciphertext)
+        .map_err(|e| WalletError::Internal(format!("UMP symmetric decryption failed: {e}")))
+}
+
+/// Compute the SHA-256 hash of a presentation key, for UMP token lookup by tag.
+pub fn presentation_hash_hex(presentation_key: &[u8]) -> String {
+    sha256(presentation_key)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ------------------------------------------------------------------
+    // 2-of-3 UMP threshold scheme: build_ump_token / unlock_root_primary_key
+    // ------------------------------------------------------------------
+
+    const PASSWORD: &[u8] = b"correct horse battery staple";
+
+    fn make_test_token() -> (UMPToken, Vec<u8>, Vec<u8>, Vec<u8>) {
+        let presentation_key = random_bytes(UMP_FACTOR_SIZE);
+        let recovery_key = random_bytes(UMP_FACTOR_SIZE);
+        let (token, root_primary_key) = build_ump_token(PASSWORD, &presentation_key, &recovery_key)
+            .expect("build_ump_token should succeed");
+        (token, root_primary_key, presentation_key, recovery_key)
+    }
+
+    #[test]
+    fn test_unlock_mode1_presentation_password() {
+        let (token, root_key, presentation_key, _recovery_key) = make_test_token();
+
+        let unlocked = unlock_root_primary_key(
+            &token,
+            &AuthFactors::PresentationPassword {
+                presentation_key,
+                password: PASSWORD.to_vec(),
+            },
+        )
+        .expect("presentation+password should unlock the root key");
+
+        assert_eq!(unlocked, root_key);
+    }
+
+    #[test]
+    fn test_unlock_mode2_presentation_recovery() {
+        let (token, root_key, presentation_key, recovery_key) = make_test_token();
+
+        let unlocked = unlock_root_primary_key(
+            &token,
+            &AuthFactors::PresentationRecovery {
+                presentation_key,
+                recovery_key,
+            },
+        )
+        .expect("presentation+recovery should unlock the root key");
+
+        assert_eq!(unlocked, root_key);
+    }
+
+    #[test]
+    fn test_unlock_mode3_recovery_password() {
+        let (token, root_key, _presentation_key, recovery_key) = make_test_token();
+
+        let unlocked = unlock_root_primary_key(
+            &token,
+            &AuthFactors::PasswordRecovery {
+                password: PASSWORD.to_vec(),
+                recovery_key,
+            },
+        )
+        .expect("password+recovery should unlock the root key");
+
+        assert_eq!(unlocked, root_key);
+    }
+
+    #[test]
+    fn test_all_three_modes_yield_the_same_root_key() {
+        let (token, root_key, presentation_key, recovery_key) = make_test_token();
+
+        let via_pw = unlock_root_primary_key(
+            &token,
+            &AuthFactors::PresentationPassword {
+                presentation_key: presentation_key.clone(),
+                password: PASSWORD.to_vec(),
+            },
+        )
+        .unwrap();
+        let via_recovery = unlock_root_primary_key(
+            &token,
+            &AuthFactors::PresentationRecovery {
+                presentation_key: presentation_key.clone(),
+                recovery_key: recovery_key.clone(),
+            },
+        )
+        .unwrap();
+        let via_pw_recovery = unlock_root_primary_key(
+            &token,
+            &AuthFactors::PasswordRecovery {
+                password: PASSWORD.to_vec(),
+                recovery_key: recovery_key.clone(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(via_pw, root_key);
+        assert_eq!(via_recovery, root_key);
+        assert_eq!(via_pw_recovery, root_key);
+        assert_eq!(via_pw, via_recovery);
+        assert_eq!(via_recovery, via_pw_recovery);
+    }
+
+    #[test]
+    fn test_wrong_password_fails() {
+        let (token, _root_key, presentation_key, _recovery_key) = make_test_token();
+
+        let result = unlock_root_primary_key(
+            &token,
+            &AuthFactors::PresentationPassword {
+                presentation_key,
+                password: b"totally-wrong-password".to_vec(),
+            },
+        );
+
+        assert!(
+            result.is_err(),
+            "wrong password must not unlock the root key"
+        );
+    }
+
+    #[test]
+    fn test_wrong_recovery_key_fails() {
+        let (token, _root_key, presentation_key, _recovery_key) = make_test_token();
+        let wrong_recovery = random_bytes(UMP_FACTOR_SIZE);
+
+        let result = unlock_root_primary_key(
+            &token,
+            &AuthFactors::PresentationRecovery {
+                presentation_key,
+                recovery_key: wrong_recovery,
+            },
+        );
+
+        assert!(
+            result.is_err(),
+            "wrong recovery key must not unlock the root key"
+        );
+    }
+
+    #[test]
+    fn test_wrong_presentation_key_fails() {
+        let (token, _root_key, _presentation_key, recovery_key) = make_test_token();
+        let wrong_presentation = random_bytes(UMP_FACTOR_SIZE);
+
+        let result = unlock_root_primary_key(
+            &token,
+            &AuthFactors::PresentationRecovery {
+                presentation_key: wrong_presentation,
+                recovery_key,
+            },
+        );
+
+        assert!(
+            result.is_err(),
+            "wrong presentation key must not unlock the root key"
+        );
+    }
+
+    #[test]
+    fn test_build_ump_token_rejects_bad_factor_sizes() {
+        let short_presentation = vec![0u8; 16];
+        let recovery_key = random_bytes(UMP_FACTOR_SIZE);
+        let result = build_ump_token(PASSWORD, &short_presentation, &recovery_key);
+        assert!(result.is_err(), "short presentation key must be rejected");
+
+        let presentation_key = random_bytes(UMP_FACTOR_SIZE);
+        let short_recovery = vec![0u8; 8];
+        let result = build_ump_token(PASSWORD, &presentation_key, &short_recovery);
+        assert!(result.is_err(), "short recovery key must be rejected");
+    }
+
+    #[test]
+    fn test_build_ump_token_populates_hashes_and_salt() {
+        let (token, _root_key, presentation_key, recovery_key) = make_test_token();
+
+        assert_eq!(token.presentation_hash, sha256(&presentation_key).to_vec());
+        assert_eq!(token.recovery_hash, sha256(&recovery_key).to_vec());
+        assert_eq!(token.password_salt.len(), UMP_FACTOR_SIZE);
+        assert_eq!(presentation_hash_hex(&presentation_key).len(), 64);
+    }
+
+    #[test]
+    fn test_root_privileged_key_unlockable_via_password_and_primary() {
+        // password_primary_privileged = SymEnc(rootPrivilegedKey, XOR(passwordKey, rootPrimaryKey))
+        let (token, root_primary_key, _presentation_key, _recovery_key) = make_test_token();
+        let password_key = derive_password_key(PASSWORD, &token.password_salt);
+        let xor = xor_keys(&password_key, &root_primary_key);
+        let root_privileged_key =
+            sym_decrypt(&xor, &token.password_primary_privileged).expect("should decrypt");
+        assert_eq!(root_privileged_key.len(), UMP_FACTOR_SIZE);
+    }
+
+    #[test]
+    fn test_root_privileged_key_unlockable_via_presentation_and_recovery() {
+        // presentation_recovery_privileged = SymEnc(rootPrivilegedKey, XOR(presentation, recovery))
+        let (token, root_primary_key, presentation_key, recovery_key) = make_test_token();
+        let xor = xor_keys(&presentation_key, &recovery_key);
+        let root_privileged_key =
+            sym_decrypt(&xor, &token.presentation_recovery_privileged).expect("should decrypt");
+
+        // Cross-check: the same privileged key must also decrypt via the
+        // password+primary path.
+        let password_key = derive_password_key(PASSWORD, &token.password_salt);
+        let xor2 = xor_keys(&password_key, &root_primary_key);
+        let root_privileged_key2 =
+            sym_decrypt(&xor2, &token.password_primary_privileged).expect("should decrypt");
+        assert_eq!(root_privileged_key, root_privileged_key2);
+    }
 
     #[test]
     fn test_ump_token_serialization() {
