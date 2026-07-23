@@ -19,6 +19,7 @@ use bsv::wallet::types::{Counterparty, CounterpartyType};
 
 use crate::error::{WalletError, WalletResult};
 use crate::services::traits::WalletServices;
+use crate::signer::signing_provider::SigningProvider;
 use crate::signer::types::{SignerInternalizeActionResult, ValidInternalizeActionArgs};
 use crate::storage::action_types::StorageInternalizeActionArgs;
 use crate::storage::manager::WalletStorageManager;
@@ -40,12 +41,20 @@ use crate::wallet::types::AuthId;
 /// The SDK `InternalizeOutput` enum is passed through directly so the
 /// storage layer (and wire format) uses the tagged-enum shape that matches
 /// TypeScript.
+///
+/// When `signing_provider` is `Some` and its
+/// `derive_wallet_payment_locking_script` returns `Ok(Some(script))`, that
+/// script is used as the expected BRC-29 locking script (delegated
+/// derivation — e.g. MPC vaults with no local root key). On `Ok(None)` (or
+/// no provider) the local `key_deriver` derivation path runs unchanged.
+/// Provider errors propagate (fail closed).
 pub async fn signer_internalize_action(
     storage: &WalletStorageManager,
     services: &(dyn WalletServices + Send + Sync),
     key_deriver: &CachedKeyDeriver,
     auth: &str,
     args: &ValidInternalizeActionArgs,
+    signing_provider: Option<&dyn SigningProvider>,
 ) -> WalletResult<SignerInternalizeActionResult> {
     // -----------------------------------------------------------------------
     // 1. Parse AtomicBEEF to get the subject transaction
@@ -112,33 +121,56 @@ pub async fn signer_internalize_action(
                 base64::engine::general_purpose::STANDARD.encode(&payment.derivation_suffix);
             let key_id = format!("{derivation_prefix} {derivation_suffix}");
 
-            // The sender's identity key is the counterparty for derivation
-            let counterparty = Counterparty {
-                counterparty_type: CounterpartyType::Other,
-                public_key: Some(payment.sender_identity_key.clone()),
+            // Delegate the derivation to the signing provider when present.
+            // The provider receives the freshly base64-encoded STRING forms
+            // above — never lossy-decoded bytes (see the from_utf8_lossy
+            // hazard documented above). Provider errors propagate (fail
+            // closed); `Ok(None)` falls back to the local key_deriver path.
+            let delegated_script = match signing_provider {
+                Some(provider) => {
+                    provider
+                        .derive_wallet_payment_locking_script(
+                            &derivation_prefix,
+                            &derivation_suffix,
+                            &payment.sender_identity_key,
+                        )
+                        .await?
+                }
+                None => None,
             };
 
-            // Derive the expected public key using BRC-29 protocol.
-            // for_self=true because we are the receiver deriving our own key.
-            let derived_pub = key_deriver
-                .derive_public_key(&protocol, &key_id, &counterparty, true)
-                .map_err(|e| {
-                    WalletError::Internal(format!(
-                        "BRC-29 key derivation failed for output {output_index}: {e}"
-                    ))
-                })?;
+            let expected_bytes = match delegated_script {
+                Some(script) => script,
+                None => {
+                    // The sender's identity key is the counterparty for derivation
+                    let counterparty = Counterparty {
+                        counterparty_type: CounterpartyType::Other,
+                        public_key: Some(payment.sender_identity_key.clone()),
+                    };
 
-            // Build expected P2PKH locking script from derived public key
-            let hash_vec = derived_pub.to_hash();
-            let mut hash = [0u8; 20];
-            hash.copy_from_slice(&hash_vec);
-            let p2pkh = P2PKH::from_public_key_hash(hash);
-            let expected_script = p2pkh.lock().map_err(|e| {
-                WalletError::Internal(format!(
-                    "Failed to build expected P2PKH script for output {output_index}: {e}"
-                ))
-            })?;
-            let expected_bytes = expected_script.to_binary();
+                    // Derive the expected public key using BRC-29 protocol.
+                    // for_self=true because we are the receiver deriving our own key.
+                    let derived_pub = key_deriver
+                        .derive_public_key(&protocol, &key_id, &counterparty, true)
+                        .map_err(|e| {
+                            WalletError::Internal(format!(
+                                "BRC-29 key derivation failed for output {output_index}: {e}"
+                            ))
+                        })?;
+
+                    // Build expected P2PKH locking script from derived public key
+                    let hash_vec = derived_pub.to_hash();
+                    let mut hash = [0u8; 20];
+                    hash.copy_from_slice(&hash_vec);
+                    let p2pkh = P2PKH::from_public_key_hash(hash);
+                    let expected_script = p2pkh.lock().map_err(|e| {
+                        WalletError::Internal(format!(
+                            "Failed to build expected P2PKH script for output {output_index}: {e}"
+                        ))
+                    })?;
+                    expected_script.to_binary()
+                }
+            };
 
             // Compare expected vs actual
             if actual_script != expected_bytes {

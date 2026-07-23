@@ -130,6 +130,30 @@ pub trait SigningProvider: Send + Sync {
         Ok(())
     }
 
+    /// Derive the expected BRC-29 P2PKH locking script for an INCOMING
+    /// wallet-payment output during `internalize_action` validation.
+    /// `sender_identity_key` is the counterparty; the derivation is for self
+    /// (the receiver's own child key, `for_self = true`) — public-key data
+    /// only, no private-key material is required.
+    ///
+    /// `derivation_prefix` and `derivation_suffix` are the **base64 STRING**
+    /// forms of the BRC-29 derivation params (the BRC-29 key ID is composed
+    /// as `"{prefix} {suffix}"` from exactly these strings — the same text
+    /// form the sender used to lock the output).
+    ///
+    /// Returns `Ok(None)` (the default) when the provider does not delegate
+    /// this derivation; the caller then falls back to the local
+    /// `CachedKeyDeriver::derive_public_key(..., for_self = true)` path.
+    /// TS twin: the OPTIONAL `SigningProvider.deriveWalletPaymentLockingScript`.
+    async fn derive_wallet_payment_locking_script(
+        &self,
+        _derivation_prefix: &str,
+        _derivation_suffix: &str,
+        _sender_identity_key: &PublicKey,
+    ) -> WalletResult<Option<Vec<u8>>> {
+        Ok(None)
+    }
+
     /// Get the wallet's identity public key.
     fn identity_public_key(&self) -> &PublicKey;
 }

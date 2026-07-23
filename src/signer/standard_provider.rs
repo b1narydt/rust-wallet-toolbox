@@ -9,11 +9,14 @@
 use async_trait::async_trait;
 
 use bsv::primitives::public_key::PublicKey;
+use bsv::script::templates::p2pkh::P2PKH;
+use bsv::script::templates::ScriptTemplateLock;
 use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
+use bsv::wallet::types::{Counterparty, CounterpartyType};
 
 use crate::error::{WalletError, WalletResult};
 use crate::signer::signing_provider::SigningProvider;
-use crate::utility::script_template_brc29::ScriptTemplateBRC29;
+use crate::utility::script_template_brc29::{brc29_protocol, ScriptTemplateBRC29};
 
 /// Standard signing provider using a single private key via [`CachedKeyDeriver`].
 ///
@@ -106,6 +109,39 @@ impl SigningProvider for StandardSigningProvider {
         script.extend_from_slice(&pubkey_bytes);
 
         Ok(script)
+    }
+
+    async fn derive_wallet_payment_locking_script(
+        &self,
+        derivation_prefix: &str,
+        derivation_suffix: &str,
+        sender_identity_key: &PublicKey,
+    ) -> WalletResult<Option<Vec<u8>>> {
+        // BRC-29 key ID: "{prefix} {suffix}" from the base64 string forms.
+        let key_id = format!("{derivation_prefix} {derivation_suffix}");
+
+        // The sender's identity key is the counterparty; for_self = true
+        // because we are the receiver deriving our own child key.
+        let counterparty = Counterparty {
+            counterparty_type: CounterpartyType::Other,
+            public_key: Some(sender_identity_key.clone()),
+        };
+        let derived_pub = self
+            .key_deriver
+            .derive_public_key(&brc29_protocol(), &key_id, &counterparty, true)
+            .map_err(|e| {
+                WalletError::Internal(format!("BRC-29 wallet-payment derivation failed: {e}"))
+            })?;
+
+        // hash160(derived pubkey) → 25-byte P2PKH locking script.
+        let hash_vec = derived_pub.to_hash();
+        let mut hash = [0u8; 20];
+        hash.copy_from_slice(&hash_vec);
+        let p2pkh = P2PKH::from_public_key_hash(hash);
+        let script = p2pkh.lock().map_err(|e| {
+            WalletError::Internal(format!("Failed to build P2PKH locking script: {e}"))
+        })?;
+        Ok(Some(script.to_binary()))
     }
 
     fn identity_public_key(&self) -> &PublicKey {
