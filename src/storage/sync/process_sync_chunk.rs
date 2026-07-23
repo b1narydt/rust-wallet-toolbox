@@ -15,9 +15,32 @@ use serde::{Deserialize, Serialize};
 use crate::error::{WalletError, WalletResult};
 use crate::storage::find_args::*;
 use crate::storage::sync::merge::MergeEntity;
-use crate::storage::sync::sync_map::{SyncChunk, SyncMap};
+use crate::storage::sync::sync_map::{EntitySyncMap, SyncChunk, SyncMap};
 use crate::storage::traits::provider::StorageProvider;
 use crate::storage::TrxToken;
+
+/// Remap a *required* foreign key through the sync id-map, failing loudly when
+/// the mapping is absent.
+///
+/// TypeScript indexes `syncMap.<entity>.idMap[fk]` directly for required foreign
+/// keys (e.g. `EntityOutput.transactionId`); an unmapped id becomes `undefined`
+/// and the subsequent NOT NULL insert throws. Rust must mirror that fail-closed
+/// behavior rather than silently substituting the sender's raw foreign id, which
+/// would attach the row to an unrelated local record.
+fn remap_required_fk(
+    esm: &EntitySyncMap,
+    foreign_id: i64,
+    dependent_entity: &str,
+    fk_field: &str,
+) -> WalletResult<i64> {
+    esm.get_local_id(foreign_id).ok_or_else(|| {
+        WalletError::Internal(format!(
+            "processSyncChunk: {dependent_entity}.{fk_field} references unmapped foreign id \
+             {foreign_id} (no local id in syncMap.{}); refusing to fall back to the raw foreign id",
+            esm.entity_name
+        ))
+    })
+}
 
 /// Process an incoming SyncChunk by merging its entities into local storage.
 ///
@@ -228,11 +251,12 @@ pub async fn process_sync_chunk(
 
             let foreign_id = incoming.transaction_id;
 
-            // Remap proven_tx_id FK if present
-            let local_proven_tx_id = match incoming.proven_tx_id {
-                Some(fk) => sync_map.proven_tx.get_local_id(fk).or(Some(fk)),
-                None => None,
-            };
+            // Remap proven_tx_id FK if present. Optional FK: TS uses
+            // `ei.provenTxId ? idMap[ei.provenTxId] : undefined`, so a present but
+            // unmapped id becomes undefined (None) rather than the raw foreign id.
+            let local_proven_tx_id = incoming
+                .proven_tx_id
+                .and_then(|fk| sync_map.proven_tx.get_local_id(fk));
 
             // Find by natural key: reference + user_id (unique per user)
             let existing = storage
@@ -293,23 +317,23 @@ pub async fn process_sync_chunk(
 
             let foreign_id = incoming.output_id;
 
-            // Remap transaction_id FK
-            let local_tx_id = sync_map
-                .transaction
-                .get_local_id(incoming.transaction_id)
-                .unwrap_or(incoming.transaction_id);
+            // Remap transaction_id FK (required — fail loudly if unmapped)
+            let local_tx_id = remap_required_fk(
+                &sync_map.transaction,
+                incoming.transaction_id,
+                "output",
+                "transaction_id",
+            )?;
 
-            // Remap basket_id FK if present
-            let local_basket_id = match incoming.basket_id {
-                Some(fk) => sync_map.output_basket.get_local_id(fk).or(Some(fk)),
-                None => None,
-            };
+            // Remap basket_id FK if present (optional — None if unmapped)
+            let local_basket_id = incoming
+                .basket_id
+                .and_then(|fk| sync_map.output_basket.get_local_id(fk));
 
-            // Remap spent_by FK if present
-            let local_spent_by = match incoming.spent_by {
-                Some(fk) => sync_map.transaction.get_local_id(fk).or(Some(fk)),
-                None => None,
-            };
+            // Remap spent_by FK if present (optional — None if unmapped)
+            let local_spent_by = incoming
+                .spent_by
+                .and_then(|fk| sync_map.transaction.get_local_id(fk));
 
             // Find by natural key: transaction_id + vout
             let existing = storage
@@ -369,15 +393,19 @@ pub async fn process_sync_chunk(
             sync_map.tx_label_map.update_max(incoming.updated_at);
             sync_map.tx_label_map.count += 1;
 
-            // Remap FKs
-            let local_tx_label_id = sync_map
-                .tx_label
-                .get_local_id(incoming.tx_label_id)
-                .unwrap_or(incoming.tx_label_id);
-            let local_tx_id = sync_map
-                .transaction
-                .get_local_id(incoming.transaction_id)
-                .unwrap_or(incoming.transaction_id);
+            // Remap FKs (both required — fail loudly if unmapped)
+            let local_tx_label_id = remap_required_fk(
+                &sync_map.tx_label,
+                incoming.tx_label_id,
+                "txLabelMap",
+                "tx_label_id",
+            )?;
+            let local_tx_id = remap_required_fk(
+                &sync_map.transaction,
+                incoming.transaction_id,
+                "txLabelMap",
+                "transaction_id",
+            )?;
 
             // Find by natural key: tx_label_id + transaction_id
             let existing = storage
@@ -425,15 +453,19 @@ pub async fn process_sync_chunk(
             sync_map.output_tag_map.update_max(incoming.updated_at);
             sync_map.output_tag_map.count += 1;
 
-            // Remap FKs
-            let local_tag_id = sync_map
-                .output_tag
-                .get_local_id(incoming.output_tag_id)
-                .unwrap_or(incoming.output_tag_id);
-            let local_output_id = sync_map
-                .output
-                .get_local_id(incoming.output_id)
-                .unwrap_or(incoming.output_id);
+            // Remap FKs (both required — fail loudly if unmapped)
+            let local_tag_id = remap_required_fk(
+                &sync_map.output_tag,
+                incoming.output_tag_id,
+                "outputTagMap",
+                "output_tag_id",
+            )?;
+            let local_output_id = remap_required_fk(
+                &sync_map.output,
+                incoming.output_id,
+                "outputTagMap",
+                "output_id",
+            )?;
 
             // Find by natural key: output_tag_id + output_id
             let existing = storage
@@ -541,11 +573,13 @@ pub async fn process_sync_chunk(
             sync_map.certificate_field.update_max(incoming.updated_at);
             sync_map.certificate_field.count += 1;
 
-            // Remap certificate_id FK
-            let local_cert_id = sync_map
-                .certificate
-                .get_local_id(incoming.certificate_id)
-                .unwrap_or(incoming.certificate_id);
+            // Remap certificate_id FK (required — fail loudly if unmapped)
+            let local_cert_id = remap_required_fk(
+                &sync_map.certificate,
+                incoming.certificate_id,
+                "certificateField",
+                "certificate_id",
+            )?;
 
             // Find by natural key: certificate_id + field_name
             let existing = storage
@@ -596,11 +630,13 @@ pub async fn process_sync_chunk(
 
             let foreign_id = incoming.commission_id;
 
-            // Remap transaction_id FK
-            let local_tx_id = sync_map
-                .transaction
-                .get_local_id(incoming.transaction_id)
-                .unwrap_or(incoming.transaction_id);
+            // Remap transaction_id FK (required — fail loudly if unmapped)
+            let local_tx_id = remap_required_fk(
+                &sync_map.transaction,
+                incoming.transaction_id,
+                "commission",
+                "transaction_id",
+            )?;
 
             // Find by natural key: transaction_id + key_offset
             let existing = storage
@@ -660,11 +696,10 @@ pub async fn process_sync_chunk(
 
             let foreign_id = incoming.proven_tx_req_id;
 
-            // Remap proven_tx_id FK if present
-            let local_proven_tx_id = match incoming.proven_tx_id {
-                Some(fk) => sync_map.proven_tx.get_local_id(fk).or(Some(fk)),
-                None => None,
-            };
+            // Remap proven_tx_id FK if present (optional — None if unmapped)
+            let local_proven_tx_id = incoming
+                .proven_tx_id
+                .and_then(|fk| sync_map.proven_tx.get_local_id(fk));
 
             // Find by natural key: txid
             let existing = storage
