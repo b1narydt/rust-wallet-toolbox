@@ -167,32 +167,66 @@ mod signer_internalize_provider_tests {
             .expect("sender-side BRC-29 lock")
     }
 
-    /// Build a 1-in/1-out transaction paying `locking_script` and wrap it in
-    /// an AtomicBEEF, returning (beef_bytes, txid).
+    /// Build a 1-in/1-out transaction paying `locking_script` and wrap it in a
+    /// *valid* AtomicBEEF, returning (beef_bytes, subject_txid).
+    ///
+    /// The subject transaction is unproven (so it exercises the not-yet-mined
+    /// receive path) but spends a proven parent that is included in the BEEF
+    /// with a single-tx-block merkle bump. This passes full BEEF verification
+    /// (`ab.verify(chainTracker)`), which internalize now enforces.
     fn build_payment_beef(locking_script: &[u8], satoshis: u64) -> (Vec<u8>, String) {
-        let mut tx = BsvTransaction::new();
-        tx.version = 1;
-        tx.lock_time = 0;
+        use bsv::transaction::merkle_path::{MerklePath, MerklePathLeaf};
 
-        tx.add_input(TransactionInput {
+        // Proven parent, included with a bump so the subject tx chains to it.
+        let mut parent = BsvTransaction::new();
+        parent.version = 1;
+        parent.lock_time = 0;
+        parent.add_input(TransactionInput {
             source_transaction: None,
-            source_txid: Some("b".repeat(64)),
+            source_txid: Some("c".repeat(64)),
             source_output_index: 0,
             unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
             sequence: 0xFFFFFFFF,
         });
+        parent.add_output(TransactionOutput {
+            satoshis: Some(satoshis),
+            locking_script: LockingScript::from_binary(&[0x51]),
+            change: false,
+        });
+        let parent_txid = parent.id().expect("compute parent txid");
 
+        let level0 = vec![MerklePathLeaf {
+            offset: 0,
+            hash: Some(parent_txid.clone()),
+            txid: true,
+            duplicate: false,
+        }];
+        let bump = MerklePath::new(800_000, vec![level0]).expect("valid merkle path");
+
+        // Unproven subject tx paying `locking_script`, spending the proven parent.
+        let mut tx = BsvTransaction::new();
+        tx.version = 1;
+        tx.lock_time = 0;
+        tx.add_input(TransactionInput {
+            source_transaction: None,
+            source_txid: Some(parent_txid.clone()),
+            source_output_index: 0,
+            unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
+            sequence: 0xFFFFFFFF,
+        });
         tx.add_output(TransactionOutput {
             satoshis: Some(satoshis),
             locking_script: LockingScript::from_binary(locking_script),
             change: false,
         });
-
         let txid = tx.id().expect("compute txid");
 
-        let beef_tx = BeefTx::from_tx(tx, None).expect("create beef tx");
         let mut beef = Beef::new(bsv::transaction::beef::BEEF_V1);
-        beef.txs.push(beef_tx);
+        beef.bumps.push(bump);
+        beef.txs
+            .push(BeefTx::from_tx(parent, Some(0)).expect("parent beef tx"));
+        beef.txs
+            .push(BeefTx::from_tx(tx, None).expect("subject beef tx"));
         beef.atomic_txid = Some(txid.clone());
 
         let mut beef_bytes = Vec::new();

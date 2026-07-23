@@ -457,8 +457,15 @@ impl Wallet {
                     outputs: vec![bsv::wallet::interfaces::InternalizeOutput::WalletPayment {
                         output_index: 0,
                         payment: bsv::wallet::interfaces::Payment {
-                            derivation_prefix: derivation_prefix.into_bytes(),
-                            derivation_suffix: derivation_suffix.into_bytes(),
+                            // `Payment` carries the RAW derivation bytes; storage
+                            // base64-encodes them when persisting. The lock above
+                            // used the base64 STRING as the BRC-29 key-id, so we
+                            // must hand back the bytes that base64-encode to that
+                            // same string — a strict base64 decode, never
+                            // `into_bytes` (which would double-encode into
+                            // base64-of-base64 and make the output unspendable).
+                            derivation_prefix: payment_derivation_bytes(&derivation_prefix)?,
+                            derivation_suffix: payment_derivation_bytes(&derivation_suffix)?,
                             sender_identity_key: self.identity_key.clone(),
                         },
                     }],
@@ -612,6 +619,24 @@ fn random_base64(n: usize) -> String {
     let mut buf = vec![0u8; n];
     rand::thread_rng().fill_bytes(&mut buf);
     base64::engine::general_purpose::STANDARD.encode(&buf)
+}
+
+/// Convert a base64 derivation key-id string (the form used to build the BRC-29
+/// lock) into the raw bytes carried by [`bsv::wallet::interfaces::Payment`].
+///
+/// `storage_internalize_action` re-encodes `Payment`'s derivation bytes to base64
+/// when persisting, so the stored spend key-id equals `base64(bytes)`. To keep the
+/// spend key-id equal to the base64 string used at lock time, the bytes handed to
+/// `Payment` must be exactly those that base64-encode back to that string — i.e. a
+/// strict base64 *decode*. Using `String::into_bytes` (the UTF-8 of the base64
+/// text) would make storage produce base64-of-base64 and desync the key-ids,
+/// rendering the swept output unspendable. This must NOT fall back to lossy UTF-8
+/// decoding.
+fn payment_derivation_bytes(key_id_b64: &str) -> Result<Vec<u8>, WalletError> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD
+        .decode(key_id_b64)
+        .map_err(|e| WalletError::Internal(format!("invalid base64 derivation key-id: {e}")))
 }
 
 // ---------------------------------------------------------------------------
@@ -1735,5 +1760,37 @@ impl WalletInterface for WalletArc {
             .as_ref()
             .discover_by_attributes(args, originator)
             .await
+    }
+}
+
+#[cfg(test)]
+mod sweep_derivation_tests {
+    use super::{payment_derivation_bytes, random_base64};
+    use base64::Engine as _;
+
+    /// #4 regression: sweep_to locks a BRC-29 output using the base64 derivation
+    /// STRING as the key-id, while `Payment` carries raw derivation bytes that
+    /// storage re-encodes to base64 when persisting. The stored spend key-id must
+    /// equal the base64 string used to lock, or the output is unspendable.
+    #[test]
+    fn lock_and_spend_key_ids_match() {
+        let key_id = random_base64(8);
+
+        // The bytes handed to Payment, then re-encoded by storage_internalize_action.
+        let payment_bytes = payment_derivation_bytes(&key_id).unwrap();
+        let stored = base64::engine::general_purpose::STANDARD.encode(&payment_bytes);
+        assert_eq!(
+            stored, key_id,
+            "spend key-id (base64 of Payment bytes) must equal the lock key-id"
+        );
+
+        // Guard against the original bug: passing the base64 string's own UTF-8
+        // bytes makes storage emit base64-of-base64, desyncing lock and spend.
+        let buggy_stored =
+            base64::engine::general_purpose::STANDARD.encode(key_id.clone().into_bytes());
+        assert_ne!(
+            buggy_stored, key_id,
+            "into_bytes double-encodes; that path must not be used"
+        );
     }
 }

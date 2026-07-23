@@ -16,7 +16,9 @@ use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 
 use crate::error::{WalletError, WalletResult};
 use crate::signer::types::{PendingStorageInput, ValidCreateActionArgs};
-use crate::storage::action_types::{StorageCreateActionResult, StorageCreateTransactionSdkInput};
+use crate::storage::action_types::{
+    StorageCreateActionResult, StorageCreateTransactionSdkInput, StorageCreateTransactionSdkOutput,
+};
 use crate::types::StorageProvidedBy;
 use crate::utility::script_template_brc29::ScriptTemplateBRC29;
 
@@ -53,6 +55,15 @@ pub fn build_signable_transaction(
 ) -> WalletResult<(Transaction, u64, Vec<PendingStorageInput>)> {
     let storage_inputs = &dcr.inputs;
     let storage_outputs = &dcr.outputs;
+
+    // SECURITY (GHSA-36f9-7rg5-cpf8): the locking scripts used to build and sign
+    // the transaction come from the (possibly remote/untrusted) storage response.
+    // Before signing anything, verify that every caller-requested output is echoed
+    // back unchanged, and that every additional output storage injected is either
+    // client-re-derived change or a single bounded commission — otherwise funds
+    // could be redirected to an attacker while the UI shows the requested recipient.
+    verify_requested_outputs_unchanged(storage_outputs, args)?;
+    verify_unrequested_outputs_are_change_or_commission(storage_outputs, args)?;
 
     let mut tx = Transaction::new();
     tx.version = dcr.version;
@@ -224,6 +235,165 @@ fn make_change_lock(
     Ok(LockingScript::from_binary(&script_bytes))
 }
 
+/// Default ceiling for a storage-provided commission (service-charge) output, in
+/// satoshis. The commission is the one output whose locking script is taken
+/// verbatim from storage and cannot be re-derived or verified client-side, so a
+/// malicious storage operator could point it at an attacker address. Capping it
+/// bounds the worst-case loss from that single output; honest commissions are far
+/// below this. (GHSA-36f9-7rg5-cpf8)
+pub const MAX_STORAGE_COMMISSION_SATOSHIS: u64 = 500_000;
+
+/// Lowercase hex encoding, matching the `.toLowerCase()` comparison the TS
+/// reference performs on locking scripts.
+fn bytes_to_hex_lower(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+/// Verify that the outputs storage returned for caller-specified outputs match
+/// exactly what the caller requested in `args.outputs`.
+///
+/// The storage response is ordered, by contract, as the caller's `args.outputs`
+/// in their original order, followed by the optional commission output, followed
+/// by storage-provided change. Only `vout` is randomized; the array order is
+/// stable, so array index `i` (for `i < args.outputs.length`) corresponds to
+/// `args.outputs[i]`.
+///
+/// Because the locking script that is ultimately signed is taken from the storage
+/// response, an untrusted storage provider must not be allowed to alter the
+/// recipient script (or amount) of a caller-specified output. Any mismatch is a
+/// hard error. (GHSA-36f9-7rg5-cpf8)
+///
+/// Ported from `verifyRequestedOutputsUnchanged`
+/// (wallet-toolbox/src/signer/methods/buildSignableTransaction.ts).
+pub(crate) fn verify_requested_outputs_unchanged(
+    storage_outputs: &[StorageCreateTransactionSdkOutput],
+    args: &ValidCreateActionArgs,
+) -> WalletResult<()> {
+    for (i, requested) in args.outputs.iter().enumerate() {
+        let provided = storage_outputs
+            .get(i)
+            .ok_or_else(|| WalletError::InvalidParameter {
+                parameter: "storage outputs".to_string(),
+                must_be: format!(
+                    "present for every requested output. Storage did not return an output for requested output index {i}."
+                ),
+            })?;
+
+        // A caller-specified output must never be reclassified by storage as change
+        // or as storage-provided; doing so would route it through makeChangeLock and
+        // bypass the script comparison below.
+        if provided.purpose.as_deref() == Some("change")
+            || provided.provided_by == StorageProvidedBy::Storage
+        {
+            return Err(WalletError::InvalidParameter {
+                parameter: "output.providedBy".to_string(),
+                must_be: format!(
+                    "consistent with the request. Storage reclassified requested output {i} as providedBy='{}' purpose='{}'.",
+                    provided.provided_by,
+                    provided.purpose.as_deref().unwrap_or("")
+                ),
+            });
+        }
+
+        let requested_script = requested
+            .locking_script
+            .as_deref()
+            .map(bytes_to_hex_lower)
+            .unwrap_or_default();
+        let provided_script = provided.locking_script.to_lowercase();
+        if requested_script.is_empty() || requested_script != provided_script {
+            return Err(WalletError::InvalidParameter {
+                parameter: "output.lockingScript".to_string(),
+                must_be: format!(
+                    "equal to the caller-requested locking script. Storage returned a different locking script for output index {i}; the recipient may have been substituted."
+                ),
+            });
+        }
+
+        if provided.satoshis != requested.satoshis {
+            return Err(WalletError::InvalidParameter {
+                parameter: "output.satoshis".to_string(),
+                must_be: format!(
+                    "equal to the caller-requested satoshis. Storage returned {} for output index {i}, caller requested {}.",
+                    provided.satoshis, requested.satoshis
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Verify that every storage output beyond the caller's requested outputs is
+/// either a change output or the (single, bounded) commission output.
+///
+/// Change outputs (`providedBy: storage, purpose: change`) are safe at any amount:
+/// `build_signable_transaction` ignores the storage-supplied script and re-derives
+/// it client-side under the client's own change key, so a change output can only
+/// ever pay the client. The commission output's script, by contrast, is taken
+/// verbatim from storage and cannot be verified client-side, so at most one is
+/// allowed and its amount must not exceed `MAX_STORAGE_COMMISSION_SATOSHIS`. Any
+/// other unrecognized output is rejected outright. (GHSA-36f9-7rg5-cpf8)
+///
+/// Ported from `verifyUnrequestedOutputsAreChangeOrCommission`
+/// (wallet-toolbox/src/signer/methods/buildSignableTransaction.ts).
+pub(crate) fn verify_unrequested_outputs_are_change_or_commission(
+    storage_outputs: &[StorageCreateTransactionSdkOutput],
+    args: &ValidCreateActionArgs,
+) -> WalletResult<()> {
+    let max_commission = MAX_STORAGE_COMMISSION_SATOSHIS;
+    let mut commission_count = 0u32;
+    for (i, out) in storage_outputs.iter().enumerate().skip(args.outputs.len()) {
+        let is_change = out.provided_by == StorageProvidedBy::Storage
+            && out.purpose.as_deref() == Some("change");
+        if is_change {
+            continue;
+        }
+
+        // Honest storage remaps a service-charge to purpose 'storage-commission';
+        // accept the pre-remap label too so the check is robust across versions.
+        let is_commission = out.provided_by == StorageProvidedBy::Storage
+            && matches!(
+                out.purpose.as_deref(),
+                Some("storage-commission") | Some("service-charge")
+            );
+        if is_commission {
+            commission_count += 1;
+            if commission_count > 1 {
+                return Err(WalletError::InvalidParameter {
+                    parameter: "storage outputs".to_string(),
+                    must_be: format!(
+                        "at most one commission output. Storage returned an extra commission output at index {i}."
+                    ),
+                });
+            }
+            if out.satoshis > max_commission {
+                return Err(WalletError::InvalidParameter {
+                    parameter: "output.satoshis".to_string(),
+                    must_be: format!(
+                        "a commission no greater than {max_commission}. Storage returned a commission of {} at index {i}; funds could be redirected to an attacker.",
+                        out.satoshis
+                    ),
+                });
+            }
+            continue;
+        }
+
+        return Err(WalletError::InvalidParameter {
+            parameter: "storage outputs".to_string(),
+            must_be: format!(
+                "only change or commission beyond the requested outputs. Storage returned an unrecognized output (providedBy='{}' purpose='{}') at index {i}; funds could be redirected to an attacker.",
+                out.provided_by,
+                out.purpose.as_deref().unwrap_or("")
+            ),
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,12 +467,24 @@ mod tests {
     }
 
     fn make_test_args() -> ValidCreateActionArgs {
-        use bsv::wallet::interfaces::CreateActionOptions;
+        use bsv::wallet::interfaces::{CreateActionOptions, CreateActionOutput};
 
         ValidCreateActionArgs {
             description: "test payment".to_string(),
             inputs: vec![], // No user inputs; all from storage
-            outputs: vec![],
+            // The caller-requested output that storage echoes back at index 0.
+            // Must match make_test_dcr()'s storage output 0 (script + satoshis)
+            // to satisfy verify_requested_outputs_unchanged.
+            outputs: vec![CreateActionOutput {
+                locking_script: Some(hex_to_bytes(
+                    "76a914bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb88ac",
+                )),
+                satoshis: 5_000,
+                output_description: "payment".to_string(),
+                basket: None,
+                custom_instructions: None,
+                tags: vec![],
+            }],
             lock_time: 0,
             version: 1,
             labels: vec![],
@@ -366,7 +548,9 @@ mod tests {
         let mut dcr = make_test_dcr();
         dcr.inputs.clear();
         dcr.outputs.clear();
-        let args = make_test_args();
+        let mut args = make_test_args();
+        // No storage outputs means there are no caller outputs to echo either.
+        args.outputs.clear();
 
         let (tx, _, _) = build_signable_transaction(&dcr, &args, &key_deriver, &pub_key).unwrap();
 
@@ -392,5 +576,158 @@ mod tests {
         );
         assert_eq!(change_script[0], 0x76, "should start with OP_DUP");
         assert_eq!(change_script[24], 0xac, "should end with OP_CHECKSIG");
+    }
+
+    // ------------------------------------------------------------------
+    // GHSA-36f9-7rg5-cpf8 — output verification (findings #1 and #2)
+    // ------------------------------------------------------------------
+
+    fn commission_output(
+        vout: u32,
+        satoshis: u64,
+        purpose: &str,
+    ) -> StorageCreateTransactionSdkOutput {
+        StorageCreateTransactionSdkOutput {
+            vout,
+            satoshis,
+            locking_script: "76a914cccccccccccccccccccccccccccccccccccccccc88ac".to_string(),
+            provided_by: StorageProvidedBy::Storage,
+            purpose: Some(purpose.to_string()),
+            basket: None,
+            tags: vec![],
+            output_description: None,
+            derivation_suffix: None,
+            custom_instructions: None,
+        }
+    }
+
+    /// #2: an attacker output injected beyond the caller's outputs (not change,
+    /// not commission) must be rejected before signing.
+    #[test]
+    fn test_injected_unrequested_output_rejected() {
+        let (key_deriver, pub_key) = test_keys();
+        let mut dcr = make_test_dcr();
+        // Bump the change output to vout 2, inject an attacker-controlled output at vout 1.
+        dcr.outputs[1].vout = 2;
+        dcr.outputs.push(StorageCreateTransactionSdkOutput {
+            vout: 1,
+            satoshis: 1_000,
+            locking_script: "76a914dddddddddddddddddddddddddddddddddddddddd88ac".to_string(),
+            provided_by: StorageProvidedBy::You,
+            purpose: None,
+            basket: None,
+            tags: vec![],
+            output_description: Some("attacker".to_string()),
+            derivation_suffix: None,
+            custom_instructions: None,
+        });
+        let args = make_test_args();
+
+        let res = build_signable_transaction(&dcr, &args, &key_deriver, &pub_key);
+        assert!(
+            res.is_err(),
+            "injected non-change/non-commission output must be rejected"
+        );
+    }
+
+    /// #2: a commission output above the 500000-sat cap must be rejected.
+    #[test]
+    fn test_commission_over_cap_rejected() {
+        let (key_deriver, pub_key) = test_keys();
+        let mut dcr = make_test_dcr();
+        dcr.outputs[1].vout = 2;
+        dcr.outputs.push(commission_output(
+            1,
+            MAX_STORAGE_COMMISSION_SATOSHIS + 1,
+            "storage-commission",
+        ));
+        let args = make_test_args();
+
+        let res = build_signable_transaction(&dcr, &args, &key_deriver, &pub_key);
+        assert!(res.is_err(), "commission over the cap must be rejected");
+    }
+
+    /// #2: a single commission output at exactly the cap is allowed.
+    #[test]
+    fn test_commission_within_cap_ok() {
+        let (key_deriver, pub_key) = test_keys();
+        let mut dcr = make_test_dcr();
+        dcr.outputs[1].vout = 2;
+        dcr.outputs.push(commission_output(
+            1,
+            MAX_STORAGE_COMMISSION_SATOSHIS,
+            "service-charge",
+        ));
+        let args = make_test_args();
+
+        let res = build_signable_transaction(&dcr, &args, &key_deriver, &pub_key);
+        assert!(
+            res.is_ok(),
+            "bounded commission must be accepted: {:?}",
+            res.err()
+        );
+    }
+
+    /// #2: more than one commission output must be rejected.
+    #[test]
+    fn test_two_commissions_rejected() {
+        let (key_deriver, pub_key) = test_keys();
+        let mut dcr = make_test_dcr();
+        dcr.outputs[1].vout = 3;
+        dcr.outputs
+            .push(commission_output(1, 100, "storage-commission"));
+        dcr.outputs
+            .push(commission_output(2, 100, "storage-commission"));
+        let args = make_test_args();
+
+        let res = build_signable_transaction(&dcr, &args, &key_deriver, &pub_key);
+        assert!(res.is_err(), "two commission outputs must be rejected");
+    }
+
+    /// #1: storage substituting the locking script of a caller-requested output
+    /// (recipient substitution) must be rejected.
+    #[test]
+    fn test_requested_output_script_substituted_rejected() {
+        let (key_deriver, pub_key) = test_keys();
+        let mut dcr = make_test_dcr();
+        dcr.outputs[0].locking_script =
+            "76a914eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee88ac".to_string();
+        let args = make_test_args();
+
+        let res = build_signable_transaction(&dcr, &args, &key_deriver, &pub_key);
+        assert!(
+            res.is_err(),
+            "substituted recipient script must be rejected"
+        );
+    }
+
+    /// #1: storage changing the satoshis of a caller-requested output must be rejected.
+    #[test]
+    fn test_requested_output_satoshis_changed_rejected() {
+        let (key_deriver, pub_key) = test_keys();
+        let mut dcr = make_test_dcr();
+        dcr.outputs[0].satoshis = 4_999;
+        let args = make_test_args();
+
+        let res = build_signable_transaction(&dcr, &args, &key_deriver, &pub_key);
+        assert!(res.is_err(), "changed output satoshis must be rejected");
+    }
+
+    /// #1: storage reclassifying a caller-requested output as change (routing it
+    /// through client change derivation) must be rejected.
+    #[test]
+    fn test_requested_output_reclassified_as_change_rejected() {
+        let (key_deriver, pub_key) = test_keys();
+        let mut dcr = make_test_dcr();
+        dcr.outputs[0].provided_by = StorageProvidedBy::Storage;
+        dcr.outputs[0].purpose = Some("change".to_string());
+        dcr.outputs[0].derivation_suffix = Some("suffix0".to_string());
+        let args = make_test_args();
+
+        let res = build_signable_transaction(&dcr, &args, &key_deriver, &pub_key);
+        assert!(
+            res.is_err(),
+            "reclassifying a requested output as change must be rejected"
+        );
     }
 }

@@ -176,6 +176,42 @@ impl SyncMap {
             proven_tx_req: EntitySyncMap::new("provenTxReq"),
         }
     }
+
+    /// Borrow all twelve per-entity sync maps in dependency order.
+    pub fn entity_maps(&self) -> [&EntitySyncMap; 12] {
+        [
+            &self.proven_tx,
+            &self.output_basket,
+            &self.transaction,
+            &self.output,
+            &self.tx_label,
+            &self.tx_label_map,
+            &self.output_tag,
+            &self.output_tag_map,
+            &self.certificate,
+            &self.certificate_field,
+            &self.commission,
+            &self.proven_tx_req,
+        ]
+    }
+
+    /// Mutably borrow all twelve per-entity sync maps in dependency order.
+    pub fn entity_maps_mut(&mut self) -> [&mut EntitySyncMap; 12] {
+        [
+            &mut self.proven_tx,
+            &mut self.output_basket,
+            &mut self.transaction,
+            &mut self.output,
+            &mut self.tx_label,
+            &mut self.tx_label_map,
+            &mut self.output_tag,
+            &mut self.output_tag_map,
+            &mut self.certificate,
+            &mut self.certificate_field,
+            &mut self.commission,
+            &mut self.proven_tx_req,
+        ]
+    }
 }
 
 impl Default for SyncMap {

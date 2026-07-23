@@ -373,6 +373,10 @@ impl BulkIngestor for BulkCdnIngestor {
 
     /// Performs a synchronization pass.  Returns an empty result with `done = false`
     /// because the CDN ingestor is driven externally via `fetch_headers`.
+    // TODO(parity #7): CDN ingest + file validation — separate feature. The local
+    // bulk store (migrate_live_to_bulk + bulk fallback reads) is implemented; the
+    // remote CDN download/ingest pipeline, sha256 file-hash validation, and the
+    // production CDN manifest schema are intentionally not built here.
     async fn synchronize(&self) -> WalletResult<BulkSyncResult> {
         info!("CDN bulk sync: synchronize() called (no-op; use fetch_headers)");
         Ok(BulkSyncResult {

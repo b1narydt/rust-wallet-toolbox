@@ -25,12 +25,19 @@ pub mod token_crud;
 /// Permission types, tokens, and request/response structs.
 pub mod types;
 
+/// Cross-module parity regression tests (spend tracking, privileged tokens, PushDrop).
+#[cfg(test)]
+mod tests_parity;
+
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
+
+use bsv::transaction::beef::Beef;
 
 use bsv::wallet::interfaces::{
     AbortActionArgs, AbortActionResult, AcquireCertificateArgs, AuthenticatedResult, Certificate,
@@ -357,6 +364,68 @@ fn orig(originator: Option<&str>) -> &str {
     originator.unwrap_or("")
 }
 
+/// Defense-in-depth check (GHSA-36f9-7rg5-cpf8) that every caller-requested
+/// output is present in the signable transaction the inner wallet returned.
+///
+/// The scripts in the signable transaction originate from storage; a malicious
+/// or compromised storage provider could substitute a recipient script for a
+/// caller-specified output, which would then be signed and broadcast while the
+/// caller/UI still shows the requested recipient. This mirrors the TypeScript
+/// `WalletPermissionsManager.verifyRequestedOutputsPresent`.
+///
+/// Outputs are matched as a multiset on (locking script, satoshis): the
+/// transaction also carries change/commission outputs, output order is
+/// randomized by default, and a caller may legitimately request the same
+/// script+amount more than once — so each transaction output may satisfy at most
+/// one requested output.
+///
+/// `tx_atomic_beef` is the `SignableTransaction.tx` field (Atomic BEEF bytes).
+fn verify_requested_outputs_present(
+    tx_atomic_beef: &[u8],
+    requested: &[(Option<Vec<u8>>, u64)],
+) -> Result<(), bsv::wallet::error::WalletError> {
+    if requested.is_empty() {
+        return Ok(());
+    }
+
+    let beef = Beef::from_binary(&mut Cursor::new(tx_atomic_beef)).map_err(|e| {
+        bsv::wallet::error::WalletError::Internal(format!(
+            "Failed to parse signable transaction BEEF for output verification: {e}"
+        ))
+    })?;
+    let tx = beef.into_transaction().map_err(|e| {
+        bsv::wallet::error::WalletError::Internal(format!(
+            "Failed to extract subject transaction from signable BEEF: {e}"
+        ))
+    })?;
+
+    // Every transaction output is a candidate; each may be consumed once.
+    let mut available: Vec<(Vec<u8>, Option<u64>, bool)> = tx
+        .outputs
+        .iter()
+        .map(|out| (out.locking_script.to_binary(), out.satoshis, false))
+        .collect();
+
+    for (i, (want_script, want_sats)) in requested.iter().enumerate() {
+        let want_script = want_script.as_deref().unwrap_or(&[]);
+        let matched = available.iter_mut().find(|(script, sats, used)| {
+            !*used && script.as_slice() == want_script && *sats == Some(*want_sats)
+        });
+        match matched {
+            Some(entry) => entry.2 = true,
+            None => {
+                return Err(bsv::wallet::error::WalletError::InvalidParameter(format!(
+                    "The transaction returned for signing does not contain caller-requested \
+                     output {i} (locking script and amount). The recipient may have been \
+                     substituted by storage."
+                )));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[async_trait]
 impl WalletInterface for WalletPermissionsManager {
     // -----------------------------------------------------------------------
@@ -442,7 +511,58 @@ impl WalletInterface for WalletPermissionsManager {
             .await?;
         }
 
-        self.inner.create_action(args, originator).await
+        // Stamp the action with admin originator + month labels so
+        // `query_spent_since` can accumulate this originator's monthly spend and
+        // enforce the DSAP cap (matches TS createAction). Without these, the
+        // monthly spend query finds nothing and limits never accumulate.
+        args.labels.push(format!("admin originator {o}"));
+        args.labels.push(format!(
+            "admin month {}",
+            token_crud::current_month_year_utc()
+        ));
+
+        // Capture the caller-requested (locking script, satoshis) pairs before
+        // `args` is consumed. Metadata encryption above only rewrites description
+        // fields, never the locking scripts or amounts, so these are the values
+        // the caller actually asked to pay.
+        let requested_outputs: Vec<(Option<Vec<u8>>, u64)> = args
+            .outputs
+            .iter()
+            .map(|out| (out.locking_script.clone(), out.satoshis))
+            .collect();
+
+        let result = self.inner.create_action(args, originator).await?;
+
+        // SECURITY (GHSA-36f9-7rg5-cpf8) defense-in-depth: confirm every
+        // caller-requested output actually appears in the signable transaction
+        // the inner wallet produced before we authorize or sign it. The locking
+        // scripts in that transaction originate from storage; a malicious or
+        // compromised remote storage provider could substitute a recipient
+        // script, which would then be signed and broadcast while the caller/UI
+        // still shows the requested recipient. The signer
+        // (`verify_requested_outputs_unchanged`) rejects this at the source; this
+        // is an independent check at the permissions layer, mirroring the TS
+        // `WalletPermissionsManager.verifyRequestedOutputsPresent`.
+        if let Some(signable) = result.signable_transaction.as_ref() {
+            if let Err(e) = verify_requested_outputs_present(&signable.tx, &requested_outputs) {
+                // Mirror TS: abort the pending action before surfacing the error
+                // so storage does not retain a spendable, tampered transaction.
+                // Abort is best-effort — the verification error is the meaningful
+                // one to return regardless of whether the abort itself succeeds.
+                let _ = self
+                    .inner
+                    .abort_action(
+                        AbortActionArgs {
+                            reference: signable.reference.clone(),
+                        },
+                        originator,
+                    )
+                    .await;
+                return Err(e);
+            }
+        }
+
+        Ok(result)
     }
 
     /// Permission checked on create_action, not here.

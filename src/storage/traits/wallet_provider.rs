@@ -1055,10 +1055,13 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         args: &RequestSyncChunkArgs,
         chunk: &SyncChunk,
     ) -> WalletResult<ProcessSyncChunkResult> {
-        // Determine if chunk is empty (nothing to process).
-        // An empty chunk signals that the reader has no more data — sync is done.
-        let chunk_is_empty = chunk.user.is_none()
-            && chunk.proven_txs.as_ref().is_none_or(|v| v.is_empty())
+        // Determine if the chunk carried any *entity* rows. A round is complete
+        // only when the reader has no more entity rows for the fixed `since`
+        // window. TS parity: `done` is computed solely from the 12 entity arrays
+        // (EntitySyncState.ts:394-403) — the user record is merged separately and
+        // does NOT keep the round alive, otherwise a round whose `since` is fixed
+        // (and therefore re-includes the user every chunk) could never terminate.
+        let chunk_is_empty = chunk.proven_txs.as_ref().is_none_or(|v| v.is_empty())
             && chunk.output_baskets.as_ref().is_none_or(|v| v.is_empty())
             && chunk.transactions.as_ref().is_none_or(|v| v.is_empty())
             && chunk.outputs.as_ref().is_none_or(|v| v.is_empty())
@@ -1074,7 +1077,39 @@ impl<T: StorageProvider> WalletStorageProvider for T {
             && chunk.commissions.as_ref().is_none_or(|v| v.is_empty())
             && chunk.proven_tx_reqs.as_ref().is_none_or(|v| v.is_empty());
 
-        let (mut sync_map, _) = build_sync_map_and_offsets(args);
+        // Load the persisted SyncMap for this storage pair BEFORE merging so the
+        // foreign->local idMap, per-entity counts (pagination offsets) and
+        // max_updated_at accumulate across every chunk and every run. TS parity:
+        // EntitySyncState.fromStorage parses the stored syncMap (EntitySyncState.ts:51)
+        // and processSyncChunk writes it back (line 411). Rebuilding a fresh
+        // SyncMap each chunk discards cross-chunk FK mappings and offsets.
+        let (user, _) =
+            StorageReaderWriter::find_or_insert_user(self, &chunk.user_identity_key, None).await?;
+        let existing = verify_one_or_none(
+            StorageReader::find_sync_states(
+                self,
+                &FindSyncStatesArgs {
+                    partial: SyncStatePartial {
+                        user_id: Some(user.user_id),
+                        storage_identity_key: Some(args.from_storage_identity_key.clone()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await?,
+        )?;
+
+        let mut sync_map = match existing.as_ref() {
+            Some(state) if !state.sync_map.is_empty() && state.sync_map != "{}" => {
+                serde_json::from_str(&state.sync_map).map_err(|e| {
+                    WalletError::Internal(format!("failed to parse persisted sync_map: {e}"))
+                })?
+            }
+            _ => SyncMap::new(),
+        };
+
         let mut result = crate::storage::sync::process_sync_chunk::process_sync_chunk(
             self,
             chunk.clone(),
@@ -1083,61 +1118,54 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         )
         .await?;
 
-        // Determine `done`:
-        // - If the chunk was empty, there is nothing left to sync.
-        // - TS parity: processSyncChunk sets done=true when chunk was empty.
+        // An empty chunk means the reader has no more rows for the current window:
+        // the sync round is complete.
         result.done = chunk_is_empty;
 
-        // Persist updated SyncState so the next iteration knows where to resume.
-        // Find the existing SyncState for this storage pair and update its sync_map + when.
-        if !chunk_is_empty {
-            // Only update if we actually processed something.
-            let (user, _) =
-                StorageReaderWriter::find_or_insert_user(self, &chunk.user_identity_key, None)
-                    .await?;
-            let existing = verify_one_or_none(
-                StorageReader::find_sync_states(
-                    self,
-                    &FindSyncStatesArgs {
-                        partial: SyncStatePartial {
-                            user_id: Some(user.user_id),
-                            storage_identity_key: Some(args.from_storage_identity_key.clone()),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    None,
-                )
-                .await?,
-            )?;
+        // The round high-watermark is the maximum updated_at accumulated across
+        // every chunk of this round (carried per-entity in the persisted syncMap),
+        // folded together with the user record's timestamp when one was present
+        // (TS EntitySyncState.ts:387).
+        let mut round_max = sync_map_max_updated_at(&sync_map);
+        if let Some(chunk_user) = &chunk.user {
+            round_max =
+                Some(round_max.map_or(chunk_user.updated_at, |m| m.max(chunk_user.updated_at)));
+        }
+        result.max_updated_at = round_max;
 
-            if let Some(state) = existing {
-                // Serialize updated sync_map to JSON for storage.
-                let new_sync_map_json = serde_json::to_string(&sync_map).map_err(|e| {
-                    WalletError::Internal(format!("failed to serialize sync_map: {e}"))
-                })?;
+        // Persist the updated SyncState so the next iteration resumes correctly.
+        if let Some(state) = existing {
+            // Window/offset bookkeeping (TS EntitySyncState.ts:394-411):
+            // - Within a round, keep `since` (== `when`) FIXED and let per-entity
+            //   counts accumulate as pagination offsets.
+            // - Only when the round completes (done) advance `when` to the
+            //   accumulated max and reset the counts to zero, so the next round
+            //   starts a fresh window at zero offsets. Advancing `when` on every
+            //   chunk while keeping non-zero offsets skips rows.
+            let when_update = if result.done {
+                for esm in sync_map.entity_maps_mut() {
+                    esm.count = 0;
+                }
+                result.max_updated_at
+            } else {
+                // Leave `when` unchanged: `None` skips the column in the update.
+                None
+            };
 
-                // Advance the `when` high-watermark.
-                // Use the maximum updated_at seen in this chunk if available,
-                // otherwise use the current time. This ensures the next iteration
-                // passes a non-None `since` to get_sync_chunk, preventing re-fetching
-                // the same data on subsequent calls.
-                let new_when = result
-                    .max_updated_at
-                    .or_else(|| Some(chrono::Utc::now().naive_utc()));
+            let new_sync_map_json = serde_json::to_string(&sync_map)
+                .map_err(|e| WalletError::Internal(format!("failed to serialize sync_map: {e}")))?;
 
-                StorageReaderWriter::update_sync_state(
-                    self,
-                    state.sync_state_id,
-                    &SyncStatePartial {
-                        sync_map: Some(new_sync_map_json),
-                        when: new_when,
-                        ..Default::default()
-                    },
-                    None,
-                )
-                .await?;
-            }
+            StorageReaderWriter::update_sync_state(
+                self,
+                state.sync_state_id,
+                &SyncStatePartial {
+                    sync_map: Some(new_sync_map_json),
+                    when: when_update,
+                    ..Default::default()
+                },
+                None,
+            )
+            .await?;
         }
 
         Ok(result)
@@ -1415,4 +1443,15 @@ fn build_sync_map_and_offsets(args: &RequestSyncChunkArgs) -> (SyncMap, SyncChun
     }
 
     (sync_map, offsets)
+}
+
+/// The maximum `updated_at` across all per-entity sync maps, or `None` when no
+/// entity has seen any rows. Used as the round high-watermark that advances the
+/// `when` filter once a sync round completes.
+fn sync_map_max_updated_at(sync_map: &SyncMap) -> Option<chrono::NaiveDateTime> {
+    sync_map
+        .entity_maps()
+        .into_iter()
+        .filter_map(|esm| esm.max_updated_at)
+        .max()
 }

@@ -217,10 +217,14 @@ pub async fn ensure_protocol_permission(
     protocol: &str,
     security_level: u8,
     counterparty: &str,
-    _privileged: bool,
+    privileged: bool,
     usage_type: &str,
 ) -> Result<(), bsv::wallet::error::WalletError> {
     let normalized = normalize_originator(originator);
+
+    // When privileged/non-privileged operations are not differentiated, collapse
+    // the flag to `false` so both share one permission (TS parity).
+    let privileged = privileged && mgr.config().differentiate_privileged_operations;
 
     // 1. Admin bypass
     if mgr.is_admin(Some(&normalized)) {
@@ -258,8 +262,9 @@ pub async fn ensure_protocol_permission(
         }
     }
 
-    // Build cache key and filters
-    let details = format!("{protocol}:{security_level}:{effective_counterparty}");
+    // Build cache key and filters. The privileged flag is part of the cache key
+    // so a privileged request never hits a non-privileged cached grant.
+    let details = format!("{protocol}:{security_level}:{effective_counterparty}:{privileged}");
     let cache_key = PermissionCache::build_cache_key(
         &PermissionType::ProtocolPermission,
         &normalized,
@@ -274,13 +279,14 @@ pub async fn ensure_protocol_permission(
         } else {
             None
         },
+        privileged: Some(privileged),
         ..Default::default()
     };
 
     let request = PermissionRequest {
         permission_type: PermissionType::ProtocolPermission,
         originator: normalized.clone(),
-        privileged: Some(_privileged),
+        privileged: Some(privileged),
         protocol: Some(protocol.to_string()),
         security_level: Some(security_level),
         counterparty: Some(effective_counterparty.to_string()),
@@ -402,10 +408,13 @@ pub async fn ensure_certificate_access(
     cert_type: &str,
     _cert_fields: Option<&[String]>,
     verifier: Option<&str>,
-    _privileged: bool,
+    privileged: bool,
     usage_type: &str,
 ) -> Result<(), bsv::wallet::error::WalletError> {
     let normalized = normalize_originator(originator);
+
+    // Collapse the privileged flag when differentiation is disabled (TS parity).
+    let privileged = privileged && mgr.config().differentiate_privileged_operations;
 
     if mgr.is_admin(Some(&normalized)) {
         return Ok(());
@@ -425,20 +434,21 @@ pub async fn ensure_certificate_access(
     }
 
     let verifier_str = verifier.unwrap_or("");
-    let details = format!("{cert_type}:{verifier_str}");
+    let details = format!("{cert_type}:{verifier_str}:{privileged}");
     let cache_key =
         PermissionCache::build_cache_key(&PermissionType::CertificateAccess, &normalized, &details);
 
     let filters = TokenLookupFilters {
         cert_type: Some(cert_type.to_string()),
         verifier: verifier.map(|v| v.to_string()),
+        privileged: Some(privileged),
         ..Default::default()
     };
 
     let request = PermissionRequest {
         permission_type: PermissionType::CertificateAccess,
         originator: normalized.clone(),
-        privileged: Some(_privileged),
+        privileged: Some(privileged),
         protocol: None,
         security_level: None,
         counterparty: None,
@@ -520,14 +530,13 @@ pub async fn ensure_spending_authorization(
     // Find a token with sufficient authorized_amount
     for token in &tokens {
         if let Some(authorized_amount) = token.authorized_amount {
-            let spent_so_far = query_spent_since(
-                mgr.inner().as_ref(),
-                &normalized,
-                0,
-                &mgr.admin_originator(),
-            )
-            .await
-            .unwrap_or(0);
+            // Pass the raw originator so the current-month spend query covers both
+            // its raw and normalized label forms (matches the labels stamped by
+            // create_action).
+            let spent_so_far =
+                query_spent_since(mgr.inner().as_ref(), originator, &mgr.admin_originator())
+                    .await
+                    .unwrap_or(0);
 
             if spent_so_far.saturating_add(amount) <= authorized_amount {
                 perm_cache.record_recent_grant(&cache_key).await;

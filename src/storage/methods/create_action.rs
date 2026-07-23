@@ -180,6 +180,82 @@ pub async fn merge_input_beef(
     Ok(())
 }
 
+/// Parse the caller-provided input BEEF bytes into a `Beef`, if present.
+///
+/// Returns `Ok(None)` when no BEEF was supplied. Invalid BEEF bytes are a
+/// caller error (WERR_INVALID_PARAMETER equivalent), matching TS createAction,
+/// which validates `inputBEEF` before resolving inputs against it.
+fn parse_input_beef(
+    input_beef: Option<&[u8]>,
+) -> WalletResult<Option<bsv::transaction::beef::Beef>> {
+    use bsv::transaction::beef::{Beef, BEEF_V2};
+    match input_beef {
+        Some(bytes) if !bytes.is_empty() => {
+            let mut beef = Beef::new(BEEF_V2);
+            beef.merge_beef_from_binary(bytes)
+                .map_err(|e| WalletError::InvalidParameter {
+                    parameter: "inputBEEF".to_string(),
+                    must_be: format!("valid BEEF binary: {e}"),
+                })?;
+            Ok(Some(beef))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Resolve `(satoshis, locking_script_hex)` for a caller-supplied input that is
+/// NOT managed by storage, from the caller-provided input BEEF.
+///
+/// Mirrors the beef branch of TS `resolveInputScript` (createAction.ts): finds
+/// the source transaction in the BEEF by txid and reads the referenced output.
+/// Returns a WERR_INVALID_PARAMETER-equivalent error if the BEEF is absent,
+/// lacks the source transaction (or its raw data), or the outpoint is invalid.
+fn resolve_external_input(
+    parsed_input_beef: Option<&bsv::transaction::beef::Beef>,
+    outpoint: &crate::storage::action_types::StorageOutPoint,
+) -> WalletResult<(u64, String)> {
+    let beef = parsed_input_beef.ok_or_else(|| WalletError::InvalidParameter {
+        parameter: "inputBEEF".to_string(),
+        must_be: format!(
+            "provided with proof data for unmanaged input {}:{}",
+            outpoint.txid, outpoint.vout
+        ),
+    })?;
+
+    let btx = beef
+        .find_txid(&outpoint.txid)
+        .ok_or_else(|| WalletError::InvalidParameter {
+            parameter: "inputBEEF".to_string(),
+            must_be: format!("contain source transaction {}", outpoint.txid),
+        })?;
+
+    let tx = btx
+        .tx
+        .as_ref()
+        .ok_or_else(|| WalletError::InvalidParameter {
+            parameter: "inputBEEF".to_string(),
+            must_be: format!(
+                "contain raw transaction data (not txid-only) for {}",
+                outpoint.txid
+            ),
+        })?;
+
+    let out =
+        tx.outputs
+            .get(outpoint.vout as usize)
+            .ok_or_else(|| WalletError::InvalidParameter {
+                parameter: format!("{}.{}", outpoint.txid, outpoint.vout),
+                must_be: "a valid outpoint".to_string(),
+            })?;
+
+    let satoshis = out.satoshis.ok_or_else(|| WalletError::InvalidParameter {
+        parameter: format!("{}.{}", outpoint.txid, outpoint.vout),
+        must_be: "an output with a satoshis value".to_string(),
+    })?;
+
+    Ok((satoshis, out.locking_script.to_hex()))
+}
+
 /// Inner function that does all the work within the db transaction.
 async fn do_create_action<S: StorageReaderWriter + ?Sized>(
     storage: &S,
@@ -232,6 +308,13 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
     // Mark as allocated by setting spentBy = transactionId.
     let mut fixed_inputs: Vec<FixedInput> = Vec::new();
     let mut input_records: Vec<StorageCreateTransactionSdkInput> = Vec::new();
+
+    // Parse the caller-provided input BEEF once. Unmanaged (non-storage) inputs
+    // are resolved to their real satoshis + locking script against it below,
+    // matching TS createAction.ts resolveInputScript. Without this the input's
+    // value is undercounted by funding(), over-allocating change and burning the
+    // input's excess as miner fee.
+    let parsed_input_beef = parse_input_beef(args.input_beef.as_deref())?;
 
     for (vin, input) in args.inputs.iter().enumerate() {
         // Find the output being spent
@@ -299,9 +382,15 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
                 sender_identity_key: output.sender_identity_key.clone(),
             });
         } else {
-            // User-provided input with no corresponding output in storage
+            // User-provided input not managed by storage: resolve its real
+            // satoshis and locking script from the caller-provided input BEEF.
+            // Matches TS resolveInputScript (createAction.ts) — leaving these at
+            // 0/empty would undercount funding() and burn the excess as fee.
+            let (source_satoshis, source_locking_script) =
+                resolve_external_input(parsed_input_beef.as_ref(), &input.outpoint)?;
+
             fixed_inputs.push(FixedInput {
-                satoshis: 0, // Will be filled from input BEEF
+                satoshis: source_satoshis,
                 unlocking_script_length: input.unlocking_script_length,
             });
 
@@ -309,8 +398,8 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
                 vin: vin as u32,
                 source_txid: input.outpoint.txid.clone(),
                 source_vout: input.outpoint.vout,
-                source_satoshis: 0,
-                source_locking_script: String::new(),
+                source_satoshis,
+                source_locking_script,
                 source_transaction: None,
                 unlocking_script_length: input.unlocking_script_length,
                 provided_by: StorageProvidedBy::You,
@@ -343,6 +432,19 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
     // basketId) without a change flag. Filtering on change=true would exclude
     // legitimately spendable outputs that entered the wallet via
     // internalizeAction with BasketInsertion into the default basket.
+    //
+    // Restrict candidates to change whose PARENT transaction is in a
+    // broadcastable/confirmed status — mirroring TS allocateChangeInput
+    // (StorageKnex.ts:1304-1315):
+    //   status = ['completed', 'unproven']; if (!excludeSending) status.push('sending')
+    // where excludeSending = !vargs.isDelayed.
+    // Without this join, unbroadcast `nosend` change (which processAction marks
+    // spendable=true while the parent tx sits in `nosend`) would be allocatable
+    // into an immediate send, producing invalid/unbroadcastable input chains.
+    let mut change_tx_status = vec![TransactionStatus::Completed, TransactionStatus::Unproven];
+    if args.is_delayed {
+        change_tx_status.push(TransactionStatus::Sending);
+    }
     let change_find_args = FindOutputsArgs {
         partial: OutputPartial {
             user_id: Some(user_id),
@@ -350,6 +452,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             spendable: Some(true),
             ..Default::default()
         },
+        tx_status: Some(change_tx_status),
         ..Default::default()
     };
     let mut available_change_outputs = storage.find_outputs(&change_find_args, trx_opt).await?;
@@ -986,6 +1089,196 @@ mod tests {
         );
     }
 
+    /// Set up storage holding exactly one spendable change UTXO whose parent
+    /// transaction is in `parent_status`. Returns (storage, user_id, basket_id,
+    /// output_id). Mirrors `setup_test_storage` fixture style but parameterizes
+    /// the parent transaction status so we can exercise the change-allocation
+    /// status filter.
+    async fn setup_change_with_parent_status(
+        parent_status: TransactionStatus,
+    ) -> (SqliteStorage, i64, i64, i64) {
+        let config = StorageConfig {
+            url: "sqlite::memory:".to_string(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::new_sqlite(config, Chain::Test)
+            .await
+            .expect("create storage");
+        storage.migrate_database().await.expect("migrate");
+        storage.make_available().await.expect("make available");
+
+        let (user, _) = storage
+            .find_or_insert_user("status_filter_identity", None)
+            .await
+            .expect("create user");
+        let user_id = user.user_id;
+        let basket = storage
+            .find_or_insert_output_basket(user_id, "default", None)
+            .await
+            .expect("create basket");
+
+        let now = Utc::now().naive_utc();
+        let source_tx = Transaction {
+            created_at: now,
+            updated_at: now,
+            transaction_id: 0,
+            user_id,
+            proven_tx_id: None,
+            status: parent_status,
+            reference: "parent_status_ref".to_string(),
+            is_outgoing: true,
+            satoshis: 100_000,
+            description: "parent tx".to_string(),
+            version: Some(1),
+            lock_time: Some(0),
+            txid: Some(
+                "bbbb1111cccc2222dddd3333eeee4444bbbb1111cccc2222dddd3333eeee4444".to_string(),
+            ),
+            input_beef: None,
+            raw_tx: None,
+        };
+        let source_tx_id = storage
+            .insert_transaction(&source_tx, None)
+            .await
+            .expect("insert parent tx");
+
+        // Single spendable change UTXO. Note spendable=true even for a `nosend`
+        // parent, exactly as processAction marks outputs — the safety must come
+        // from the parent-status join, not the spendable flag.
+        let output = Output {
+            created_at: now,
+            updated_at: now,
+            output_id: 0,
+            user_id,
+            transaction_id: source_tx_id,
+            basket_id: Some(basket.basket_id),
+            spendable: true,
+            change: true,
+            output_description: Some("status filter utxo".to_string()),
+            vout: 0,
+            satoshis: 50_000,
+            provided_by: StorageProvidedBy::Storage,
+            purpose: "change".to_string(),
+            output_type: "P2PKH".to_string(),
+            txid: Some(
+                "bbbb1111cccc2222dddd3333eeee4444bbbb1111cccc2222dddd3333eeee4444".to_string(),
+            ),
+            sender_identity_key: None,
+            derivation_prefix: Some("testprefix".to_string()),
+            derivation_suffix: Some("suffix0".to_string()),
+            custom_instructions: None,
+            spent_by: None,
+            sequence_number: None,
+            spending_description: None,
+            script_length: Some(25),
+            script_offset: None,
+            locking_script: Some(vec![
+                0x76, 0xa9, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0xac,
+            ]),
+        };
+        let output_id = storage
+            .insert_output(&output, None)
+            .await
+            .expect("insert utxo");
+
+        (storage, user_id, basket.basket_id, output_id)
+    }
+
+    /// Change whose parent transaction has not been sent (status `nosend`) must
+    /// NOT be allocated into a normal immediate send, and the same change MUST be
+    /// allocatable once its parent is broadcast/confirmed. Mirrors TS
+    /// allocateChangeInput's `whereIn('t.status', ['completed','unproven',...])`.
+    ///
+    /// Fails before the fix: the change query filtered on `spendable` only, so the
+    /// `nosend` change (marked spendable=true by processAction) was selected and
+    /// its `spentBy` was set — a double-spend/invalid-input hazard.
+    #[tokio::test]
+    async fn test_change_allocation_respects_parent_tx_status() {
+        let payment = StorageCreateActionOutput {
+            locking_script: "76a91400000000000000000000000000000000000000008ac".to_string(),
+            satoshis: 3_000,
+            output_description: "payment".to_string(),
+            basket: None,
+            custom_instructions: None,
+            tags: vec![],
+        };
+        let build_args = |output: StorageCreateActionOutput| StorageCreateActionArgs {
+            description: "parent-status allocation test".to_string(),
+            inputs: vec![],
+            outputs: vec![output],
+            lock_time: 0,
+            version: 1,
+            labels: vec![],
+            options: StorageCreateActionOptions::default(),
+            input_beef: None,
+            is_new_tx: true,
+            is_sign_action: false,
+            is_no_send: false,
+            is_delayed: false,
+            is_send_with: false,
+            is_remix_change: false,
+            is_test_werr_review_actions: None,
+            include_all_source_transactions: false,
+            random_vals: None,
+        };
+
+        // Case 1: parent is `nosend` -> the only change must be unspendable for a
+        // new immediate send. With no other funds the action cannot be funded, and
+        // critically the nosend change must remain unallocated (spentBy = None).
+        let (storage, user_id, _basket_id, output_id) =
+            setup_change_with_parent_status(TransactionStatus::Nosend).await;
+        let result =
+            storage_create_action(&storage, user_id, &build_args(payment.clone()), None).await;
+        assert!(
+            result.is_err(),
+            "createAction must not fund an immediate send from nosend change"
+        );
+        let after = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        output_id: Some(output_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find output");
+        assert_eq!(after.len(), 1, "output should still exist");
+        assert!(
+            after[0].spent_by.is_none(),
+            "nosend change must NOT be allocated (spentBy must stay None)"
+        );
+
+        // Case 2: parent is `completed` -> the same-shaped change IS allocatable.
+        let (storage2, user_id2, _basket_id2, output_id2) =
+            setup_change_with_parent_status(TransactionStatus::Completed).await;
+        storage_create_action(&storage2, user_id2, &build_args(payment), None)
+            .await
+            .expect("createAction should fund from confirmed change");
+        let after2 = storage2
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        output_id: Some(output_id2),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find output");
+        assert_eq!(after2.len(), 1, "output should still exist");
+        assert!(
+            after2[0].spent_by.is_some(),
+            "confirmed change MUST be allocatable (spentBy set)"
+        );
+    }
+
     #[tokio::test]
     async fn test_create_action_generates_change_outputs() {
         let (storage, user_id, _basket_id) = setup_test_storage().await;
@@ -1035,5 +1328,141 @@ mod tests {
         for co in &change_outputs {
             assert!(co.derivation_suffix.is_some());
         }
+    }
+
+    /// Build an input BEEF containing a single source transaction whose output
+    /// `vout` carries `satoshis` under `locking_script_hex`. Returns the BEEF
+    /// bytes and the source transaction's txid (big-endian display hex).
+    fn build_external_input_beef(
+        vout: usize,
+        satoshis: u64,
+        locking_script_hex: &str,
+    ) -> (Vec<u8>, String) {
+        use bsv::script::{LockingScript, UnlockingScript};
+        use bsv::transaction::beef::{Beef, BEEF_V2};
+        use bsv::transaction::beef_tx::BeefTx;
+        use bsv::transaction::{
+            Transaction as BsvTransaction, TransactionInput, TransactionOutput,
+        };
+
+        let mut tx = BsvTransaction::new();
+        tx.version = 1;
+        tx.lock_time = 0;
+        tx.add_input(TransactionInput {
+            source_transaction: None,
+            source_txid: Some("b".repeat(64)),
+            source_output_index: 0,
+            unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
+            sequence: 0xFFFFFFFF,
+        });
+
+        // Pad with earlier outputs so the target lands at `vout`.
+        for _ in 0..vout {
+            tx.add_output(TransactionOutput {
+                satoshis: Some(1),
+                locking_script: LockingScript::from_hex(
+                    "76a91400112233445566778899aabbccddeeff0011223388ac",
+                )
+                .unwrap(),
+                change: false,
+            });
+        }
+        tx.add_output(TransactionOutput {
+            satoshis: Some(satoshis),
+            locking_script: LockingScript::from_hex(locking_script_hex).unwrap(),
+            change: false,
+        });
+
+        let txid = tx.id().expect("compute txid");
+        let beef_tx = BeefTx::from_tx(tx, None).expect("create beef tx");
+        let mut beef = Beef::new(BEEF_V2);
+        beef.txs.push(beef_tx);
+
+        let mut beef_bytes = Vec::new();
+        beef.to_binary(&mut beef_bytes).expect("serialize beef");
+        (beef_bytes, txid)
+    }
+
+    /// An unmanaged (non-storage) caller-supplied input must have its real
+    /// satoshis and locking script resolved from the provided input BEEF —
+    /// not left at 0/empty, which would undercount funding and burn the
+    /// input's excess value as miner fee. Mirrors TS resolveInputScript.
+    #[tokio::test]
+    async fn test_create_action_resolves_external_input_from_beef() {
+        let (storage, user_id, _basket_id) = setup_test_storage().await;
+
+        // A large external input backed by a caller-provided BEEF.
+        let external_sats: u64 = 100_000;
+        let external_vout: usize = 1;
+        let external_script_hex = "76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac";
+        let (beef_bytes, source_txid) =
+            build_external_input_beef(external_vout, external_sats, external_script_hex);
+
+        let args = StorageCreateActionArgs {
+            description: "external input resolution".to_string(),
+            inputs: vec![crate::storage::action_types::StorageCreateActionInput {
+                outpoint: crate::storage::action_types::StorageOutPoint {
+                    txid: source_txid.clone(),
+                    vout: external_vout as u32,
+                },
+                input_description: "external funding input".to_string(),
+                unlocking_script_length: 108,
+                sequence_number: 0xFFFFFFFF,
+            }],
+            // Tiny payment so the external input massively overfunds it: any
+            // sane funding must return the excess as change, not burn it.
+            outputs: vec![StorageCreateActionOutput {
+                locking_script: "76a91400000000000000000000000000000000000000008ac".to_string(),
+                satoshis: 1_000,
+                output_description: "payment output".to_string(),
+                basket: None,
+                custom_instructions: None,
+                tags: vec![],
+            }],
+            lock_time: 0,
+            version: 1,
+            labels: vec![],
+            options: StorageCreateActionOptions::default(),
+            input_beef: Some(beef_bytes),
+            is_new_tx: true,
+            is_sign_action: false,
+            is_no_send: false,
+            is_delayed: false,
+            is_send_with: false,
+            is_remix_change: false,
+            is_test_werr_review_actions: None,
+            include_all_source_transactions: false,
+            random_vals: None,
+        };
+
+        let result = storage_create_action(&storage, user_id, &args, None)
+            .await
+            .expect("create_action should succeed");
+
+        // The resolved input must carry the real satoshis + locking script
+        // from the BEEF (pre-fix this was 0 / empty string).
+        let ext = result
+            .inputs
+            .iter()
+            .find(|i| i.source_txid == source_txid)
+            .expect("external input present in result");
+        assert_eq!(
+            ext.source_satoshis, external_sats,
+            "external input satoshis must be resolved from BEEF, not 0"
+        );
+        assert_eq!(
+            ext.source_locking_script, external_script_hex,
+            "external input locking script must be resolved from BEEF, not empty"
+        );
+
+        // Funding must reflect the real input value: with a 100k input and a
+        // 1k payment, the ~99k excess is returned as change rather than burned
+        // as fee. Pre-fix (input=0) storage would instead allocate small change
+        // UTXOs and the total output value would be far below 90k.
+        let total_out: u64 = result.outputs.iter().map(|o| o.satoshis).sum();
+        assert!(
+            total_out > 90_000,
+            "expected ~99k returned as change (input value recognized); got total_out={total_out}"
+        );
     }
 }

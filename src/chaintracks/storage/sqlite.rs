@@ -10,8 +10,9 @@ use std::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use crate::chaintracks::{
-    calculate_work, BlockHeader, ChaintracksStorage, ChaintracksStorageIngest,
-    ChaintracksStorageQuery, HeightRange, InsertHeaderResult, LiveBlockHeader,
+    add_work, calculate_work, is_more_work, BlockHeader, ChaintracksStorage,
+    ChaintracksStorageIngest, ChaintracksStorageQuery, HeightRange, InsertHeaderResult,
+    LiveBlockHeader,
 };
 use crate::error::WalletResult;
 use crate::types::Chain;
@@ -128,7 +129,67 @@ impl SqliteStorage {
         .execute(&self.pool)
         .await?;
 
+        // Archived (bulk) headers: confirmed, buried headers migrated out of the
+        // live window by `migrate_live_to_bulk`. Keyed by height (one canonical
+        // header per height — only active headers are ever archived), so old
+        // heights stay reachable and live storage stays bounded. This is the
+        // local-store analogue of the TS `BulkFileDataManager`; the CDN file
+        // layout and remote ingest are intentionally out of scope here.
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS chaintracks_bulk_headers (
+                height INTEGER PRIMARY KEY,
+                hash TEXT NOT NULL,
+                previous_hash TEXT NOT NULL,
+                merkle_root TEXT NOT NULL,
+                chain_work TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                time INTEGER NOT NULL,
+                bits INTEGER NOT NULL,
+                nonce INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_bulk_headers_merkle ON chaintracks_bulk_headers(merkle_root)",
+        )
+        .execute(&self.pool)
+        .await?;
+
         Ok(())
+    }
+
+    /// Serialize the six raw header fields into the canonical 80-byte layout,
+    /// matching the byte order used by the live-header path so live and bulk
+    /// bytes are interchangeable within this backend.
+    fn header_fields_to_bytes(
+        version: u32,
+        previous_hash: &str,
+        merkle_root: &str,
+        time: u32,
+        bits: u32,
+        nonce: u32,
+    ) -> [u8; 80] {
+        let mut buf = [0u8; 80];
+        buf[0..4].copy_from_slice(&version.to_le_bytes());
+        if let Ok(prev) = hex::decode(previous_hash) {
+            if prev.len() == 32 {
+                buf[4..36].copy_from_slice(&prev);
+            }
+        }
+        if let Ok(merkle) = hex::decode(merkle_root) {
+            if merkle.len() == 32 {
+                buf[36..68].copy_from_slice(&merkle);
+            }
+        }
+        buf[68..72].copy_from_slice(&time.to_le_bytes());
+        buf[72..76].copy_from_slice(&bits.to_le_bytes());
+        buf[76..80].copy_from_slice(&nonce.to_le_bytes());
+        buf
     }
 
     /// Map a database row to LiveBlockHeader
@@ -149,6 +210,20 @@ impl SqliteStorage {
             time: row.get::<i64, _>("time") as u32,
             bits: row.get::<i64, _>("bits") as u32,
             nonce: row.get::<i64, _>("nonce") as u32,
+        }
+    }
+
+    /// Map a `chaintracks_bulk_headers` row to a plain `BlockHeader`.
+    fn bulk_row_to_header(row: &sqlx::sqlite::SqliteRow) -> BlockHeader {
+        BlockHeader {
+            version: row.get::<i64, _>("version") as u32,
+            previous_hash: row.get("previous_hash"),
+            merkle_root: row.get("merkle_root"),
+            time: row.get::<i64, _>("time") as u32,
+            bits: row.get::<i64, _>("bits") as u32,
+            nonce: row.get::<i64, _>("nonce") as u32,
+            height: row.get::<i64, _>("height") as u32,
+            hash: row.get("hash"),
         }
     }
 
@@ -252,9 +327,18 @@ impl SqliteStorage {
         Ok(deactivated)
     }
 
-    /// Get header count
+    /// Get live header count
     pub async fn header_count(&self) -> WalletResult<usize> {
         let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM chaintracks_live_headers")
+            .fetch_one(&self.pool)
+            .await?;
+
+        Ok(row.0 as usize)
+    }
+
+    /// Get archived (bulk) header count.
+    pub async fn bulk_header_count(&self) -> WalletResult<usize> {
+        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM chaintracks_bulk_headers")
             .fetch_one(&self.pool)
             .await?;
 
@@ -419,23 +503,26 @@ impl SqliteStorage {
                 continue;
             }
 
-            // Calculate chain work if not set
-            let chain_work = if header.chain_work.is_empty() || header.chain_work == "0" {
-                calculate_work(header.bits)
-            } else {
-                header.chain_work.clone()
-            };
-
-            // Find previous header ID if we have the previous hash
-            let previous_header_id: Option<i64> = if header.previous_hash != "0".repeat(64) {
-                let row: Option<(i64,)> =
-                    sqlx::query_as("SELECT header_id FROM chaintracks_live_headers WHERE hash = ?")
-                        .bind(&header.previous_hash)
-                        .fetch_optional(&mut *tx)
-                        .await?;
-                row.map(|r| r.0)
+            // Find previous header (id + cumulative work) if we have the prev hash.
+            let previous: Option<(i64, String)> = if header.previous_hash != "0".repeat(64) {
+                sqlx::query_as(
+                    "SELECT header_id, chain_work FROM chaintracks_live_headers WHERE hash = ?",
+                )
+                .bind(&header.previous_hash)
+                .fetch_optional(&mut *tx)
+                .await?
             } else {
                 None
+            };
+            let previous_header_id: Option<i64> = previous.as_ref().map(|(id, _)| *id);
+
+            // Accumulate cumulative chain work from the parent (storage is
+            // authoritative: TS `addWork(parent.chainWork, work(bits))`); the
+            // first header in a chain carries its own work.
+            let block_work = calculate_work(header.bits);
+            let chain_work = match &previous {
+                Some((_, parent_work)) => add_work(parent_work, &block_work),
+                None => block_work,
             };
 
             // Insert the header (not as chain tip - we'll update that separately)
@@ -634,6 +721,7 @@ impl ChaintracksStorageQuery for SqliteStorage {
     }
 
     async fn find_header_for_height(&self, height: u32) -> WalletResult<Option<BlockHeader>> {
+        // Live (active) window first.
         let row = sqlx::query(
             r#"
             SELECT * FROM chaintracks_live_headers
@@ -645,7 +733,19 @@ impl ChaintracksStorageQuery for SqliteStorage {
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(row.map(|r| Self::row_to_header(&r).into()))
+        if let Some(r) = row {
+            return Ok(Some(Self::row_to_header(&r).into()));
+        }
+
+        // Fall back to archived bulk storage so heights migrated out of the live
+        // window remain reachable and still validate. Matches TS
+        // `findHeaderForHeightOrUndefined`.
+        let bulk = sqlx::query("SELECT * FROM chaintracks_bulk_headers WHERE height = ? LIMIT 1")
+            .bind(height as i64)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        Ok(bulk.map(|r| Self::bulk_row_to_header(&r)))
     }
 
     async fn find_live_header_for_block_hash(
@@ -679,7 +779,13 @@ impl ChaintracksStorageQuery for SqliteStorage {
     }
 
     async fn get_headers_bytes(&self, height: u32, count: u32) -> WalletResult<Vec<u8>> {
-        let rows = sqlx::query(
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let end = height + count;
+
+        // Live (active) window rows in range.
+        let live_rows = sqlx::query(
             r#"
             SELECT * FROM chaintracks_live_headers
             WHERE height >= ? AND height < ? AND is_active = 1
@@ -687,36 +793,62 @@ impl ChaintracksStorageQuery for SqliteStorage {
             "#,
         )
         .bind(height as i64)
-        .bind((height + count) as i64)
+        .bind(end as i64)
         .fetch_all(&self.pool)
         .await?;
 
-        let mut bytes = Vec::with_capacity(rows.len() * 80);
-        for row in rows {
+        // Serialized 80-byte headers keyed by height, so a range spanning the
+        // live/bulk boundary is emitted contiguously in ascending height order.
+        // Live takes precedence over bulk at any shared height.
+        let mut by_height: std::collections::BTreeMap<u32, [u8; 80]> =
+            std::collections::BTreeMap::new();
+
+        // Archived bulk rows in range fill the heights the live window no longer holds.
+        let bulk_rows = sqlx::query(
+            r#"
+            SELECT * FROM chaintracks_bulk_headers
+            WHERE height >= ? AND height < ?
+            ORDER BY height ASC
+            "#,
+        )
+        .bind(height as i64)
+        .bind(end as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        for row in bulk_rows {
+            let h = Self::bulk_row_to_header(&row);
+            by_height.insert(
+                h.height,
+                Self::header_fields_to_bytes(
+                    h.version,
+                    &h.previous_hash,
+                    &h.merkle_root,
+                    h.time,
+                    h.bits,
+                    h.nonce,
+                ),
+            );
+        }
+
+        for row in live_rows {
             let header = Self::row_to_header(&row);
-            // Serialize header to 80 bytes manually
-            bytes.extend_from_slice(&header.version.to_le_bytes());
-            if let Ok(prev) = hex::decode(&header.previous_hash) {
-                if prev.len() == 32 {
-                    bytes.extend_from_slice(&prev);
-                } else {
-                    bytes.extend_from_slice(&[0u8; 32]);
-                }
-            } else {
-                bytes.extend_from_slice(&[0u8; 32]);
-            }
-            if let Ok(merkle) = hex::decode(&header.merkle_root) {
-                if merkle.len() == 32 {
-                    bytes.extend_from_slice(&merkle);
-                } else {
-                    bytes.extend_from_slice(&[0u8; 32]);
-                }
-            } else {
-                bytes.extend_from_slice(&[0u8; 32]);
-            }
-            bytes.extend_from_slice(&header.time.to_le_bytes());
-            bytes.extend_from_slice(&header.bits.to_le_bytes());
-            bytes.extend_from_slice(&header.nonce.to_le_bytes());
+            by_height.insert(
+                header.height,
+                Self::header_fields_to_bytes(
+                    header.version,
+                    &header.previous_hash,
+                    &header.merkle_root,
+                    header.time,
+                    header.bits,
+                    header.nonce,
+                ),
+            );
+        }
+
+        let mut bytes = Vec::with_capacity(by_height.len() * 80);
+        for header_bytes in by_height.values() {
+            bytes.extend_from_slice(header_bytes);
         }
 
         Ok(bytes)
@@ -731,8 +863,15 @@ impl ChaintracksStorageQuery for SqliteStorage {
     }
 
     async fn get_available_height_ranges(&self) -> WalletResult<Vec<HeightRange>> {
-        // SQLite storage only tracks live headers, no bulk ranges
-        Ok(vec![])
+        // Contiguous height ranges covered by archived bulk storage. The live
+        // window is reported separately by `find_live_height_range`.
+        let rows: Vec<(i64,)> =
+            sqlx::query_as("SELECT height FROM chaintracks_bulk_headers ORDER BY height ASC")
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(super::memory::contiguous_ranges(
+            rows.into_iter().map(|(h,)| h as u32),
+        ))
     }
 
     async fn find_live_height_range(&self) -> WalletResult<Option<HeightRange>> {
@@ -860,17 +999,22 @@ impl ChaintracksStorageIngest for SqliteStorage {
             });
         }
 
-        // Calculate chain work if not set
-        if header.chain_work.is_empty() || header.chain_work == "0" {
-            header.chain_work = calculate_work(header.bits);
-        }
-
         // Find previous header
         let previous_header = if header.previous_hash != "0".repeat(64) {
             self.find_live_header_for_block_hash(&header.previous_hash)
                 .await?
         } else {
             None
+        };
+
+        // Accumulate cumulative chain work from the parent. Storage is
+        // authoritative for chain_work — it always derives the cumulative value
+        // (TS `addWork(oneBack.chainWork, convertBitsToWork(header.bits))`),
+        // with genesis / the first live header carrying its own work.
+        let block_work = calculate_work(header.bits);
+        header.chain_work = match &previous_header {
+            Some(parent) => add_work(&parent.chain_work, &block_work),
+            None => block_work,
         };
 
         let previous_header_id_i64: Option<i64> = previous_header
@@ -880,10 +1024,11 @@ impl ChaintracksStorageIngest for SqliteStorage {
         // Get current tip
         let current_tip = self.get_tip().await?;
 
-        // Determine if this becomes the new tip
+        // Determine if this becomes the new tip. Fork choice is by cumulative
+        // work, not height (TS `isMoreWork(chainWork, priorTip.chainWork)`).
         let becomes_tip = match &current_tip {
             None => true,
-            Some(tip) => header.height > tip.height,
+            Some(tip) => is_more_work(&header.chain_work, &tip.chain_work),
         };
 
         // Insert the header
@@ -1001,10 +1146,78 @@ impl ChaintracksStorageIngest for SqliteStorage {
         Ok(count)
     }
 
-    async fn migrate_live_to_bulk(&self, _count: u32) -> WalletResult<u32> {
-        // SQLite storage doesn't support bulk migration
-        // Headers remain in live storage
-        Ok(0)
+    async fn migrate_live_to_bulk(&self, count: u32) -> WalletResult<u32> {
+        if count == 0 {
+            return Ok(0);
+        }
+
+        // Never migrate the current chain tip: leaving it in the live window
+        // keeps fork-choice and tip invariants intact (fail-closed). Candidates
+        // are the oldest `count` *active* headers strictly below the tip height.
+        let tip_height = match self.get_tip().await? {
+            Some(tip) => tip.height,
+            None => return Ok(0),
+        };
+
+        let candidates = sqlx::query(
+            r#"
+            SELECT * FROM chaintracks_live_headers
+            WHERE is_active = 1 AND height < ?
+            ORDER BY height ASC
+            LIMIT ?
+            "#,
+        )
+        .bind(tip_height as i64)
+        .bind(count as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        if candidates.is_empty() {
+            return Ok(0);
+        }
+
+        let now = Utc::now().to_rfc3339();
+        let mut max_height: u32 = 0;
+        let mut migrated: u32 = 0;
+
+        // Archive each confirmed header into bulk storage (idempotent per height).
+        for row in &candidates {
+            let h = Self::row_to_header(row);
+            max_height = max_height.max(h.height);
+            migrated += 1;
+            sqlx::query(
+                r#"
+                INSERT OR REPLACE INTO chaintracks_bulk_headers
+                    (height, hash, previous_hash, merkle_root, chain_work,
+                     version, time, bits, nonce, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(h.height as i64)
+            .bind(&h.hash)
+            .bind(&h.previous_hash)
+            .bind(&h.merkle_root)
+            .bind(&h.chain_work)
+            .bind(h.version as i64)
+            .bind(h.time as i64)
+            .bind(h.bits as i64)
+            .bind(h.nonce as i64)
+            .bind(&now)
+            .execute(&self.pool)
+            .await?;
+        }
+
+        // Remove every live header at or below the highest migrated height —
+        // active (now archived) and any stale forks alike. Reuses the existing
+        // FK-safe delete. Mirrors TS `deleteOlderLiveBlockHeaders(...)`.
+        self.delete_older_live_block_headers(max_height).await?;
+
+        info!(
+            "Migrated {} live headers (through height {}) to bulk storage",
+            migrated, max_height
+        );
+
+        Ok(migrated)
     }
 
     async fn delete_older_live_block_headers(&self, max_height: u32) -> WalletResult<u32> {
@@ -1054,6 +1267,9 @@ impl ChaintracksStorageIngest for SqliteStorage {
         sqlx::query("DELETE FROM chaintracks_live_headers")
             .execute(&self.pool)
             .await?;
+        sqlx::query("DELETE FROM chaintracks_bulk_headers")
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -1101,6 +1317,19 @@ mod tests {
             nonce: 12345,
         }
     }
+
+    /// Header with explicit difficulty `bits` (empty chain_work; storage
+    /// computes the cumulative value). Used by the fork-choice-by-work tests.
+    fn header_bits(height: u32, prev_hash: &str, hash: &str, bits: u32) -> LiveBlockHeader {
+        let mut h = create_test_header(height, prev_hash, hash);
+        h.bits = bits;
+        h
+    }
+
+    // Compact difficulty values whose work differs by ~65536x (compact exponent
+    // 0x1b vs 0x1d), so a couple of high-difficulty blocks outweigh many low ones.
+    const LOW_BITS: u32 = 0x1d00ffff;
+    const HIGH_BITS: u32 = 0x1b00ffff;
 
     #[tokio::test]
     async fn test_storage_type() {
@@ -1929,5 +2158,267 @@ mod tests {
         storage.destroy().await.unwrap();
 
         assert_eq!(storage.header_count().await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_tip_selection_ignores_longer_lower_work_fork() {
+        let storage = create_test_storage().await;
+        let zero = "0".repeat(64);
+
+        // Main chain: genesis(low) -> a1(high) -> a2(high) at height 2.
+        storage
+            .insert_header(header_bits(0, &zero, "g", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(1, "g", "a1", HIGH_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(2, "a1", "a2", HIGH_BITS))
+            .await
+            .unwrap();
+
+        // Longer but all-low-difficulty fork: genesis -> b1 -> b2 -> b3 (height 3).
+        storage
+            .insert_header(header_bits(1, "g", "b1", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(2, "b1", "b2", LOW_BITS))
+            .await
+            .unwrap();
+        let r = storage
+            .insert_header(header_bits(3, "b2", "b3", LOW_BITS))
+            .await
+            .unwrap();
+
+        assert!(
+            !r.is_active_tip,
+            "longer but lower-work fork must not become the tip"
+        );
+        let tip = storage.find_chain_tip_header().await.unwrap().unwrap();
+        assert_eq!(tip.hash, "a2");
+        assert_eq!(tip.height, 2);
+        let b3 = storage
+            .find_live_header_for_block_hash("b3")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!b3.is_active, "fork header must remain inactive");
+    }
+
+    #[tokio::test]
+    async fn test_equal_height_higher_work_fork_takes_tip() {
+        let storage = create_test_storage().await;
+        let zero = "0".repeat(64);
+
+        // Main chain: genesis -> a1 -> a2, all low difficulty. Tip a2 at height 2.
+        storage
+            .insert_header(header_bits(0, &zero, "g", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(1, "g", "a1", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(2, "a1", "a2", LOW_BITS))
+            .await
+            .unwrap();
+
+        // Fork at height 1 with low work does not yet outweigh the tip.
+        let r1 = storage
+            .insert_header(header_bits(1, "g", "b1", LOW_BITS))
+            .await
+            .unwrap();
+        assert!(!r1.is_active_tip);
+
+        // b2 at the SAME height as the tip but with a high-difficulty block gives
+        // the fork strictly more cumulative work -> it takes the tip.
+        let r2 = storage
+            .insert_header(header_bits(2, "b1", "b2", HIGH_BITS))
+            .await
+            .unwrap();
+        assert!(
+            r2.is_active_tip,
+            "equal-height higher-work fork must take the tip"
+        );
+        assert!(r2.reorg_depth > 0, "expected a reorg");
+
+        let tip = storage.find_chain_tip_header().await.unwrap().unwrap();
+        assert_eq!(tip.hash, "b2");
+        assert_eq!(tip.height, 2);
+
+        let a2 = storage
+            .find_live_header_for_block_hash("a2")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!a2.is_active, "old chain must be deactivated");
+        let b2 = storage
+            .find_live_header_for_block_hash("b2")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(b2.is_active, "new higher-work chain must be active");
+    }
+
+    #[tokio::test]
+    async fn test_chain_work_accumulates_across_chain() {
+        let storage = create_test_storage().await;
+        let zero = "0".repeat(64);
+
+        storage
+            .insert_header(header_bits(0, &zero, "g", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(1, "g", "h1", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(2, "h1", "h2", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(3, "h2", "h3", LOW_BITS))
+            .await
+            .unwrap();
+
+        let tip = storage.find_chain_tip_header().await.unwrap().unwrap();
+        let w = calculate_work(LOW_BITS);
+        let expected = add_work(&add_work(&add_work(&w, &w), &w), &w);
+        assert_eq!(tip.chain_work, expected);
+        assert_ne!(
+            tip.chain_work, w,
+            "tip chain_work must be cumulative, not single-block"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_migrate_live_to_bulk_empty() {
+        let storage = create_test_storage().await;
+        // Nothing to migrate from empty storage.
+        let count = storage.migrate_live_to_bulk(100).await.unwrap();
+        assert_eq!(count, 0);
+        assert_eq!(storage.bulk_header_count().await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_migrate_live_to_bulk_moves_old_heights() {
+        let storage = create_test_storage().await;
+
+        // Build a linear active chain of heights 0..=5.
+        storage
+            .insert_header(create_test_header(0, &"0".repeat(64), "hash0"))
+            .await
+            .unwrap();
+        for i in 1..=5u32 {
+            storage
+                .insert_header(create_test_header(
+                    i,
+                    &format!("hash{}", i - 1),
+                    &format!("hash{i}"),
+                ))
+                .await
+                .unwrap();
+        }
+        assert_eq!(storage.header_count().await.unwrap(), 6);
+        assert_eq!(storage.bulk_header_count().await.unwrap(), 0);
+
+        // Capture the merkle root of height 1 before migration.
+        let root_at_1 = storage
+            .find_header_for_height(1)
+            .await
+            .unwrap()
+            .unwrap()
+            .merkle_root;
+
+        // Migrate the oldest 3 headers (heights 0,1,2) into bulk storage.
+        let migrated = storage.migrate_live_to_bulk(3).await.unwrap();
+        assert_eq!(migrated, 3);
+
+        // Live table shrank by 3 (bounded); bulk gained 3 (archived).
+        assert_eq!(storage.header_count().await.unwrap(), 3);
+        assert_eq!(storage.bulk_header_count().await.unwrap(), 3);
+
+        // Migrated heights are gone from the LIVE table...
+        assert!(storage
+            .find_live_header_for_block_hash("hash1")
+            .await
+            .unwrap()
+            .is_none());
+
+        // ...but still reachable via find_header_for_height (bulk fallback).
+        let h1 = storage.find_header_for_height(1).await.unwrap().unwrap();
+        assert_eq!(h1.hash, "hash1");
+        assert_eq!(h1.merkle_root, root_at_1);
+
+        // is_valid_root_for_height's mechanism (find_header_for_height + merkle
+        // equality) still validates a migrated, buried height.
+        let valid = storage
+            .find_header_for_height(1)
+            .await
+            .unwrap()
+            .map(|h| h.merkle_root == root_at_1)
+            .unwrap_or(false);
+        assert!(
+            valid,
+            "merkle root must still validate for a migrated height"
+        );
+
+        // Bulk range covers 0..=2; live range is now 3..=5.
+        assert_eq!(
+            storage.get_available_height_ranges().await.unwrap(),
+            vec![HeightRange::new(0, 2)]
+        );
+        let live = storage.find_live_height_range().await.unwrap().unwrap();
+        assert_eq!(live.low, 3);
+        assert_eq!(live.high, 5);
+
+        // A byte range spanning the bulk/live boundary returns every header.
+        let bytes = storage.get_headers_bytes(0, 6).await.unwrap();
+        assert_eq!(bytes.len(), 80 * 6);
+    }
+
+    #[tokio::test]
+    async fn test_migrate_never_removes_tip() {
+        let storage = create_test_storage().await;
+        storage
+            .insert_header(create_test_header(0, &"0".repeat(64), "hash0"))
+            .await
+            .unwrap();
+        storage
+            .insert_header(create_test_header(1, "hash0", "hash1"))
+            .await
+            .unwrap();
+
+        // Asking to migrate more than exist must still retain the chain tip.
+        let migrated = storage.migrate_live_to_bulk(100).await.unwrap();
+        assert_eq!(migrated, 1); // only height 0; height 1 is the tip
+        assert_eq!(storage.header_count().await.unwrap(), 1);
+        assert_eq!(storage.bulk_header_count().await.unwrap(), 1);
+        let tip = storage.find_chain_tip_header().await.unwrap().unwrap();
+        assert_eq!(tip.hash, "hash1");
+    }
+
+    #[tokio::test]
+    async fn test_drop_all_data_clears_bulk() {
+        let storage = create_test_storage().await;
+        storage
+            .insert_header(create_test_header(0, &"0".repeat(64), "hash0"))
+            .await
+            .unwrap();
+        storage
+            .insert_header(create_test_header(1, "hash0", "hash1"))
+            .await
+            .unwrap();
+        storage.migrate_live_to_bulk(1).await.unwrap();
+        assert_eq!(storage.bulk_header_count().await.unwrap(), 1);
+
+        storage.drop_all_data().await.unwrap();
+        assert_eq!(storage.header_count().await.unwrap(), 0);
+        assert_eq!(storage.bulk_header_count().await.unwrap(), 0);
     }
 }

@@ -19,6 +19,9 @@ use bsv::transaction::transaction_input::TransactionInput;
 use bsv::transaction::transaction_output::TransactionOutput;
 
 use crate::error::{WalletError, WalletResult};
+use crate::signer::build_signable::{
+    verify_requested_outputs_unchanged, verify_unrequested_outputs_are_change_or_commission,
+};
 use crate::signer::signing_provider::SigningProvider;
 use crate::signer::types::{PendingStorageInput, ValidCreateActionArgs};
 use crate::storage::action_types::{StorageCreateActionResult, StorageCreateTransactionSdkInput};
@@ -42,6 +45,12 @@ pub async fn build_signable_transaction_with_provider(
 ) -> WalletResult<(Transaction, u64, Vec<PendingStorageInput>)> {
     let storage_inputs = &dcr.inputs;
     let storage_outputs = &dcr.outputs;
+
+    // SECURITY (GHSA-36f9-7rg5-cpf8): same recipient-substitution / injected-output
+    // defense as the sync build path. Verify the storage response before signing.
+    verify_requested_outputs_unchanged(storage_outputs, args)?;
+    verify_unrequested_outputs_are_change_or_commission(storage_outputs, args)?;
+
     let mut tx = Transaction::new();
     tx.version = dcr.version;
     tx.lock_time = dcr.lock_time;
@@ -319,4 +328,131 @@ fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, WalletError> {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod ghsa_provider_tests {
+    use super::*;
+    use crate::signer::standard_provider::StandardSigningProvider;
+    use crate::storage::action_types::StorageCreateTransactionSdkOutput;
+    use bsv::primitives::private_key::PrivateKey;
+    use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
+    use bsv::wallet::interfaces::{CreateActionOptions, CreateActionOutput};
+
+    fn provider() -> StandardSigningProvider {
+        let priv_key = PrivateKey::from_hex("aa").unwrap();
+        let pub_key = priv_key.to_public_key();
+        let kd = CachedKeyDeriver::new(priv_key, None);
+        StandardSigningProvider::new(kd, pub_key)
+    }
+
+    fn base_dcr() -> StorageCreateActionResult {
+        StorageCreateActionResult {
+            reference: "r".to_string(),
+            version: 1,
+            lock_time: 0,
+            inputs: vec![],
+            outputs: vec![
+                StorageCreateTransactionSdkOutput {
+                    vout: 0,
+                    satoshis: 5_000,
+                    locking_script: "76a914bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb88ac"
+                        .to_string(),
+                    provided_by: StorageProvidedBy::You,
+                    purpose: None,
+                    basket: None,
+                    tags: vec![],
+                    output_description: Some("payment".to_string()),
+                    derivation_suffix: None,
+                    custom_instructions: None,
+                },
+                StorageCreateTransactionSdkOutput {
+                    vout: 1,
+                    satoshis: 1_000,
+                    locking_script: String::new(),
+                    provided_by: StorageProvidedBy::Storage,
+                    purpose: Some("change".to_string()),
+                    basket: Some("default".to_string()),
+                    tags: vec![],
+                    output_description: None,
+                    derivation_suffix: Some("changesuffix".to_string()),
+                    custom_instructions: None,
+                },
+            ],
+            derivation_prefix: "txprefix".to_string(),
+            input_beef: None,
+            no_send_change_output_vouts: None,
+        }
+    }
+
+    fn base_args() -> ValidCreateActionArgs {
+        ValidCreateActionArgs {
+            description: "d".to_string(),
+            inputs: vec![],
+            outputs: vec![CreateActionOutput {
+                locking_script: Some(
+                    hex_to_bytes("76a914bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb88ac").unwrap(),
+                ),
+                satoshis: 5_000,
+                output_description: "payment".to_string(),
+                basket: None,
+                custom_instructions: None,
+                tags: vec![],
+            }],
+            lock_time: 0,
+            version: 1,
+            labels: vec![],
+            options: CreateActionOptions::default(),
+            input_beef: None,
+            is_new_tx: true,
+            is_sign_action: false,
+            is_no_send: false,
+            is_delayed: false,
+            is_send_with: false,
+        }
+    }
+
+    /// The GHSA output checks must also apply in the provider (async) build path.
+    #[tokio::test]
+    async fn provider_valid_build_ok() {
+        let p = provider();
+        let res = build_signable_transaction_with_provider(&base_dcr(), &base_args(), &p).await;
+        assert!(res.is_ok(), "valid dcr should build: {:?}", res.err());
+    }
+
+    /// #2 in the provider path: injected attacker output rejected.
+    #[tokio::test]
+    async fn provider_injected_output_rejected() {
+        let mut dcr = base_dcr();
+        dcr.outputs[1].vout = 2;
+        dcr.outputs.push(StorageCreateTransactionSdkOutput {
+            vout: 1,
+            satoshis: 900,
+            locking_script: "76a914dddddddddddddddddddddddddddddddddddddddd88ac".to_string(),
+            provided_by: StorageProvidedBy::You,
+            purpose: None,
+            basket: None,
+            tags: vec![],
+            output_description: Some("attacker".to_string()),
+            derivation_suffix: None,
+            custom_instructions: None,
+        });
+        let p = provider();
+        let res = build_signable_transaction_with_provider(&dcr, &base_args(), &p).await;
+        assert!(res.is_err(), "provider path must reject injected output");
+    }
+
+    /// #1 in the provider path: recipient substitution rejected.
+    #[tokio::test]
+    async fn provider_requested_output_substituted_rejected() {
+        let mut dcr = base_dcr();
+        dcr.outputs[0].locking_script =
+            "76a914eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee88ac".to_string();
+        let p = provider();
+        let res = build_signable_transaction_with_provider(&dcr, &base_args(), &p).await;
+        assert!(
+            res.is_err(),
+            "provider path must reject substituted recipient"
+        );
+    }
 }
