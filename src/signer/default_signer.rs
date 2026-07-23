@@ -311,6 +311,9 @@ impl WalletSigner for DefaultWalletSigner {
             &self.key_deriver,
             &self.auth(),
             &args,
+            // No delegated provider: DefaultWalletSigner derives locally via
+            // its own key_deriver (identical behavior to the pre-provider path).
+            None,
         )
         .await
     }
