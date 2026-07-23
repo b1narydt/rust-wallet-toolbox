@@ -10,9 +10,9 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 use super::{
-    calculate_work, BaseBlockHeader, BlockHeader, ChaintracksClient, ChaintracksInfo,
-    ChaintracksManagement, ChaintracksOptions, ChaintracksStorage, HeaderCallback, LiveBlockHeader,
-    ReorgCallback, ReorgEvent,
+    BaseBlockHeader, BlockHeader, ChaintracksClient, ChaintracksInfo, ChaintracksManagement,
+    ChaintracksOptions, ChaintracksStorage, HeaderCallback, LiveBlockHeader, ReorgCallback,
+    ReorgEvent,
 };
 use crate::error::{WalletError, WalletResult};
 use crate::types::Chain;
@@ -164,7 +164,8 @@ impl Chaintracks {
                 nonce: base_header.nonce,
                 height,
                 hash: block_header.hash.clone(),
-                chain_work: calculate_work(base_header.bits),
+                // Left empty: storage computes cumulative chain work from the parent.
+                chain_work: String::new(),
                 is_chain_tip: false,
                 is_active: false,
                 header_id: None,
@@ -289,7 +290,8 @@ impl Chaintracks {
                             nonce: base_header.nonce,
                             height,
                             hash: block_header.hash.clone(),
-                            chain_work: calculate_work(base_header.bits),
+                            // Left empty: storage computes cumulative chain work from the parent.
+                            chain_work: String::new(),
                             is_chain_tip: false,
                             is_active: false,
                             header_id: None,

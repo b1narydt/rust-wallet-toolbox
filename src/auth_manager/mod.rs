@@ -185,19 +185,22 @@ impl WalletAuthenticationManager {
     ///
     /// On success:
     /// 1. Retrieves final presentation key from WAB
-    /// 2. Looks up UMP token to determine new vs existing user
-    /// 3. Derives root key from presentation key
-    /// 4. Constructs inner wallet via wallet_builder
-    /// 5. Optionally redeems faucet for new users
-    /// 6. Signals authentication completion
+    /// 2. Derives the root key through the UMP token (presentation key + password)
+    /// 3. Constructs inner wallet via wallet_builder
+    /// 4. Optionally redeems faucet for new users
+    /// 5. Signals authentication completion
     ///
     /// # Arguments
     /// * `interactor` - The auth method interactor
     /// * `payload` - Verification payload (e.g., SMS code)
+    /// * `password` - The user's password; combined with the presentation key to
+    ///   derive the wallet root through the UMP token (never the presentation key
+    ///   alone)
     pub async fn complete_auth(
         &self,
         interactor: &dyn AuthMethodInteractor,
         payload: serde_json::Value,
+        password: &str,
     ) -> Result<(), WalletError> {
         let temp_key = {
             let mut pk = self.presentation_key.lock().await;
@@ -231,30 +234,42 @@ impl WalletAuthenticationManager {
             *pk = Some(presentation_key_hex.clone());
         }
 
-        // Look up UMP token to determine new vs existing user
-        // For now, this always returns None (new user); full overlay integration later
         let presentation_key_bytes = hex_to_bytes(&presentation_key_hex)?;
-        let _is_new_user = {
-            let guard = self.inner.read().await;
-            if let Some(ref _w) = *guard {
-                // If we somehow already have a wallet, skip lookup
-                false
-            } else {
-                // No wallet yet; use presentation key bytes as root key placeholder
-                true
-            }
-        };
+        if presentation_key_bytes.len() != 32 {
+            let msg = "Presentation key must be 32 bytes for root key derivation".to_string();
+            let mut state = self.state.lock().await;
+            *state = AuthState::Failed(msg.clone());
+            return Err(WalletError::Internal(msg));
+        }
 
-        // Derive root key from presentation key bytes
-        // In the full CWI flow this would combine presentation key with password via UMP token
-        // For now, use presentation key bytes directly as root key material
-        let root_key = if presentation_key_bytes.len() >= 32 {
-            presentation_key_bytes.clone()
-        } else {
-            return Err(WalletError::Internal(
-                "Presentation key too short for root key derivation".to_string(),
-            ));
-        };
+        // Derive the root primary key through the real UMP/password path rather than
+        // using the presentation key directly (the previous placeholder let anyone who
+        // knew the presentation key reconstruct the wallet root).
+        //
+        // Parity with TS CWIStyleWalletManager: a UMP token binds the root primary key
+        // behind SymmetricKey(XOR(presentationKey, passwordKey)), so recovering the root
+        // requires the password factor. For a new user we mint a fresh v3 (Argon2id)
+        // token, then recover the root out of it through the exact same decrypt path an
+        // existing user would use — the wallet is never built from the raw presentation
+        // key.
+        //
+        // Existing-user recovery (overlay `findByPresentationKeyHash` lookup of a
+        // previously published token) is not yet wired here; when it lands it feeds the
+        // same `derive_root_primary_key` call with the looked-up token.
+        let kdf = ump_token::PasswordKdf::argon2id_default();
+        let token =
+            ump_token::build_new_user_ump_token(&presentation_key_bytes, password.as_bytes(), &kdf)
+                .map_err(|e| {
+                    WalletError::Internal(format!("Failed to mint UMP token during auth: {e}"))
+                })?;
+        let root_key = cwi_logic::derive_root_primary_key(
+            &token,
+            &presentation_key_bytes,
+            password.as_bytes(),
+        )
+        .map_err(|e| {
+            WalletError::Internal(format!("Failed to derive root key during auth: {e}"))
+        })?;
 
         // Build a placeholder PrivilegedKeyManager from root key
         let priv_key_manager = Arc::new(crate::wallet::privileged::NoOpPrivilegedKeyManager);

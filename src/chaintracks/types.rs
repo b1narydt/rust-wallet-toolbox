@@ -424,6 +424,58 @@ fn div128_by_u128(hi: u128, lo: u128, d: u128) -> (u128, u128) {
 }
 
 // ---------------------------------------------------------------------------
+// Cumulative chain-work arithmetic
+// ---------------------------------------------------------------------------
+//
+// Chain work is stored as a 64-character (256-bit) big-endian hex string. The
+// TypeScript reference (`chaintracks/util/blockHeaderUtilities.ts`) treats the
+// value as a big integer: `addWork` sums two work values and `isMoreWork`
+// compares them numerically. These helpers reproduce that semantics on the
+// same 256-bit representation, so cumulative accumulation and tip selection
+// match the TS implementation.
+
+/// Right-align a hex-encoded work value into a 32-byte big-endian integer.
+///
+/// Tolerates values shorter or longer than 64 hex characters, matching the
+/// numeric interpretation of the TypeScript `new BigNumber(value, 16)`: only
+/// the least-significant 256 bits are retained and shorter values are treated
+/// as left-zero-padded.
+fn work_hex_to_bytes32(work: &str) -> [u8; 32] {
+    let clean: String = work.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+    // Keep only the least-significant 64 hex digits (256 bits).
+    let start = clean.len().saturating_sub(64);
+    let padded = format!("{:0>64}", &clean[start..]);
+    let mut out = [0u8; 32];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&padded[i * 2..i * 2 + 2], 16).unwrap_or(0);
+    }
+    out
+}
+
+/// Sum two hex-encoded chain-work values, returning a 64-character hex string.
+///
+/// Mirrors the TypeScript `addWork(work1, work2)`. Overflow beyond 256 bits is
+/// dropped (chain work never approaches that magnitude in practice).
+pub fn add_work(work1: &str, work2: &str) -> String {
+    let a = work_hex_to_bytes32(work1);
+    let b = work_hex_to_bytes32(work2);
+    let mut result = [0u8; 32];
+    let mut carry: u16 = 0;
+    for i in (0..32).rev() {
+        let sum = a[i] as u16 + b[i] as u16 + carry;
+        result[i] = (sum & 0xff) as u8;
+        carry = sum >> 8;
+    }
+    hex::encode(result)
+}
+
+/// Return `true` when `work1` represents strictly more cumulative work than
+/// `work2`. Mirrors the TypeScript `isMoreWork(work1, work2)`.
+pub fn is_more_work(work1: &str, work2: &str) -> bool {
+    cmp_bytes32(&work_hex_to_bytes32(work1), &work_hex_to_bytes32(work2)) > 0
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -539,6 +591,45 @@ mod tests {
         let work = calculate_work(0x1d00ffff);
         assert!(!work.is_empty());
         assert_eq!(work.len(), 64);
+    }
+
+    #[test]
+    fn test_add_work_basic() {
+        // 1 + 1 = 2, 64-char zero-padded hex.
+        let one = format!("{:0>64}", "1");
+        let sum = add_work(&one, &one);
+        assert_eq!(sum.len(), 64);
+        assert_eq!(sum, format!("{:0>64}", "2"));
+    }
+
+    #[test]
+    fn test_add_work_carry_across_bytes() {
+        // 0xff + 0x01 = 0x100 exercises byte carry propagation.
+        let a = format!("{:0>64}", "ff");
+        let b = format!("{:0>64}", "1");
+        assert_eq!(add_work(&a, &b), format!("{:0>64}", "100"));
+    }
+
+    #[test]
+    fn test_add_work_accumulates_block_work() {
+        // Cumulative work over N identical blocks equals N * single-block work.
+        let w = calculate_work(0x1d00ffff);
+        let two = add_work(&w, &w);
+        let three = add_work(&two, &w);
+        assert_ne!(three, w, "cumulative work must exceed a single block");
+        assert!(is_more_work(&three, &two));
+        assert!(is_more_work(&two, &w));
+    }
+
+    #[test]
+    fn test_is_more_work_ordering() {
+        // Higher difficulty (smaller compact exponent) yields more work.
+        let low = calculate_work(0x1d00ffff);
+        let high = calculate_work(0x1b00ffff);
+        assert!(is_more_work(&high, &low));
+        assert!(!is_more_work(&low, &high));
+        // Equal values are not "more" work (strict comparison).
+        assert!(!is_more_work(&low, &low));
     }
 
     #[test]

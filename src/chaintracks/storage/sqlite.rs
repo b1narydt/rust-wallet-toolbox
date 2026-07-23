@@ -10,8 +10,9 @@ use std::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use crate::chaintracks::{
-    calculate_work, BlockHeader, ChaintracksStorage, ChaintracksStorageIngest,
-    ChaintracksStorageQuery, HeightRange, InsertHeaderResult, LiveBlockHeader,
+    add_work, calculate_work, is_more_work, BlockHeader, ChaintracksStorage,
+    ChaintracksStorageIngest, ChaintracksStorageQuery, HeightRange, InsertHeaderResult,
+    LiveBlockHeader,
 };
 use crate::error::WalletResult;
 use crate::types::Chain;
@@ -419,23 +420,26 @@ impl SqliteStorage {
                 continue;
             }
 
-            // Calculate chain work if not set
-            let chain_work = if header.chain_work.is_empty() || header.chain_work == "0" {
-                calculate_work(header.bits)
-            } else {
-                header.chain_work.clone()
-            };
-
-            // Find previous header ID if we have the previous hash
-            let previous_header_id: Option<i64> = if header.previous_hash != "0".repeat(64) {
-                let row: Option<(i64,)> =
-                    sqlx::query_as("SELECT header_id FROM chaintracks_live_headers WHERE hash = ?")
-                        .bind(&header.previous_hash)
-                        .fetch_optional(&mut *tx)
-                        .await?;
-                row.map(|r| r.0)
+            // Find previous header (id + cumulative work) if we have the prev hash.
+            let previous: Option<(i64, String)> = if header.previous_hash != "0".repeat(64) {
+                sqlx::query_as(
+                    "SELECT header_id, chain_work FROM chaintracks_live_headers WHERE hash = ?",
+                )
+                .bind(&header.previous_hash)
+                .fetch_optional(&mut *tx)
+                .await?
             } else {
                 None
+            };
+            let previous_header_id: Option<i64> = previous.as_ref().map(|(id, _)| *id);
+
+            // Accumulate cumulative chain work from the parent (storage is
+            // authoritative: TS `addWork(parent.chainWork, work(bits))`); the
+            // first header in a chain carries its own work.
+            let block_work = calculate_work(header.bits);
+            let chain_work = match &previous {
+                Some((_, parent_work)) => add_work(parent_work, &block_work),
+                None => block_work,
             };
 
             // Insert the header (not as chain tip - we'll update that separately)
@@ -860,17 +864,22 @@ impl ChaintracksStorageIngest for SqliteStorage {
             });
         }
 
-        // Calculate chain work if not set
-        if header.chain_work.is_empty() || header.chain_work == "0" {
-            header.chain_work = calculate_work(header.bits);
-        }
-
         // Find previous header
         let previous_header = if header.previous_hash != "0".repeat(64) {
             self.find_live_header_for_block_hash(&header.previous_hash)
                 .await?
         } else {
             None
+        };
+
+        // Accumulate cumulative chain work from the parent. Storage is
+        // authoritative for chain_work — it always derives the cumulative value
+        // (TS `addWork(oneBack.chainWork, convertBitsToWork(header.bits))`),
+        // with genesis / the first live header carrying its own work.
+        let block_work = calculate_work(header.bits);
+        header.chain_work = match &previous_header {
+            Some(parent) => add_work(&parent.chain_work, &block_work),
+            None => block_work,
         };
 
         let previous_header_id_i64: Option<i64> = previous_header
@@ -880,10 +889,11 @@ impl ChaintracksStorageIngest for SqliteStorage {
         // Get current tip
         let current_tip = self.get_tip().await?;
 
-        // Determine if this becomes the new tip
+        // Determine if this becomes the new tip. Fork choice is by cumulative
+        // work, not height (TS `isMoreWork(chainWork, priorTip.chainWork)`).
         let becomes_tip = match &current_tip {
             None => true,
-            Some(tip) => header.height > tip.height,
+            Some(tip) => is_more_work(&header.chain_work, &tip.chain_work),
         };
 
         // Insert the header
@@ -1101,6 +1111,19 @@ mod tests {
             nonce: 12345,
         }
     }
+
+    /// Header with explicit difficulty `bits` (empty chain_work; storage
+    /// computes the cumulative value). Used by the fork-choice-by-work tests.
+    fn header_bits(height: u32, prev_hash: &str, hash: &str, bits: u32) -> LiveBlockHeader {
+        let mut h = create_test_header(height, prev_hash, hash);
+        h.bits = bits;
+        h
+    }
+
+    // Compact difficulty values whose work differs by ~65536x (compact exponent
+    // 0x1b vs 0x1d), so a couple of high-difficulty blocks outweigh many low ones.
+    const LOW_BITS: u32 = 0x1d00ffff;
+    const HIGH_BITS: u32 = 0x1b00ffff;
 
     #[tokio::test]
     async fn test_storage_type() {
@@ -1929,5 +1952,141 @@ mod tests {
         storage.destroy().await.unwrap();
 
         assert_eq!(storage.header_count().await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_tip_selection_ignores_longer_lower_work_fork() {
+        let storage = create_test_storage().await;
+        let zero = "0".repeat(64);
+
+        // Main chain: genesis(low) -> a1(high) -> a2(high) at height 2.
+        storage
+            .insert_header(header_bits(0, &zero, "g", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(1, "g", "a1", HIGH_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(2, "a1", "a2", HIGH_BITS))
+            .await
+            .unwrap();
+
+        // Longer but all-low-difficulty fork: genesis -> b1 -> b2 -> b3 (height 3).
+        storage
+            .insert_header(header_bits(1, "g", "b1", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(2, "b1", "b2", LOW_BITS))
+            .await
+            .unwrap();
+        let r = storage
+            .insert_header(header_bits(3, "b2", "b3", LOW_BITS))
+            .await
+            .unwrap();
+
+        assert!(
+            !r.is_active_tip,
+            "longer but lower-work fork must not become the tip"
+        );
+        let tip = storage.find_chain_tip_header().await.unwrap().unwrap();
+        assert_eq!(tip.hash, "a2");
+        assert_eq!(tip.height, 2);
+        let b3 = storage
+            .find_live_header_for_block_hash("b3")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!b3.is_active, "fork header must remain inactive");
+    }
+
+    #[tokio::test]
+    async fn test_equal_height_higher_work_fork_takes_tip() {
+        let storage = create_test_storage().await;
+        let zero = "0".repeat(64);
+
+        // Main chain: genesis -> a1 -> a2, all low difficulty. Tip a2 at height 2.
+        storage
+            .insert_header(header_bits(0, &zero, "g", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(1, "g", "a1", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(2, "a1", "a2", LOW_BITS))
+            .await
+            .unwrap();
+
+        // Fork at height 1 with low work does not yet outweigh the tip.
+        let r1 = storage
+            .insert_header(header_bits(1, "g", "b1", LOW_BITS))
+            .await
+            .unwrap();
+        assert!(!r1.is_active_tip);
+
+        // b2 at the SAME height as the tip but with a high-difficulty block gives
+        // the fork strictly more cumulative work -> it takes the tip.
+        let r2 = storage
+            .insert_header(header_bits(2, "b1", "b2", HIGH_BITS))
+            .await
+            .unwrap();
+        assert!(
+            r2.is_active_tip,
+            "equal-height higher-work fork must take the tip"
+        );
+        assert!(r2.reorg_depth > 0, "expected a reorg");
+
+        let tip = storage.find_chain_tip_header().await.unwrap().unwrap();
+        assert_eq!(tip.hash, "b2");
+        assert_eq!(tip.height, 2);
+
+        let a2 = storage
+            .find_live_header_for_block_hash("a2")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!a2.is_active, "old chain must be deactivated");
+        let b2 = storage
+            .find_live_header_for_block_hash("b2")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(b2.is_active, "new higher-work chain must be active");
+    }
+
+    #[tokio::test]
+    async fn test_chain_work_accumulates_across_chain() {
+        let storage = create_test_storage().await;
+        let zero = "0".repeat(64);
+
+        storage
+            .insert_header(header_bits(0, &zero, "g", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(1, "g", "h1", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(2, "h1", "h2", LOW_BITS))
+            .await
+            .unwrap();
+        storage
+            .insert_header(header_bits(3, "h2", "h3", LOW_BITS))
+            .await
+            .unwrap();
+
+        let tip = storage.find_chain_tip_header().await.unwrap().unwrap();
+        let w = calculate_work(LOW_BITS);
+        let expected = add_work(&add_work(&add_work(&w, &w), &w), &w);
+        assert_eq!(tip.chain_work, expected);
+        assert_ne!(
+            tip.chain_work, w,
+            "tip chain_work must be cumulative, not single-block"
+        );
     }
 }

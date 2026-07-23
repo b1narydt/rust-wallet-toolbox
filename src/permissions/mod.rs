@@ -25,6 +25,10 @@ pub mod token_crud;
 /// Permission types, tokens, and request/response structs.
 pub mod types;
 
+/// Cross-module parity regression tests (spend tracking, privileged tokens, PushDrop).
+#[cfg(test)]
+mod tests_parity;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -441,6 +445,16 @@ impl WalletInterface for WalletPermissionsManager {
             )
             .await?;
         }
+
+        // Stamp the action with admin originator + month labels so
+        // `query_spent_since` can accumulate this originator's monthly spend and
+        // enforce the DSAP cap (matches TS createAction). Without these, the
+        // monthly spend query finds nothing and limits never accumulate.
+        args.labels.push(format!("admin originator {o}"));
+        args.labels.push(format!(
+            "admin month {}",
+            token_crud::current_month_year_utc()
+        ));
 
         self.inner.create_action(args, originator).await
     }

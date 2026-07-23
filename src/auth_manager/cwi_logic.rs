@@ -5,6 +5,8 @@
 //! by `WalletAuthenticationManager` during authentication to derive root keys
 //! from presentation keys and passwords.
 
+use argon2::{Algorithm, Argon2, Params, Version};
+
 use bsv::primitives::hash::pbkdf2_hmac_sha512;
 use bsv::primitives::private_key::PrivateKey;
 use bsv::primitives::random::random_bytes;
@@ -13,6 +15,11 @@ use bsv::primitives::symmetric_key::SymmetricKey;
 use crate::WalletError;
 
 use super::types::StateSnapshot;
+use super::ump_token::{
+    PasswordKdf, UMPToken, ARGON2ID_DEFAULT_HASH_LENGTH, ARGON2ID_DEFAULT_ITERATIONS,
+    ARGON2ID_DEFAULT_MEMORY_KIB, ARGON2ID_DEFAULT_PARALLELISM, KDF_ALGORITHM_ARGON2ID,
+    KDF_ALGORITHM_PBKDF2,
+};
 
 /// Default number of PBKDF2 iterations matching the TS constant `PBKDF2_NUM_ROUNDS`.
 pub const PBKDF2_NUM_ROUNDS: u32 = 7777;
@@ -43,6 +50,108 @@ const ROOT_KEY_SIZE: usize = 32;
 /// * `iterations` - Number of PBKDF2 rounds (default: `PBKDF2_NUM_ROUNDS`)
 pub fn derive_key_from_password(password: &[u8], salt: &[u8], iterations: u32) -> Vec<u8> {
     pbkdf2_hmac_sha512(password, salt, iterations, 64)
+}
+
+/// Derive the password key from a password using the KDF specified by a UMP token.
+///
+/// Ports the TS `derivePasswordKey` dispatch:
+/// - No metadata or `pbkdf2-sha512` -> PBKDF2-HMAC-SHA512 (default 7777 rounds),
+///   32-byte output.
+/// - `argon2id` (UMP v3) -> Argon2id with the token's memory/iteration/parallelism
+///   parameters (defaults: 7 iterations, 128 MiB, parallelism 1, 32-byte output).
+///
+/// The 32-byte output is XOR-combined with the 32-byte presentation (or recovery)
+/// key, so it must match that length.
+///
+/// # Arguments
+/// * `salt` - Salt bytes (the UMP token `password_salt`)
+/// * `password` - Raw password bytes
+/// * `kdf` - KDF metadata; `None` selects legacy PBKDF2-SHA512/7777
+pub fn derive_password_key(
+    salt: &[u8],
+    password: &[u8],
+    kdf: Option<&PasswordKdf>,
+) -> Result<Vec<u8>, WalletError> {
+    match kdf {
+        None => Ok(pbkdf2_hmac_sha512(password, salt, PBKDF2_NUM_ROUNDS, 32)),
+        Some(kdf) if kdf.algorithm == KDF_ALGORITHM_PBKDF2 => {
+            let iterations = if kdf.iterations == 0 {
+                PBKDF2_NUM_ROUNDS
+            } else {
+                kdf.iterations
+            };
+            let len = kdf.hash_length.unwrap_or(32) as usize;
+            Ok(pbkdf2_hmac_sha512(password, salt, iterations, len))
+        }
+        Some(kdf) if kdf.algorithm == KDF_ALGORITHM_ARGON2ID => {
+            let iterations = if kdf.iterations == 0 {
+                ARGON2ID_DEFAULT_ITERATIONS
+            } else {
+                kdf.iterations
+            };
+            let memory = kdf.memory_kib.unwrap_or(ARGON2ID_DEFAULT_MEMORY_KIB);
+            let parallelism = kdf.parallelism.unwrap_or(ARGON2ID_DEFAULT_PARALLELISM);
+            let hash_length = kdf.hash_length.unwrap_or(ARGON2ID_DEFAULT_HASH_LENGTH) as usize;
+            let params = Params::new(memory, iterations, parallelism, Some(hash_length))
+                .map_err(|e| WalletError::Internal(format!("Invalid Argon2id params: {e}")))?;
+            let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+            let mut out = vec![0u8; hash_length];
+            argon2
+                .hash_password_into(password, salt, &mut out)
+                .map_err(|e| WalletError::Internal(format!("Argon2id derivation failed: {e}")))?;
+            Ok(out)
+        }
+        Some(kdf) => Err(WalletError::Internal(format!(
+            "Unsupported KDF algorithm: {}",
+            kdf.algorithm
+        ))),
+    }
+}
+
+/// Derive the root primary key from a UMP token via the presentation-key +
+/// password path.
+///
+/// Ports the TS `handleExistingUserPassword` (presentation-key-and-password mode):
+///   rootPrimaryKey = SymmetricKey(XOR(presentationKey, derivedPasswordKey))
+///                      .decrypt(passwordPresentationPrimary)
+///
+/// The password factor is mandatory: the presentation key alone cannot recover the
+/// root. Returns an error if the password is wrong (the AEAD decrypt fails).
+///
+/// # Arguments
+/// * `token` - The UMP token holding `password_salt`, `password_kdf`, and the
+///   `password_presentation_primary` ciphertext
+/// * `presentation_key` - The 32-byte presentation key from the WAB flow
+/// * `password` - Raw password bytes
+pub fn derive_root_primary_key(
+    token: &UMPToken,
+    presentation_key: &[u8],
+    password: &[u8],
+) -> Result<Vec<u8>, WalletError> {
+    if presentation_key.len() != 32 {
+        return Err(WalletError::Internal(format!(
+            "Presentation key must be 32 bytes, got {}",
+            presentation_key.len()
+        )));
+    }
+    let password_key =
+        derive_password_key(&token.password_salt, password, token.password_kdf.as_ref())?;
+    if password_key.len() != presentation_key.len() {
+        return Err(WalletError::Internal(format!(
+            "Derived password key length {} does not match presentation key length {}",
+            password_key.len(),
+            presentation_key.len()
+        )));
+    }
+    let decryption_key = xor_keys(presentation_key, &password_key);
+    let sym = SymmetricKey::from_bytes(&decryption_key)
+        .map_err(|e| WalletError::Internal(format!("Failed to build decryption key: {e}")))?;
+    sym.decrypt(&token.password_presentation_primary)
+        .map_err(|e| {
+            WalletError::Internal(format!(
+                "Failed to decrypt root primary key (wrong password?): {e}"
+            ))
+        })
 }
 
 /// XOR two byte arrays of equal length.
@@ -321,6 +430,81 @@ mod tests {
         // XOR with zeros is identity
         let z = vec![0x00, 0x00, 0x00, 0x00];
         assert_eq!(xor_keys(&a, &z), a);
+    }
+
+    #[test]
+    fn test_password_factor_required_for_root_reconstruction() {
+        // Parity with TS `handleExistingUserPassword` (presentation-key-and-password
+        // mode):
+        //   rootPrimaryKey = SymmetricKey(XOR(presentationKey, derivedPasswordKey))
+        //                      .decrypt(passwordPresentationPrimary)
+        //
+        // A wallet created with a password must NOT be reconstructable from the
+        // presentation key alone — the password factor is mandatory. This is the
+        // regression the old `root_key = presentation_key_bytes` placeholder failed.
+        use super::super::ump_token::{PasswordKdf, UMPToken, KDF_ALGORITHM_PBKDF2};
+
+        let root = vec![0x11u8; 32];
+        let presentation = vec![0x22u8; 32];
+        let password = b"correct horse battery staple";
+        let salt = vec![0x33u8; 32];
+
+        // Fast PBKDF2 KDF for this test (Argon2id parity is covered in ump_token tests).
+        let kdf = PasswordKdf {
+            algorithm: KDF_ALGORITHM_PBKDF2.to_string(),
+            iterations: 64,
+            memory_kib: None,
+            parallelism: None,
+            hash_length: Some(32),
+        };
+
+        // Mint the `password_presentation_primary` field exactly as TS does.
+        let password_key = derive_password_key(&salt, password, Some(&kdf)).unwrap();
+        assert_eq!(
+            password_key.len(),
+            32,
+            "password key must be 32 bytes for XOR"
+        );
+        let sym = SymmetricKey::from_bytes(&xor_keys(&presentation, &password_key)).unwrap();
+        let ppp = sym.encrypt(&root).unwrap();
+
+        let token = UMPToken {
+            password_salt: salt.clone(),
+            password_presentation_primary: ppp,
+            password_recovery_primary: vec![],
+            presentation_recovery_primary: vec![],
+            password_primary_privileged: vec![],
+            presentation_recovery_privileged: vec![],
+            presentation_hash: vec![],
+            recovery_hash: vec![],
+            presentation_key_encrypted: vec![],
+            password_key_encrypted: vec![],
+            recovery_key_encrypted: vec![],
+            profiles_encrypted: None,
+            ump_version: Some(3),
+            password_kdf: Some(kdf),
+            current_outpoint: None,
+        };
+
+        // Correct (presentation + password) reconstruction yields the expected root.
+        let recovered = derive_root_primary_key(&token, &presentation, password).unwrap();
+        assert_eq!(
+            recovered, root,
+            "presentation + password must recover the root"
+        );
+
+        // The presentation key alone (old placeholder behavior) is NOT the root.
+        assert_ne!(
+            presentation, root,
+            "the presentation key must not equal the root key"
+        );
+
+        // A wrong password must not recover the root (fails to decrypt or yields garbage).
+        let wrong = derive_root_primary_key(&token, &presentation, b"wrong password");
+        assert!(
+            wrong.is_err() || wrong.unwrap() != root,
+            "a wrong password must not reconstruct the root"
+        );
     }
 
     #[test]

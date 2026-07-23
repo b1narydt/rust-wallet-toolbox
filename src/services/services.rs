@@ -30,7 +30,10 @@ use super::types::{
     GetUtxoStatusResult, NLockTimeInput, PostBeefMode, PostBeefResult, ServiceCall,
     ServicesCallHistory, ServicesConfig,
 };
-use bsv::transaction::beef::BEEF_V1;
+use bsv::transaction::beef::BEEF_V2;
+use bsv::transaction::beef_tx::BeefTx;
+use bsv::transaction::merkle_path::MerklePath;
+use bsv::transaction::Transaction as BsvTransaction;
 
 /// The main services orchestrator struct.
 ///
@@ -684,30 +687,10 @@ impl WalletServices for Services {
     }
 
     async fn get_beef_for_txid(&self, txid: &str) -> WalletResult<Beef> {
-        let raw_result = self.get_raw_tx(txid, false).await;
-        let raw_tx = raw_result.raw_tx.ok_or_else(|| {
-            WalletError::Internal(format!(
-                "Could not retrieve raw transaction for txid {txid}"
-            ))
-        })?;
-
-        // Parse the raw transaction
-        let tx = bsv::transaction::Transaction::from_binary(&mut std::io::Cursor::new(&raw_tx))
-            .map_err(|e| {
-                WalletError::Internal(format!("Failed to parse transaction {txid}: {e}"))
-            })?;
-
-        // Construct a simple Beef containing just this transaction
-        let beef_tx = bsv::transaction::beef_tx::BeefTx {
-            txid: txid.to_string(),
-            tx: Some(tx),
-            bump_index: None,
-            input_txids: Vec::new(),
-        };
-        let mut beef = Beef::new(BEEF_V1);
-        beef.txs.push(beef_tx);
-
-        Ok(beef)
+        // Build a proof-bearing ancestry BEEF from the chain services, mirroring
+        // the TypeScript `getBeefForTxid`. A bare single-tx wrapper with no bump
+        // and no inputs cannot be SPV-verified by a consumer (e.g. internalizeAction).
+        build_beef_for_txid(self, txid).await
     }
 
     fn hash_output_script(&self, script: &[u8]) -> String {
@@ -1164,4 +1147,232 @@ fn hex_to_bytes_reversed(hex: &str) -> Result<Vec<u8>, WalletError> {
         .collect::<Result<Vec<u8>, _>>()?;
     bytes.reverse();
     Ok(bytes)
+}
+
+// ---------------------------------------------------------------------------
+// Proof-bearing BEEF construction for a txid via chain services (BRC-62 / BRC-74)
+// ---------------------------------------------------------------------------
+
+/// Chain-service data source used to build a proof-bearing BEEF for a txid.
+///
+/// Abstracts the two lookups the builder needs -- the raw transaction bytes and,
+/// for a mined transaction, its BUMP merkle path. Implemented for [`Services`]
+/// against the live provider collections; the seam keeps the recursive builder
+/// unit-testable without real HTTP.
+#[async_trait]
+trait BeefTxSource {
+    /// BUMP merkle path bytes for `txid`, or `None` when unmined/unknown.
+    async fn source_merkle_path(&self, txid: &str) -> WalletResult<Option<Vec<u8>>>;
+    /// Raw transaction bytes for `txid`, or `None` when unknown.
+    async fn source_raw_tx(&self, txid: &str) -> WalletResult<Option<Vec<u8>>>;
+}
+
+#[async_trait]
+impl BeefTxSource for Services {
+    async fn source_merkle_path(&self, txid: &str) -> WalletResult<Option<Vec<u8>>> {
+        Ok(self.get_merkle_path(txid, false).await.merkle_path)
+    }
+
+    async fn source_raw_tx(&self, txid: &str) -> WalletResult<Option<Vec<u8>>> {
+        Ok(self.get_raw_tx(txid, false).await.raw_tx)
+    }
+}
+
+/// Build a valid, proof-bearing BEEF for `txid` from chain-service lookups.
+///
+/// Mirrors the TypeScript `getBeefForTxid`: walk the input ancestry, stopping each
+/// branch at the first mined ancestor whose BUMP merkle path proves it. Every
+/// included transaction carries either its own merkle proof or the raw transactions
+/// of its unproven inputs, so the result verifies under SPV -- unlike a bare
+/// single-transaction wrapper with `bump_index: None` and no inputs.
+async fn build_beef_for_txid<S>(source: &S, txid: &str) -> WalletResult<Beef>
+where
+    S: BeefTxSource + Sync + ?Sized,
+{
+    let mut beef = Beef::new(BEEF_V2);
+    let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+    merge_txid_into_beef(source, txid, &mut beef, &mut visited).await?;
+    if beef.txs.is_empty() {
+        return Err(WalletError::Internal(format!(
+            "Could not retrieve raw transaction for txid {txid}"
+        )));
+    }
+    Ok(beef)
+}
+
+/// Recursively merge `txid` (and, if unproven, its input ancestry) into `beef`.
+async fn merge_txid_into_beef<S>(
+    source: &S,
+    txid: &str,
+    beef: &mut Beef,
+    visited: &mut std::collections::HashSet<String>,
+) -> WalletResult<()>
+where
+    S: BeefTxSource + Sync + ?Sized,
+{
+    if !visited.insert(txid.to_string()) {
+        return Ok(());
+    }
+
+    let raw_tx = source.source_raw_tx(txid).await?.ok_or_else(|| {
+        WalletError::Internal(format!(
+            "Could not retrieve raw transaction for txid {txid}"
+        ))
+    })?;
+    let tx = BsvTransaction::from_binary(&mut std::io::Cursor::new(&raw_tx))
+        .map_err(|e| WalletError::Internal(format!("Failed to parse transaction {txid}: {e}")))?;
+
+    // A mined transaction is self-proving: attach its BUMP and stop the branch.
+    if let Some(mp_bytes) = source.source_merkle_path(txid).await? {
+        let merkle_path =
+            MerklePath::from_binary(&mut std::io::Cursor::new(&mp_bytes)).map_err(|e| {
+                WalletError::Internal(format!("Failed to parse merkle path for {txid}: {e}"))
+            })?;
+        let bump_index = beef.bumps.len();
+        beef.bumps.push(merkle_path);
+        let beef_tx = BeefTx::from_tx(tx, Some(bump_index)).map_err(|e| {
+            WalletError::Internal(format!("Failed to build BeefTx for {txid}: {e}"))
+        })?;
+        beef.txs.push(beef_tx);
+        return Ok(());
+    }
+
+    // Unproven: include the raw transaction and recurse over its input ancestry.
+    let input_txids: Vec<String> = tx
+        .inputs
+        .iter()
+        .filter_map(|input| input.source_txid.clone())
+        .collect();
+    let beef_tx = BeefTx::from_tx(tx, None)
+        .map_err(|e| WalletError::Internal(format!("Failed to build BeefTx for {txid}: {e}")))?;
+    beef.txs.push(beef_tx);
+
+    for input_txid in input_txids {
+        if !visited.contains(&input_txid) {
+            Box::pin(merge_txid_into_beef(source, &input_txid, beef, visited)).await?;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod beef_builder_tests {
+    use super::*;
+    use bsv::transaction::merkle_path::{MerklePath, MerklePathLeaf};
+    use bsv::transaction::transaction_input::TransactionInput;
+    use std::collections::HashMap;
+    use std::io::Cursor;
+
+    #[derive(Default)]
+    struct MockTxSource {
+        raw: HashMap<String, Vec<u8>>,
+        merkle: HashMap<String, Vec<u8>>,
+    }
+
+    #[async_trait]
+    impl BeefTxSource for MockTxSource {
+        async fn source_merkle_path(&self, txid: &str) -> WalletResult<Option<Vec<u8>>> {
+            Ok(self.merkle.get(txid).cloned())
+        }
+        async fn source_raw_tx(&self, txid: &str) -> WalletResult<Option<Vec<u8>>> {
+            Ok(self.raw.get(txid).cloned())
+        }
+    }
+
+    /// A minimal valid single-tx-block BUMP proving `txid_hash`, serialized to bytes.
+    fn bump_bytes_for(txid_hash: &str) -> Vec<u8> {
+        let level0 = vec![MerklePathLeaf {
+            offset: 0,
+            hash: Some(txid_hash.to_string()),
+            txid: true,
+            duplicate: false,
+        }];
+        let mp = MerklePath::new(800_000, vec![level0]).expect("valid merkle path");
+        let mut buf = Vec::new();
+        mp.to_binary(&mut buf).expect("serialize merkle path");
+        buf
+    }
+
+    /// A minimal transaction with no inputs -- returns (raw_bytes, txid).
+    fn leaf_tx() -> (Vec<u8>, String) {
+        let raw = vec![0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let tx = BsvTransaction::from_binary(&mut Cursor::new(&raw)).unwrap();
+        let txid = tx.id().unwrap();
+        (raw, txid)
+    }
+
+    /// A transaction spending `parent_txid`:0 -- returns (raw_bytes, txid).
+    fn tx_spending(parent_txid: &str) -> (Vec<u8>, String) {
+        let mut tx = BsvTransaction::new();
+        tx.add_input(TransactionInput {
+            source_txid: Some(parent_txid.to_string()),
+            ..Default::default()
+        });
+        let mut raw = Vec::new();
+        tx.to_binary(&mut raw).unwrap();
+        let txid = tx.id().unwrap();
+        (raw, txid)
+    }
+
+    /// The core parity fix: a proven txid yields a BEEF that carries its merkle
+    /// proof (a bump), not the old degenerate `bump_index: None` / empty-inputs wrapper.
+    #[tokio::test]
+    async fn build_beef_for_proven_txid_carries_merkle_proof() {
+        let (raw, txid) = leaf_tx();
+        let mut source = MockTxSource::default();
+        source.raw.insert(txid.clone(), raw);
+        source.merkle.insert(txid.clone(), bump_bytes_for(&txid));
+
+        let beef = build_beef_for_txid(&source, &txid).await.unwrap();
+
+        assert_eq!(
+            beef.bumps.len(),
+            1,
+            "BEEF must carry the merkle proof (bump)"
+        );
+        assert_eq!(beef.txs.len(), 1);
+        assert_eq!(beef.txs[0].txid, txid);
+        assert_eq!(
+            beef.txs[0].bump_index,
+            Some(0),
+            "the proven tx must reference its bump, not None"
+        );
+    }
+
+    /// Unproven target with a proven parent: the BEEF includes the full ancestry
+    /// (target raw tx + parent) and the parent's merkle proof.
+    #[tokio::test]
+    async fn build_beef_for_unproven_txid_includes_proven_ancestry() {
+        let (parent_raw, parent_txid) = leaf_tx();
+        let (child_raw, child_txid) = tx_spending(&parent_txid);
+
+        let mut source = MockTxSource::default();
+        source.raw.insert(parent_txid.clone(), parent_raw);
+        source
+            .merkle
+            .insert(parent_txid.clone(), bump_bytes_for(&parent_txid));
+        source.raw.insert(child_txid.clone(), child_raw);
+        // child has no merkle proof (unmined)
+
+        let beef = build_beef_for_txid(&source, &child_txid).await.unwrap();
+
+        assert_eq!(beef.bumps.len(), 1, "ancestry proof must be present");
+        assert!(beef.find_txid(&child_txid).is_some(), "child tx included");
+        assert!(
+            beef.find_txid(&parent_txid).is_some(),
+            "proven parent included"
+        );
+    }
+
+    /// A txid the services cannot resolve is an error, not a silent empty BEEF.
+    #[tokio::test]
+    async fn build_beef_for_unknown_txid_errors() {
+        let source = MockTxSource::default();
+        let missing = "ee".repeat(32);
+        assert!(
+            build_beef_for_txid(&source, &missing).await.is_err(),
+            "unknown txid must error"
+        );
+    }
 }

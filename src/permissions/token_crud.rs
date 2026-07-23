@@ -6,6 +6,8 @@
 
 use chrono::Utc;
 
+use bsv::script::locking_script::LockingScript;
+use bsv::script::templates::push_drop::{decode as decode_push_drop, LockPosition, PushDrop};
 use bsv::wallet::interfaces::{
     CreateActionArgs, CreateActionOptions, CreateActionOutput, DecryptArgs, EncryptArgs,
     ListOutputsArgs, OutputInclude, QueryMode, RelinquishOutputArgs, WalletInterface,
@@ -165,18 +167,28 @@ pub async fn create_permission_token(
     // Build tags for token lookup.
     let tags = build_tags_for_request(request);
 
-    // Concatenate fields into a simple locking script representation.
-    // In a full implementation this would use PushDrop.lock() with a derived key.
-    // For now, we store the concatenated encrypted fields as the locking script
-    // since actual PushDrop template usage requires the full signing key flow
-    // which Plan 05 will integrate with caching and callbacks.
-    let mut script_data: Vec<u8> = Vec::new();
-    for field in &fields {
-        // Length-prefix each field for later parsing
-        let len = field.len() as u32;
-        script_data.extend_from_slice(&len.to_le_bytes());
-        script_data.extend_from_slice(field);
-    }
+    // Lock the fields into a real PushDrop script: `<pubkey> OP_CHECKSIG <fields..>
+    // OP_2DROP..`. The pubkey is wallet-derived under the admin permission-token
+    // encryption protocol, so the token is a spendable UTXO (revocable by spending)
+    // and matches the TS `PushDrop.lock(fields, PERM_TOKEN_ENCRYPTION_PROTOCOL,
+    // '1', 'self', true, true)`.
+    let locking_script = PushDrop::new(inner, Some(admin_originator.to_string()))
+        .lock(
+            fields,
+            perm_token_encryption_protocol(),
+            "1",
+            self_counterparty(),
+            true,
+            true,
+            LockPosition::Before,
+        )
+        .await
+        .map_err(|e| {
+            bsv::wallet::error::WalletError::Internal(format!(
+                "Failed to build permission token locking script: {e}"
+            ))
+        })?;
+    let script_data = locking_script.to_binary();
 
     inner
         .create_action(
@@ -431,7 +443,7 @@ pub async fn lookup_permission_tokens(
                 None => continue,
             };
 
-            let fields = parse_length_prefixed_fields(&script);
+            let fields = parse_token_fields(&script);
 
             match permission_type {
                 PermissionType::ProtocolPermission => {
@@ -448,6 +460,13 @@ pub async fn lookup_permission_tokens(
                     let expiry_val = expiry_str.parse::<u64>().unwrap_or(0);
                     let priv_str = decrypt_token_field(inner, &fields[2], admin_originator).await?;
                     let privileged = priv_str == "true";
+                    // Enforce the privileged flag: a privileged request must not be
+                    // satisfied by a non-privileged token (and vice versa).
+                    if let Some(want) = filters.privileged {
+                        if privileged != want {
+                            continue;
+                        }
+                    }
                     let sec_str = decrypt_token_field(inner, &fields[3], admin_originator).await?;
                     let sec_level = sec_str.parse::<u8>().unwrap_or(0);
                     let proto = decrypt_token_field(inner, &fields[4], admin_originator).await?;
@@ -534,6 +553,12 @@ pub async fn lookup_permission_tokens(
                     let expiry_val = expiry_str.parse::<u64>().unwrap_or(0);
                     let priv_str = decrypt_token_field(inner, &fields[2], admin_originator).await?;
                     let privileged = priv_str == "true";
+                    // Enforce the privileged flag for certificate access too.
+                    if let Some(want) = filters.privileged {
+                        if privileged != want {
+                            continue;
+                        }
+                    }
                     let cert_type_decoded =
                         decrypt_token_field(inner, &fields[3], admin_originator).await?;
                     let fields_json =
@@ -889,50 +914,62 @@ pub async fn list_spending_authorizations(
     .await
 }
 
-/// Query total satoshis spent by an originator since a given timestamp.
+/// Current UTC calendar month as `YYYY-MM` (matches TS `getCurrentMonthYearUTC`).
+pub(super) fn current_month_year_utc() -> String {
+    use chrono::Datelike;
+    let now = Utc::now();
+    format!("{:04}-{:02}", now.year(), now.month())
+}
+
+/// Total satoshis spent by an originator in the current calendar month.
 ///
-/// Uses `list_actions` to find actions from the originator and sum their
-/// output satoshis within the time window.
+/// Sums the actions that `create_action` stamped with the
+/// `admin originator <origin>` + `admin month <YYYY-MM>` labels. Each action's
+/// net `satoshis` is negative for a spend, so subtracting accumulates positive
+/// spend (matches TS `querySpentSince`: `total += actions.reduce((a, e) => a -
+/// e.satoshis, 0)`). Net inflows are floored at zero.
 pub async fn query_spent_since(
     inner: &(dyn WalletInterface + Send + Sync),
     originator: &str,
-    since: u64,
     admin_originator: &str,
 ) -> Result<u64, bsv::wallet::error::WalletError> {
     use bsv::wallet::interfaces::ListActionsArgs;
 
-    let labels = vec![
-        format!("originator {}", originator),
-        super::brc114::make_brc114_action_time_label(since),
-    ];
+    let month = current_month_year_utc();
+    let lookup_values = build_originator_lookup_values(originator);
+    let mut total: i64 = 0;
 
-    let result = inner
-        .list_actions(
-            ListActionsArgs {
-                labels,
-                label_query_mode: Some(QueryMode::All),
-                include_labels: Some(false).into(),
-                include_inputs: Some(false).into(),
-                include_input_source_locking_scripts: Some(false).into(),
-                include_input_unlocking_scripts: Some(false).into(),
-                include_outputs: Some(true).into(),
-                include_output_locking_scripts: Some(false).into(),
-                limit: Some(10000),
-                offset: None,
-                seek_permission: Some(false).into(),
-            },
-            Some(admin_originator),
-        )
-        .await?;
+    for origin in &lookup_values {
+        let labels = vec![
+            format!("admin originator {origin}"),
+            format!("admin month {month}"),
+        ];
 
-    let mut total: u64 = 0;
-    for action in &result.actions {
-        for output in &action.outputs {
-            total = total.saturating_add(output.satoshis);
+        let result = inner
+            .list_actions(
+                ListActionsArgs {
+                    labels,
+                    label_query_mode: Some(QueryMode::All),
+                    include_labels: Some(false).into(),
+                    include_inputs: Some(false).into(),
+                    include_input_source_locking_scripts: Some(false).into(),
+                    include_input_unlocking_scripts: Some(false).into(),
+                    include_outputs: Some(false).into(),
+                    include_output_locking_scripts: Some(false).into(),
+                    limit: Some(10000),
+                    offset: None,
+                    seek_permission: Some(false).into(),
+                },
+                Some(admin_originator),
+            )
+            .await?;
+
+        for action in &result.actions {
+            total -= action.satoshis;
         }
     }
 
-    Ok(total)
+    Ok(total.max(0) as u64)
 }
 
 // ---------------------------------------------------------------------------
@@ -947,6 +984,18 @@ fn parse_outpoint(outpoint: &str) -> (String, u32) {
         (txid, index)
     } else {
         (outpoint.to_string(), 0)
+    }
+}
+
+/// Extract the data fields from a permission token's locking script.
+///
+/// Tokens are real PushDrop scripts, so this decodes the PushDrop template
+/// first. It falls back to the legacy length-prefixed layout so any tokens
+/// written by the previous implementation remain readable.
+fn parse_token_fields(script: &[u8]) -> Vec<Vec<u8>> {
+    match decode_push_drop(&LockingScript::from_binary(script)) {
+        Ok(pd) => pd.fields,
+        Err(_) => parse_length_prefixed_fields(script),
     }
 }
 

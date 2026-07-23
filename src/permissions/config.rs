@@ -54,6 +54,14 @@ pub struct PermissionsManagerConfig {
     pub require_label_access_for_listing: bool,
     /// Encrypt wallet metadata (descriptions) before passing to inner wallet.
     pub encrypt_wallet_metadata: bool,
+    /// Treat privileged and non-privileged operations as distinct permissions.
+    ///
+    /// When `true` (default), a privileged request requires a privileged-granted
+    /// token and a non-privileged request requires a non-privileged token. When
+    /// `false`, the privileged flag is coerced to `false` everywhere, collapsing
+    /// the two into a single permission (matches the TS
+    /// `differentiatePrivilegedOperations` config).
+    pub differentiate_privileged_operations: bool,
 }
 
 impl Default for PermissionsManagerConfig {
@@ -79,6 +87,7 @@ impl Default for PermissionsManagerConfig {
             require_label_access_for_actions: true,
             require_label_access_for_listing: true,
             encrypt_wallet_metadata: true,
+            differentiate_privileged_operations: true,
         }
     }
 }
@@ -110,5 +119,6 @@ mod tests {
         assert!(config.require_label_access_for_actions);
         assert!(config.require_label_access_for_listing);
         assert!(config.encrypt_wallet_metadata);
+        assert!(config.differentiate_privileged_operations);
     }
 }
