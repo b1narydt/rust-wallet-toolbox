@@ -432,6 +432,19 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
     // basketId) without a change flag. Filtering on change=true would exclude
     // legitimately spendable outputs that entered the wallet via
     // internalizeAction with BasketInsertion into the default basket.
+    //
+    // Restrict candidates to change whose PARENT transaction is in a
+    // broadcastable/confirmed status — mirroring TS allocateChangeInput
+    // (StorageKnex.ts:1304-1315):
+    //   status = ['completed', 'unproven']; if (!excludeSending) status.push('sending')
+    // where excludeSending = !vargs.isDelayed.
+    // Without this join, unbroadcast `nosend` change (which processAction marks
+    // spendable=true while the parent tx sits in `nosend`) would be allocatable
+    // into an immediate send, producing invalid/unbroadcastable input chains.
+    let mut change_tx_status = vec![TransactionStatus::Completed, TransactionStatus::Unproven];
+    if args.is_delayed {
+        change_tx_status.push(TransactionStatus::Sending);
+    }
     let change_find_args = FindOutputsArgs {
         partial: OutputPartial {
             user_id: Some(user_id),
@@ -439,6 +452,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             spendable: Some(true),
             ..Default::default()
         },
+        tx_status: Some(change_tx_status),
         ..Default::default()
     };
     let mut available_change_outputs = storage.find_outputs(&change_find_args, trx_opt).await?;
@@ -1072,6 +1086,196 @@ mod tests {
         assert!(
             spent_count > 0,
             "at least one change UTXO should be allocated (spentBy set)"
+        );
+    }
+
+    /// Set up storage holding exactly one spendable change UTXO whose parent
+    /// transaction is in `parent_status`. Returns (storage, user_id, basket_id,
+    /// output_id). Mirrors `setup_test_storage` fixture style but parameterizes
+    /// the parent transaction status so we can exercise the change-allocation
+    /// status filter.
+    async fn setup_change_with_parent_status(
+        parent_status: TransactionStatus,
+    ) -> (SqliteStorage, i64, i64, i64) {
+        let config = StorageConfig {
+            url: "sqlite::memory:".to_string(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::new_sqlite(config, Chain::Test)
+            .await
+            .expect("create storage");
+        storage.migrate_database().await.expect("migrate");
+        storage.make_available().await.expect("make available");
+
+        let (user, _) = storage
+            .find_or_insert_user("status_filter_identity", None)
+            .await
+            .expect("create user");
+        let user_id = user.user_id;
+        let basket = storage
+            .find_or_insert_output_basket(user_id, "default", None)
+            .await
+            .expect("create basket");
+
+        let now = Utc::now().naive_utc();
+        let source_tx = Transaction {
+            created_at: now,
+            updated_at: now,
+            transaction_id: 0,
+            user_id,
+            proven_tx_id: None,
+            status: parent_status,
+            reference: "parent_status_ref".to_string(),
+            is_outgoing: true,
+            satoshis: 100_000,
+            description: "parent tx".to_string(),
+            version: Some(1),
+            lock_time: Some(0),
+            txid: Some(
+                "bbbb1111cccc2222dddd3333eeee4444bbbb1111cccc2222dddd3333eeee4444".to_string(),
+            ),
+            input_beef: None,
+            raw_tx: None,
+        };
+        let source_tx_id = storage
+            .insert_transaction(&source_tx, None)
+            .await
+            .expect("insert parent tx");
+
+        // Single spendable change UTXO. Note spendable=true even for a `nosend`
+        // parent, exactly as processAction marks outputs — the safety must come
+        // from the parent-status join, not the spendable flag.
+        let output = Output {
+            created_at: now,
+            updated_at: now,
+            output_id: 0,
+            user_id,
+            transaction_id: source_tx_id,
+            basket_id: Some(basket.basket_id),
+            spendable: true,
+            change: true,
+            output_description: Some("status filter utxo".to_string()),
+            vout: 0,
+            satoshis: 50_000,
+            provided_by: StorageProvidedBy::Storage,
+            purpose: "change".to_string(),
+            output_type: "P2PKH".to_string(),
+            txid: Some(
+                "bbbb1111cccc2222dddd3333eeee4444bbbb1111cccc2222dddd3333eeee4444".to_string(),
+            ),
+            sender_identity_key: None,
+            derivation_prefix: Some("testprefix".to_string()),
+            derivation_suffix: Some("suffix0".to_string()),
+            custom_instructions: None,
+            spent_by: None,
+            sequence_number: None,
+            spending_description: None,
+            script_length: Some(25),
+            script_offset: None,
+            locking_script: Some(vec![
+                0x76, 0xa9, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0xac,
+            ]),
+        };
+        let output_id = storage
+            .insert_output(&output, None)
+            .await
+            .expect("insert utxo");
+
+        (storage, user_id, basket.basket_id, output_id)
+    }
+
+    /// Change whose parent transaction has not been sent (status `nosend`) must
+    /// NOT be allocated into a normal immediate send, and the same change MUST be
+    /// allocatable once its parent is broadcast/confirmed. Mirrors TS
+    /// allocateChangeInput's `whereIn('t.status', ['completed','unproven',...])`.
+    ///
+    /// Fails before the fix: the change query filtered on `spendable` only, so the
+    /// `nosend` change (marked spendable=true by processAction) was selected and
+    /// its `spentBy` was set — a double-spend/invalid-input hazard.
+    #[tokio::test]
+    async fn test_change_allocation_respects_parent_tx_status() {
+        let payment = StorageCreateActionOutput {
+            locking_script: "76a91400000000000000000000000000000000000000008ac".to_string(),
+            satoshis: 3_000,
+            output_description: "payment".to_string(),
+            basket: None,
+            custom_instructions: None,
+            tags: vec![],
+        };
+        let build_args = |output: StorageCreateActionOutput| StorageCreateActionArgs {
+            description: "parent-status allocation test".to_string(),
+            inputs: vec![],
+            outputs: vec![output],
+            lock_time: 0,
+            version: 1,
+            labels: vec![],
+            options: StorageCreateActionOptions::default(),
+            input_beef: None,
+            is_new_tx: true,
+            is_sign_action: false,
+            is_no_send: false,
+            is_delayed: false,
+            is_send_with: false,
+            is_remix_change: false,
+            is_test_werr_review_actions: None,
+            include_all_source_transactions: false,
+            random_vals: None,
+        };
+
+        // Case 1: parent is `nosend` -> the only change must be unspendable for a
+        // new immediate send. With no other funds the action cannot be funded, and
+        // critically the nosend change must remain unallocated (spentBy = None).
+        let (storage, user_id, _basket_id, output_id) =
+            setup_change_with_parent_status(TransactionStatus::Nosend).await;
+        let result =
+            storage_create_action(&storage, user_id, &build_args(payment.clone()), None).await;
+        assert!(
+            result.is_err(),
+            "createAction must not fund an immediate send from nosend change"
+        );
+        let after = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        output_id: Some(output_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find output");
+        assert_eq!(after.len(), 1, "output should still exist");
+        assert!(
+            after[0].spent_by.is_none(),
+            "nosend change must NOT be allocated (spentBy must stay None)"
+        );
+
+        // Case 2: parent is `completed` -> the same-shaped change IS allocatable.
+        let (storage2, user_id2, _basket_id2, output_id2) =
+            setup_change_with_parent_status(TransactionStatus::Completed).await;
+        storage_create_action(&storage2, user_id2, &build_args(payment), None)
+            .await
+            .expect("createAction should fund from confirmed change");
+        let after2 = storage2
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        output_id: Some(output_id2),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find output");
+        assert_eq!(after2.len(), 1, "output should still exist");
+        assert!(
+            after2[0].spent_by.is_some(),
+            "confirmed change MUST be allocatable (spentBy set)"
         );
     }
 

@@ -694,12 +694,16 @@ impl WalletServices for Services {
     }
 
     fn hash_output_script(&self, script: &[u8]) -> String {
-        // SHA-256 the script bytes, then reverse to big-endian hex
+        // Plain SHA-256 of the script bytes, hex-encoded in natural (unreversed)
+        // byte order -- the "hashLE" convention, matching TS `Services.hashOutputScript`
+        // (`toHex(sha256(script))`, no reverse). The single reversal into ElectrumX
+        // byte order happens exactly once downstream in `validate_script_hash`, which
+        // treats a 32-byte input as `hashLE` and reverses it for the WoC query.
+        // Reversing here as well would double-reverse and query the wrong scripthash,
+        // making `is_utxo` always false for real UTXOs.
         let hash = bsv::primitives::hash::sha256(script);
-        let mut bytes = hash.to_vec();
-        bytes.reverse();
-        let mut hex = String::with_capacity(bytes.len() * 2);
-        for b in &bytes {
+        let mut hex = String::with_capacity(hash.len() * 2);
+        for b in hash.iter() {
             hex.push_str(&format!("{b:02x}"));
         }
         hex
@@ -1373,6 +1377,42 @@ mod beef_builder_tests {
         assert!(
             build_beef_for_txid(&source, &missing).await.is_err(),
             "unknown txid must error"
+        );
+    }
+
+    /// TS parity: `hashOutputScript` returns the plain (unreversed) sha256 of the
+    /// script -- the "hashLE" convention -- and the single reversal into ElectrumX
+    /// byte order happens once in `validate_script_hash`. Pre-fix, Rust reversed in
+    /// BOTH places, so the value queried at WhatsOnChain had the opposite byte order
+    /// from TS and `is_utxo` always returned false for real UTXOs.
+    ///
+    /// Vectors were computed independently (Python hashlib) for a fixed P2PKH script.
+    #[test]
+    fn hash_output_script_matches_ts_and_query_is_not_double_reversed() {
+        use crate::services::providers::whats_on_chain::validate_script_hash;
+
+        // 76a914 <20-byte zero pubkeyhash> 88ac
+        let script = hex::decode("76a914000000000000000000000000000000000000000088ac").unwrap();
+        // sha256(script), natural (big-endian) byte order == TS `toHex(sha256(script))`.
+        let expected_hash = "75def5fcc8bd1a6e9718970604e2728eb114750f6cfd2a2e2cca9d319679b8ac";
+        // The scripthash actually sent to WhatsOnChain: validate_script_hash treats a
+        // 32-byte default input as hashLE and reverses it exactly once (ElectrumX order).
+        let expected_woc_query = "acb87996319dca2c2e2afd6c0f7514b18e72e204069718976e1abdc8fcf5de75";
+
+        let services = Services::from_chain(Chain::Main);
+        let hash = services.hash_output_script(&script);
+        assert_eq!(
+            hash, expected_hash,
+            "hash_output_script must return plain sha256(script) (hashLE convention), matching TS"
+        );
+
+        // The end-to-end invariant: feeding that hash through the provider's
+        // validate_script_hash (default format -> hashLE) yields exactly one reversal,
+        // matching TS's WhatsOnChain query -- not a double-reverse back to big-endian.
+        let query = validate_script_hash(&hash, None).unwrap();
+        assert_eq!(
+            query, expected_woc_query,
+            "the scripthash sent to WhatsOnChain must be reverse(sha256(script)), matching TS"
         );
     }
 }

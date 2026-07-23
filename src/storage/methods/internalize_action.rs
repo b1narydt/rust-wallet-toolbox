@@ -5,10 +5,13 @@
 //! Supports both wallet-payment and basket-insertion protocols.
 //! Ported from wallet-toolbox/src/storage/methods/internalizeAction.ts.
 
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 
 use chrono::Utc;
 
+use bsv::transaction::chain_tracker::ChainTracker;
 use bsv::transaction::Beef;
 use bsv::wallet::interfaces::InternalizeOutput;
 
@@ -44,43 +47,26 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
         must_be: format!("valid AtomicBEEF: {e}"),
     })?;
 
-    // Validate merkle proofs via chain tracker
+    // Full structural + SPV verification of the whole AtomicBEEF before any
+    // output is taken into custody — the parity counterpart of TS
+    // internalizeAction's `ab.verify(chainTracker, false)`. This rejects
+    // proofless or dangling BEEFs (an unproven transaction that does not chain
+    // to a proven ancestor present in the BEEF); the previous code only
+    // validated bumps that happened to be present and silently accepted a BEEF
+    // with no proofs at all. Fail closed.
     let chain_tracker = services.get_chain_tracker().await?;
-    for btx in &ab.txs {
-        if let Some(bump_idx) = btx.bump_index {
-            if let Some(bump) = ab.bumps.get(bump_idx) {
-                let merkle_root = bump.compute_root(Some(&btx.txid)).map_err(|e| {
-                    WalletError::Internal(format!("Failed to compute merkle root: {e}"))
-                })?;
-                let valid = chain_tracker
-                    .is_valid_root_for_height(&merkle_root, bump.block_height)
-                    .await
-                    .map_err(|e| WalletError::Internal(format!("Chain tracker error: {e}")))?;
-                if !valid {
-                    return Err(WalletError::InvalidParameter {
-                        parameter: "tx".to_string(),
-                        must_be: format!(
-                            "valid AtomicBEEF with valid merkle proof for tx {}",
-                            btx.txid
-                        ),
-                    });
-                }
-            }
-        }
-    }
+    verify_atomic_beef(&ab, chain_tracker.as_ref()).await?;
 
-    // Get the atomic txid (the newest/main transaction in the BEEF)
-    let txid = ab.atomic_txid.as_ref().cloned().unwrap_or_else(|| {
-        // Fallback: use the last transaction's txid
-        ab.txs.last().map(|t| t.txid.clone()).unwrap_or_default()
-    });
-
-    if txid.is_empty() {
-        return Err(WalletError::InvalidParameter {
+    // TS requires `ab.atomicTxid`; the AtomicBEEF must name its subject tx.
+    let txid = ab
+        .atomic_txid
+        .as_ref()
+        .cloned()
+        .filter(|t| !t.is_empty())
+        .ok_or_else(|| WalletError::InvalidParameter {
             parameter: "tx".to_string(),
-            must_be: "an AtomicBEEF with an identifiable transaction".to_string(),
-        });
-    }
+            must_be: "a valid AtomicBEEF with an identified atomic txid".to_string(),
+        })?;
 
     // Find the main transaction in the BEEF
     let beef_tx =
@@ -620,6 +606,124 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
     })
 }
 
+/// Full structural + SPV verification of an AtomicBEEF, mirroring the
+/// TypeScript `Beef.verify(chainTracker, allowTxidOnly = false)` that
+/// wallet-toolbox's `internalizeAction` runs before accepting a transaction.
+///
+/// A BEEF is accepted only if EVERY transaction is either:
+///   * proven by a merkle bump whose txid is a leaf of that bump and whose
+///     computed root the chain tracker confirms for the bump's block height, or
+///   * an unproven raw transaction whose every input txid chains (transitively)
+///     to a proven ancestor already present in the BEEF.
+///
+/// Rejected (fail closed):
+///   * `txid-only` transactions — internalize passes `allowTxidOnly = false`.
+///   * unproven transactions with a dangling input (source txid not in the BEEF).
+///   * a transaction that names a bump index it is not actually a leaf of.
+///   * bumps whose leaves disagree on the merkle root for a block height.
+///   * any collected merkle root the chain tracker rejects.
+async fn verify_atomic_beef(ab: &Beef, chain_tracker: &dyn ChainTracker) -> WalletResult<()> {
+    let invalid = || WalletError::InvalidParameter {
+        parameter: "tx".to_string(),
+        must_be: "a valid AtomicBEEF (every transaction proven or chaining to a proven ancestor)"
+            .to_string(),
+    };
+
+    // Txids whose validity has been established. Seeded with bump-proven txids.
+    let mut valid_txids: HashSet<String> = HashSet::new();
+    // Collected merkle roots per block height, to confirm against the tracker.
+    let mut roots: HashMap<u32, String> = HashMap::new();
+
+    // (1) `txid-only` transactions are not permitted (allowTxidOnly = false).
+    if ab.txs.iter().any(|btx| btx.is_txid_only()) {
+        return Err(invalid());
+    }
+
+    // (2) Record every txid proven by a bump leaf and confirm each bump's root
+    //     is internally consistent for its block height.
+    for bump in &ab.bumps {
+        let Some(level0) = bump.path.first() else {
+            continue;
+        };
+        for leaf in level0 {
+            if !leaf.txid {
+                continue;
+            }
+            let Some(hash) = leaf.hash.as_ref().filter(|h| !h.is_empty()) else {
+                continue;
+            };
+            valid_txids.insert(hash.clone());
+            let root = bump.compute_root(Some(hash)).map_err(|e| {
+                WalletError::Internal(format!("Failed to compute merkle root: {e}"))
+            })?;
+            match roots.entry(bump.block_height) {
+                Entry::Occupied(existing) => {
+                    if existing.get() != &root {
+                        return Err(invalid());
+                    }
+                }
+                Entry::Vacant(slot) => {
+                    slot.insert(root);
+                }
+            }
+        }
+    }
+
+    // (3) Every transaction that claims a bump must actually be a leaf of it.
+    for btx in &ab.txs {
+        if let Some(bump_idx) = btx.bump_index {
+            let bump = ab.bumps.get(bump_idx).ok_or_else(invalid)?;
+            let proven = bump.path.first().is_some_and(|level0| {
+                level0
+                    .iter()
+                    .any(|l| l.hash.as_deref() == Some(btx.txid.as_str()))
+            });
+            if !proven {
+                return Err(invalid());
+            }
+            valid_txids.insert(btx.txid.clone());
+        }
+    }
+
+    // (4) Fixpoint over unproven transactions: a transaction becomes valid once
+    //     all of its input txids are valid. Proven transactions have empty
+    //     `input_txids` (see BeefTx) and are already valid from step (3).
+    //     Iterate until no further progress, then require that every
+    //     transaction reached validity — this rejects dangling inputs and
+    //     dependency cycles.
+    loop {
+        let mut progressed = false;
+        for btx in &ab.txs {
+            if valid_txids.contains(&btx.txid) {
+                continue;
+            }
+            if btx.input_txids.iter().all(|i| valid_txids.contains(i)) {
+                valid_txids.insert(btx.txid.clone());
+                progressed = true;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+    if ab.txs.iter().any(|btx| !valid_txids.contains(&btx.txid)) {
+        return Err(invalid());
+    }
+
+    // (5) SPV: confirm every collected merkle root against the chain tracker.
+    for (height, root) in &roots {
+        let ok = chain_tracker
+            .is_valid_root_for_height(root, *height)
+            .await
+            .map_err(|e| WalletError::Internal(format!("Chain tracker error: {e}")))?;
+        if !ok {
+            return Err(invalid());
+        }
+    }
+
+    Ok(())
+}
+
 /// Extract the output_index from either variant of InternalizeOutput.
 fn output_index_of(out: &InternalizeOutput) -> u32 {
     match out {
@@ -927,57 +1031,88 @@ mod tests {
         (storage, user.user_id)
     }
 
-    /// Build a simple transaction and wrap it in an AtomicBEEF.
+    /// Build a *valid* AtomicBEEF whose subject transaction is unproven but
+    /// chains to a proven ancestor, so it passes full BEEF verification while
+    /// still exercising the not-yet-mined receive path (status `Unproven`, a
+    /// `ProvenTxReq` is created). The BEEF contains:
+    ///   * a proven parent transaction, included with a single-tx-block bump, and
+    ///   * an unproven child (the atomic/subject tx) that spends the parent.
+    ///
+    /// Returns the serialized BEEF bytes and the child (subject) txid.
     fn create_test_atomic_beef() -> (Vec<u8>, String) {
         use bsv::script::UnlockingScript;
+        use bsv::transaction::beef_tx::BeefTx;
+        use bsv::transaction::merkle_path::{MerklePath, MerklePathLeaf};
 
-        // Build a minimal transaction
-        let mut tx = BsvTransaction::new();
-        tx.version = 1;
-        tx.lock_time = 0;
-
-        // Add a dummy input
-        let input = TransactionInput {
+        // --- Proven parent: a mined transaction, proven by a merkle bump. ---
+        let mut parent = BsvTransaction::new();
+        parent.version = 1;
+        parent.lock_time = 0;
+        parent.add_input(TransactionInput {
             source_transaction: None,
-            source_txid: Some("a".repeat(64)),
+            source_txid: Some("b".repeat(64)),
             source_output_index: 0,
             unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
             sequence: 0xFFFFFFFF,
-        };
-        tx.add_input(input);
+        });
+        let pscript =
+            LockingScript::from_hex("76a914ffffffffffffffffffffffffffffffffffffffff88ac").unwrap();
+        parent.add_output(TransactionOutput {
+            satoshis: Some(5000),
+            locking_script: pscript,
+            change: false,
+        });
+        let parent_txid = parent.id().expect("compute parent txid");
 
-        // Add two outputs with P2PKH-like scripts
+        // Single-tx-block BUMP proving the parent (computeRoot returns the txid).
+        let level0 = vec![MerklePathLeaf {
+            offset: 0,
+            hash: Some(parent_txid.clone()),
+            txid: true,
+            duplicate: false,
+        }];
+        let bump = MerklePath::new(800_000, vec![level0]).expect("valid merkle path");
+
+        // --- Unproven child (the atomic/subject tx) spending the proven parent. ---
+        let mut child = BsvTransaction::new();
+        child.version = 1;
+        child.lock_time = 0;
+        child.add_input(TransactionInput {
+            source_transaction: None,
+            source_txid: Some(parent_txid.clone()),
+            source_output_index: 0,
+            unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
+            sequence: 0xFFFFFFFF,
+        });
         let script1 =
             LockingScript::from_hex("76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac").unwrap();
-        let out1 = TransactionOutput {
+        child.add_output(TransactionOutput {
             satoshis: Some(1000),
             locking_script: script1,
             change: false,
-        };
-        tx.add_output(out1);
-
+        });
         let script2 =
             LockingScript::from_hex("76a91400112233445566778899aabbccddeeff0011223388ac").unwrap();
-        let out2 = TransactionOutput {
+        child.add_output(TransactionOutput {
             satoshis: Some(2000),
             locking_script: script2,
             change: false,
-        };
-        tx.add_output(out2);
+        });
+        let child_txid = child.id().expect("compute child txid");
 
-        let txid = tx.id().expect("compute txid");
-
-        // Create a BEEF containing this transaction
-        use bsv::transaction::beef_tx::BeefTx;
-        let beef_tx = BeefTx::from_tx(tx, None).expect("create beef tx");
+        // Assemble: bump + proven parent (bump_index 0) + unproven child.
         let mut beef = Beef::new(bsv::transaction::beef::BEEF_V1);
-        beef.txs.push(beef_tx);
-        beef.atomic_txid = Some(txid.clone());
+        beef.bumps.push(bump);
+        beef.txs
+            .push(BeefTx::from_tx(parent, Some(0)).expect("parent beef tx"));
+        beef.txs
+            .push(BeefTx::from_tx(child, None).expect("child beef tx"));
+        beef.atomic_txid = Some(child_txid.clone());
 
         let mut beef_bytes = Vec::new();
         beef.to_binary(&mut beef_bytes).expect("serialize beef");
 
-        (beef_bytes, txid)
+        (beef_bytes, child_txid)
     }
 
     #[tokio::test]
@@ -1262,6 +1397,98 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.code(), "WERR_INVALID_PARAMETER");
+    }
+
+    /// Build a *dangling* AtomicBEEF: a single unproven transaction whose only
+    /// input references a source txid that is NOT present in the BEEF and is not
+    /// proven by any bump. TS `Beef.verify(chainTracker, false)` rejects this
+    /// (the tx neither has a proof nor chains to a proven ancestor), so
+    /// internalize must reject it. Returns the serialized BEEF bytes.
+    fn create_dangling_atomic_beef() -> Vec<u8> {
+        use bsv::script::UnlockingScript;
+        use bsv::transaction::beef_tx::BeefTx;
+
+        let mut tx = BsvTransaction::new();
+        tx.version = 1;
+        tx.lock_time = 0;
+        // Input points at a txid that is absent from the BEEF -> dangling.
+        tx.add_input(TransactionInput {
+            source_transaction: None,
+            source_txid: Some("a".repeat(64)),
+            source_output_index: 0,
+            unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
+            sequence: 0xFFFFFFFF,
+        });
+        let script =
+            LockingScript::from_hex("76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac").unwrap();
+        tx.add_output(TransactionOutput {
+            satoshis: Some(1000),
+            locking_script: script,
+            change: false,
+        });
+        let txid = tx.id().expect("compute txid");
+
+        // No bumps: the transaction is unproven and its input is dangling.
+        let beef_tx = BeefTx::from_tx(tx, None).expect("create beef tx");
+        let mut beef = Beef::new(bsv::transaction::beef::BEEF_V1);
+        beef.txs.push(beef_tx);
+        beef.atomic_txid = Some(txid);
+
+        let mut beef_bytes = Vec::new();
+        beef.to_binary(&mut beef_bytes).expect("serialize beef");
+        beef_bytes
+    }
+
+    /// A proofless / dangling AtomicBEEF (an unproven tx whose input does not
+    /// chain to any proven ancestor in the BEEF) must be rejected before any
+    /// output is taken into custody — matching TS `internalizeAction`'s
+    /// `ab.verify(chainTracker)`. Fails closed.
+    #[tokio::test]
+    async fn test_internalize_rejects_unproven_dangling_beef() {
+        let (storage, user_id) = setup_test_storage().await;
+        let services = MockWalletServices;
+        let beef_bytes = create_dangling_atomic_beef();
+
+        let sender_key = PublicKey::from_string(&("02".to_owned() + &"ab".repeat(32))).unwrap();
+
+        let args = StorageInternalizeActionArgs {
+            tx: beef_bytes,
+            description: "dangling beef".to_string(),
+            labels: vec![],
+            seek_permission: true,
+            outputs: vec![InternalizeOutput::WalletPayment {
+                output_index: 0,
+                payment: Payment {
+                    derivation_prefix: b"prefix1".to_vec(),
+                    derivation_suffix: b"suffix1".to_vec(),
+                    sender_identity_key: sender_key,
+                },
+            }],
+        };
+
+        let result = storage_internalize_action(&storage, &services, user_id, &args, None).await;
+        assert!(
+            result.is_err(),
+            "internalize must reject a proofless/dangling AtomicBEEF"
+        );
+        assert_eq!(result.unwrap_err().code(), "WERR_INVALID_PARAMETER");
+
+        // Nothing should have been taken into custody.
+        let out_args = FindOutputsArgs {
+            partial: OutputPartial {
+                user_id: Some(user_id),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let outputs = storage
+            .find_outputs(&out_args, None)
+            .await
+            .expect("find outputs");
+        assert!(
+            outputs.is_empty(),
+            "no outputs may be created when the BEEF is rejected"
+        );
     }
 
     #[tokio::test]

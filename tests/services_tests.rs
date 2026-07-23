@@ -140,8 +140,11 @@ async fn test_n_lock_time_is_final_timestamp_future() {
 fn test_hash_output_script_known_value() {
     let services = Services::from_chain(Chain::Main);
 
-    // A simple OP_DUP OP_HASH160 <20-byte-hash> OP_EQUALVERIFY OP_CHECKSIG script
-    // We test that hash_output_script returns SHA256 reversed hex
+    // A simple OP_DUP OP_HASH160 <20-byte-hash> OP_EQUALVERIFY OP_CHECKSIG script.
+    // hash_output_script must return the plain (unreversed) sha256 of the script --
+    // the "hashLE" convention -- matching TS `Services.hashOutputScript`
+    // (`toHex(sha256(script))`). The single reversal into ElectrumX byte order
+    // happens once downstream in validate_script_hash, not here.
     let script = hex_decode("76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac");
 
     let hash = services.hash_output_script(&script);
@@ -152,11 +155,9 @@ fn test_hash_output_script_known_value() {
     // Verify it is valid hex
     let _decoded = hex_decode(&hash);
 
-    // Compute expected: SHA256 of script, reversed to BE
+    // Expected: plain SHA256 of the script, natural (unreversed) byte order.
     let expected_sha = bsv::primitives::hash::sha256(&script);
-    let mut expected_bytes = expected_sha.to_vec();
-    expected_bytes.reverse();
-    let expected_hex: String = expected_bytes.iter().map(|b| format!("{b:02x}")).collect();
+    let expected_hex: String = expected_sha.iter().map(|b| format!("{b:02x}")).collect();
     assert_eq!(hash, expected_hex);
 }
 

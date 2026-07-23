@@ -1,6 +1,6 @@
 //! In-memory storage backend for chaintracks.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::RwLock;
 
 use async_trait::async_trait;
@@ -15,6 +15,20 @@ use crate::types::Chain;
 
 const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
+/// Collapse an ascending-sorted sequence of heights into inclusive contiguous
+/// ranges. `heights` MUST be sorted ascending and de-duplicated (a `BTreeMap`
+/// key iterator satisfies both).
+pub(crate) fn contiguous_ranges(heights: impl Iterator<Item = u32>) -> Vec<HeightRange> {
+    let mut ranges: Vec<HeightRange> = Vec::new();
+    for h in heights {
+        match ranges.last_mut() {
+            Some(last) if h == last.high + 1 => last.high = h,
+            _ => ranges.push(HeightRange::new(h, h)),
+        }
+    }
+    ranges
+}
+
 /// Inner state protected by a single `RwLock` to eliminate lock-ordering issues.
 struct Inner {
     headers: HashMap<u64, LiveBlockHeader>,
@@ -23,6 +37,11 @@ struct Inner {
     merkle_to_id: HashMap<String, u64>,
     next_id: u64,
     tip_id: Option<u64>,
+    /// Archived (bulk) headers keyed by height. Confirmed, buried headers are
+    /// migrated here out of the live window by `migrate_live_to_bulk` so old
+    /// heights stay reachable while live storage stays bounded. Mirrors the TS
+    /// `BulkFileDataManager`, minus the CDN file layout (a local-only store).
+    bulk: BTreeMap<u32, BlockHeader>,
 }
 
 /// In-memory storage backend implementing the full `ChaintracksStorage` trait.
@@ -56,6 +75,7 @@ impl MemoryStorage {
                 merkle_to_id: HashMap::new(),
                 next_id: 1,
                 tip_id: None,
+                bulk: BTreeMap::new(),
             }),
         }
     }
@@ -64,9 +84,14 @@ impl MemoryStorage {
     // Public helpers (not part of trait)
     // ------------------------------------------------------------------
 
-    /// Returns the number of headers currently stored.
+    /// Returns the number of live headers currently stored.
     pub fn header_count(&self) -> usize {
         self.inner.read().unwrap().headers.len()
+    }
+
+    /// Returns the number of archived (bulk) headers currently stored.
+    pub fn bulk_count(&self) -> usize {
+        self.inner.read().unwrap().bulk.len()
     }
 
     /// Returns all headers at the given height.
@@ -316,9 +341,12 @@ impl ChaintracksStorageQuery for MemoryStorage {
 
     async fn find_header_for_height(&self, height: u32) -> WalletResult<Option<BlockHeader>> {
         let inner = self.inner.read().unwrap();
+        // Live (active) window first, then fall back to archived bulk storage so
+        // heights migrated out of the live window remain reachable and still
+        // validate. Matches TS `findHeaderForHeightOrUndefined`.
         match inner.height_to_id.get(&height) {
             Some(&id) => Ok(inner.headers.get(&id).cloned().map(BlockHeader::from)),
-            None => Ok(None),
+            None => Ok(inner.bulk.get(&height).cloned()),
         }
     }
 
@@ -349,18 +377,29 @@ impl ChaintracksStorageQuery for MemoryStorage {
         let inner = self.inner.read().unwrap();
 
         for h in height..height + count {
-            if let Some(&id) = inner.height_to_id.get(&h) {
-                if let Some(header) = inner.headers.get(&id) {
-                    let base = BaseBlockHeader {
-                        version: header.version,
-                        previous_hash: header.previous_hash.clone(),
-                        merkle_root: header.merkle_root.clone(),
-                        time: header.time,
-                        bits: header.bits,
-                        nonce: header.nonce,
-                    };
-                    result.extend_from_slice(&base.to_bytes());
-                }
+            // Live (active) window first, then archived bulk storage, so ranges
+            // spanning the live/bulk boundary serialize contiguously.
+            let base = if let Some(&id) = inner.height_to_id.get(&h) {
+                inner.headers.get(&id).map(|header| BaseBlockHeader {
+                    version: header.version,
+                    previous_hash: header.previous_hash.clone(),
+                    merkle_root: header.merkle_root.clone(),
+                    time: header.time,
+                    bits: header.bits,
+                    nonce: header.nonce,
+                })
+            } else {
+                inner.bulk.get(&h).map(|header| BaseBlockHeader {
+                    version: header.version,
+                    previous_hash: header.previous_hash.clone(),
+                    merkle_root: header.merkle_root.clone(),
+                    time: header.time,
+                    bits: header.bits,
+                    nonce: header.nonce,
+                })
+            };
+            if let Some(base) = base {
+                result.extend_from_slice(&base.to_bytes());
             }
         }
 
@@ -375,8 +414,11 @@ impl ChaintracksStorageQuery for MemoryStorage {
     }
 
     async fn get_available_height_ranges(&self) -> WalletResult<Vec<HeightRange>> {
-        // In-memory storage doesn't track bulk ranges
-        Ok(Vec::new())
+        // Contiguous height ranges covered by archived bulk storage. Live-only
+        // heights are reported by `find_live_height_range`; this reports what is
+        // reachable from the bulk store after migration.
+        let inner = self.inner.read().unwrap();
+        Ok(contiguous_ranges(inner.bulk.keys().copied()))
     }
 
     async fn find_live_height_range(&self) -> WalletResult<Option<HeightRange>> {
@@ -592,8 +634,56 @@ impl ChaintracksStorageIngest for MemoryStorage {
         Ok(count)
     }
 
-    async fn migrate_live_to_bulk(&self, _count: u32) -> WalletResult<u32> {
-        Ok(0)
+    async fn migrate_live_to_bulk(&self, count: u32) -> WalletResult<u32> {
+        if count == 0 {
+            return Ok(0);
+        }
+        let mut inner = self.inner.write().unwrap();
+
+        // Never migrate the current chain tip: leaving it in the live window
+        // keeps fork-choice and tip invariants intact (fail-closed). Candidates
+        // are the oldest `count` *active* headers strictly below the tip.
+        let tip_id = inner.tip_id;
+        let mut candidates: Vec<LiveBlockHeader> = inner
+            .headers
+            .values()
+            .filter(|h| h.is_active && Some(h.header_id.unwrap_or(0)) != tip_id)
+            .cloned()
+            .collect();
+        candidates.sort_by_key(|h| h.height);
+        candidates.truncate(count as usize);
+
+        if candidates.is_empty() {
+            return Ok(0);
+        }
+
+        let max_height = candidates.iter().map(|h| h.height).max().unwrap();
+
+        // Archive the confirmed headers into bulk storage keyed by height.
+        for h in &candidates {
+            let bh = BlockHeader::from(h.clone());
+            inner.bulk.insert(bh.height, bh);
+        }
+        let migrated = candidates.len() as u32;
+
+        // Remove every live header at or below the highest migrated height —
+        // active (now in bulk) and any stale forks alike. Mirrors TS
+        // `deleteOlderLiveBlockHeaders(headers.at(-1).height)`.
+        let to_remove: Vec<u64> = inner
+            .headers
+            .iter()
+            .filter(|(_, h)| h.height <= max_height)
+            .map(|(&id, _)| id)
+            .collect();
+        for id in to_remove {
+            if let Some(h) = inner.headers.remove(&id) {
+                inner.hash_to_id.remove(&h.hash);
+                inner.height_to_id.remove(&h.height);
+                inner.merkle_to_id.remove(&h.merkle_root);
+            }
+        }
+
+        Ok(migrated)
     }
 
     async fn delete_older_live_block_headers(&self, max_height: u32) -> WalletResult<u32> {
@@ -639,6 +729,7 @@ impl ChaintracksStorageIngest for MemoryStorage {
         inner.hash_to_id.clear();
         inner.height_to_id.clear();
         inner.merkle_to_id.clear();
+        inner.bulk.clear();
         inner.next_id = 1;
         inner.tip_id = None;
         Ok(())
@@ -900,10 +991,110 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_migrate_live_to_bulk() {
+    async fn test_migrate_live_to_bulk_empty() {
         let storage = MemoryStorage::new(Chain::Main);
+        // Nothing to migrate from empty storage.
         let count = storage.migrate_live_to_bulk(100).await.unwrap();
         assert_eq!(count, 0);
+        assert_eq!(storage.bulk_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_migrate_live_to_bulk_moves_old_heights() {
+        let storage = MemoryStorage::new(Chain::Main);
+
+        // Build a linear active chain of heights 0..=5.
+        storage
+            .insert_header(create_test_header(0, ZERO_HASH, "hash0"))
+            .await
+            .unwrap();
+        for i in 1..=5u32 {
+            storage
+                .insert_header(create_test_header(
+                    i,
+                    &format!("hash{}", i - 1),
+                    &format!("hash{i}"),
+                ))
+                .await
+                .unwrap();
+        }
+        assert_eq!(storage.header_count(), 6);
+        assert_eq!(storage.bulk_count(), 0);
+
+        // Capture the merkle root of height 1 before migration.
+        let root_at_1 = storage
+            .find_header_for_height(1)
+            .await
+            .unwrap()
+            .unwrap()
+            .merkle_root;
+
+        // Migrate the oldest 3 headers (heights 0,1,2) into bulk storage.
+        let migrated = storage.migrate_live_to_bulk(3).await.unwrap();
+        assert_eq!(migrated, 3);
+
+        // Live table shrank by 3 (bounded); bulk gained 3 (archived).
+        assert_eq!(storage.header_count(), 3);
+        assert_eq!(storage.bulk_count(), 3);
+
+        // Migrated heights are gone from the LIVE table...
+        assert!(storage
+            .find_live_header_for_block_hash("hash1")
+            .await
+            .unwrap()
+            .is_none());
+
+        // ...but still reachable via find_header_for_height (bulk fallback).
+        let h1 = storage.find_header_for_height(1).await.unwrap().unwrap();
+        assert_eq!(h1.hash, "hash1");
+        assert_eq!(h1.merkle_root, root_at_1);
+
+        // is_valid_root_for_height's mechanism (find_header_for_height + merkle
+        // equality) still validates a migrated, buried height.
+        let valid = storage
+            .find_header_for_height(1)
+            .await
+            .unwrap()
+            .map(|h| h.merkle_root == root_at_1)
+            .unwrap_or(false);
+        assert!(
+            valid,
+            "merkle root must still validate for a migrated height"
+        );
+
+        // Bulk range covers 0..=2; live range is now 3..=5.
+        assert_eq!(
+            storage.get_available_height_ranges().await.unwrap(),
+            vec![HeightRange::new(0, 2)]
+        );
+        let live = storage.find_live_height_range().await.unwrap().unwrap();
+        assert_eq!(live.low, 3);
+        assert_eq!(live.high, 5);
+
+        // A byte range spanning the bulk/live boundary returns every header.
+        let bytes = storage.get_headers_bytes(0, 6).await.unwrap();
+        assert_eq!(bytes.len(), 80 * 6);
+    }
+
+    #[tokio::test]
+    async fn test_migrate_never_removes_tip() {
+        let storage = MemoryStorage::new(Chain::Main);
+        storage
+            .insert_header(create_test_header(0, ZERO_HASH, "hash0"))
+            .await
+            .unwrap();
+        storage
+            .insert_header(create_test_header(1, "hash0", "hash1"))
+            .await
+            .unwrap();
+
+        // Asking to migrate more than exist must still retain the chain tip.
+        let migrated = storage.migrate_live_to_bulk(100).await.unwrap();
+        assert_eq!(migrated, 1); // only height 0; height 1 is the tip
+        assert_eq!(storage.header_count(), 1);
+        assert_eq!(storage.bulk_count(), 1);
+        let tip = storage.find_chain_tip_header().await.unwrap().unwrap();
+        assert_eq!(tip.hash, "hash1");
     }
 
     #[tokio::test]
