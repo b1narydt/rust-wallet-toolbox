@@ -79,34 +79,46 @@ async fn test_builder_missing_storage_returns_error() {
 
 #[tokio::test]
 async fn test_builder_with_monitor() {
-    // Build with monitor enabled -- monitor requires services
-    let setup = common::create_test_wallet().await;
-    // The default create_test_wallet does not enable monitor,
-    // so let us build one explicitly with monitor enabled.
+    // DEFAULT (0.3.4): a wallet built with services gets a monitor, STARTED --
+    // the toolbox stores createAction txs as `unsent` ProvenTxReqs and only the
+    // monitor's TaskSendWaiting ever broadcasts them, so "out of the box" must
+    // include a running monitor (rust-mpc#147 phantom-spend regression).
     let root_key = common::random_root_key();
-    let setup_with_monitor = WalletBuilder::new()
+    let setup_default = WalletBuilder::new()
         .chain(Chain::Test)
         .root_key(root_key)
         .with_sqlite_memory()
         .with_services(std::sync::Arc::new(common::MockWalletServices))
-        .with_monitor()
         .build()
         .await
-        .expect("build with monitor");
-
+        .expect("build default");
+    let monitor = setup_default
+        .monitor
+        .as_ref()
+        .expect("default build must include a monitor when services exist");
     assert!(
-        setup_with_monitor.monitor.is_some(),
-        "monitor should be Some when with_monitor() is called"
+        monitor.is_running(),
+        "the default monitor must be STARTED by build(), not left for the caller to remember"
     );
 
-    // Default wallet should not have monitor
+    // Explicit opt-out for callers that own broadcasting themselves.
+    let root_key = common::random_root_key();
+    let setup_without = WalletBuilder::new()
+        .chain(Chain::Test)
+        .root_key(root_key)
+        .with_sqlite_memory()
+        .with_services(std::sync::Arc::new(common::MockWalletServices))
+        .without_monitor()
+        .build()
+        .await
+        .expect("build without monitor");
     assert!(
-        setup.monitor.is_none(),
-        "default test wallet should not have monitor"
+        setup_without.monitor.is_none(),
+        "without_monitor() must opt out"
     );
 
-    setup.wallet.destroy().await.unwrap();
-    setup_with_monitor.wallet.destroy().await.unwrap();
+    setup_default.wallet.destroy().await.unwrap();
+    setup_without.wallet.destroy().await.unwrap();
 }
 
 #[tokio::test]

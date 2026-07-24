@@ -122,7 +122,13 @@ impl WalletBuilder {
             storage_identity_key: None,
             services: None,
             use_default_services: false,
-            monitor_enabled: false,
+            // ON by default (0.3.4): the toolbox stores every createAction tx as an
+            // `unsent` ProvenTxReq and ONLY the monitor's TaskSendWaiting ever
+            // broadcasts it. A wallet built without a monitor silently never posts
+            // its transactions to the network (the rust-mpc#147 faucet phantom-spend)
+            // — "works out of the box" means the monitor runs unless the caller
+            // explicitly opts out with `without_monitor()`.
+            monitor_enabled: true,
             privileged_key_manager: None,
             pool_max_connections: None,
             pool_min_connections: None,
@@ -183,8 +189,23 @@ impl WalletBuilder {
     }
 
     /// Enable the background monitor with default tasks.
+    ///
+    /// Since 0.3.4 the monitor is ON by default and `build()` starts it, so this
+    /// is a no-op kept for back-compatibility with 0.3.3-era callers.
     pub fn with_monitor(mut self) -> Self {
         self.monitor_enabled = true;
+        self
+    }
+
+    /// Opt OUT of the background monitor.
+    ///
+    /// Without a monitor, transactions created with the default
+    /// `accept_delayed_broadcast` are stored as `unsent` ProvenTxReqs and are
+    /// NEVER broadcast — nothing else posts them to the network. Use this only
+    /// when something else owns broadcasting (or in offline tests); a wallet
+    /// that pays anyone must keep the monitor.
+    pub fn without_monitor(mut self) -> Self {
+        self.monitor_enabled = false;
         self
     }
 
@@ -399,18 +420,25 @@ impl WalletBuilder {
         // Construct wallet
         let wallet = Wallet::new(wallet_args)?;
 
-        // Optionally create Monitor -- shares the same Arc<WalletStorageManager>.
+        // Create AND START the Monitor (default) -- shares the same
+        // Arc<WalletStorageManager>. Started here, before the Arc wrap, so the
+        // wallet broadcasts/proves out of the box: the caller no longer needs the
+        // Arc::get_mut + start_tasks() dance every embedder used to forget (the
+        // rust-mpc#147 faucet never broadcast a single tx that way).
         let monitor = if self.monitor_enabled {
             if let Some(ref svc) = services {
-                let monitor = crate::monitor::Monitor::builder()
+                let mut monitor = crate::monitor::Monitor::builder()
                     .chain(chain.clone())
                     .storage(storage.clone())
                     .services(svc.clone())
                     .default_tasks()
                     .build()?;
+                monitor.start_tasks()?;
+                tracing::info!("wallet monitor started (default; opt out with without_monitor())");
                 Some(Arc::new(monitor))
             } else {
-                // Monitor requires services -- skip if none configured
+                // Monitor requires services -- skip if none configured (offline /
+                // storage-only wallets have nothing to broadcast WITH anyway).
                 None
             }
         } else {
