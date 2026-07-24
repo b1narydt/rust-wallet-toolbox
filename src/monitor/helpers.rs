@@ -478,6 +478,11 @@ pub async fn attempt_to_post_reqs_to_network(
 
         let update = ProvenTxReqPartial {
             status: Some(new_req_status.clone()),
+            // F1 (parity audit 2026-07-24): a service-error retry MUST count, or
+            // the attempt-based proof-timeout breaker in get_proofs can never
+            // fire (TS attemptToPostReqsToNetwork increments here too).
+            attempts: matches!(post_status, PostReqStatus::ServiceError)
+                .then_some(req.attempts + 1),
             ..Default::default()
         };
         if let Err(e) = storage
@@ -532,13 +537,20 @@ pub async fn attempt_to_post_reqs_to_network(
                     req.proven_tx_req_id, req.txid, e
                 ));
             } else if is_failed {
-                // Explicitly restore this tx's consumed inputs. The
-                // implicit restore-on-Failed cascade was removed from
-                // `update_transaction_status` so DoubleSpend recovery
-                // can keep its per-outpoint filter. Both
-                // DoubleSpend and Invalid flow through here; restoring
-                // every consumed input matches the previous cascade
-                // semantics for this monitor-side path.
+                // Restore this tx's consumed inputs — but NOT blindly (F4,
+                // parity audit 2026-07-24; TS markStaleInputsAsSpent).
+                //
+                //   - Invalid (never accepted by any provider): the tx does not
+                //     exist on-chain, so every consumed input is genuinely
+                //     unspent — restore them all.
+                //   - DoubleSpend: some competing tx spent at least one of our
+                //     inputs. Unconditionally restoring resurrects the already
+                //     -spent UTXO, the next createAction reselects it, the
+                //     network answers missing-inputs, and the wallet loops
+                //     forever. Gate each input on services.is_utxo and restore
+                //     ONLY the ones still unspent on-chain; on a lookup error,
+                //     leave the input consumed (fail-closed — a re-run can
+                //     restore it later, but a false restore starts the loop).
                 match storage
                     .find_transactions(&crate::storage::find_args::FindTransactionsArgs {
                         partial: crate::storage::find_args::TransactionPartial {
@@ -552,11 +564,28 @@ pub async fn attempt_to_post_reqs_to_network(
                 {
                     Ok(txs) => {
                         if let Some(tx) = txs.first() {
-                            if let Err(e) = storage.restore_consumed_inputs(tx.transaction_id).await
-                            {
+                            let is_double_spend =
+                                matches!(new_req_status, ProvenTxReqStatus::DoubleSpend);
+                            if !is_double_spend {
+                                if let Err(e) =
+                                    storage.restore_consumed_inputs(tx.transaction_id).await
+                                {
+                                    result.log.push_str(&format!(
+                                        "  req {} txid {}: warn restore_consumed_inputs: {}\n",
+                                        req.proven_tx_req_id, req.txid, e
+                                    ));
+                                }
+                            } else {
+                                let restored = restore_unspent_inputs_only(
+                                    storage,
+                                    services,
+                                    tx.transaction_id,
+                                    &mut result.log,
+                                )
+                                .await;
                                 result.log.push_str(&format!(
-                                    "  req {} txid {}: warn restore_consumed_inputs: {}\n",
-                                    req.proven_tx_req_id, req.txid, e
+                                    "  req {} txid {}: doubleSpend — restored {} still-unspent input(s), stale inputs stay consumed\n",
+                                    req.proven_tx_req_id, req.txid, restored
                                 ));
                             }
                         }
@@ -666,20 +695,46 @@ pub async fn get_proofs(
             }
         }
 
-        // Check attempt limit
+        // Attempt limit → the proof-timeout circuit (F2, parity audit
+        // 2026-07-24; TS TaskCheckForProofs + EntityProvenTxReq.applyProofTimeout).
+        // A tx that WAS broadcast but never mined (dropped from the mempool) is
+        // reset to `unsent` so TaskSendWaiting re-broadcasts it — marking it
+        // invalid would strand real funds on a mempool eviction. Only a tx that
+        // was NEVER successfully broadcast is marked invalid. Matches the TS
+        // DEFAULT (maxRebroadcastAttempts unset ⇒ no cycle cap).
         if req.attempts > unproven_attempts_limit as i32 {
-            result
-                .log
-                .push_str(&format!("too many failed attempts {}\n", req.attempts));
-            let update = ProvenTxReqPartial {
-                status: Some(ProvenTxReqStatus::Invalid),
-                notified: Some(false),
-                ..Default::default()
-            };
-            let _ = storage
-                .update_proven_tx_req(req.proven_tx_req_id, &update)
-                .await;
-            result.invalid.push(req.clone());
+            match proof_timeout_action(&req.status) {
+                ProofTimeoutAction::Rebroadcast => {
+                    result.log.push_str(&format!(
+                        "too many failed attempts {} — was broadcast; resetting to unsent for rebroadcast\n",
+                        req.attempts
+                    ));
+                    let update = ProvenTxReqPartial {
+                        status: Some(ProvenTxReqStatus::Unsent),
+                        attempts: Some(0),
+                        notified: Some(false),
+                        ..Default::default()
+                    };
+                    let _ = storage
+                        .update_proven_tx_req(req.proven_tx_req_id, &update)
+                        .await;
+                }
+                ProofTimeoutAction::Invalid => {
+                    result.log.push_str(&format!(
+                        "too many failed attempts {} and tx was never broadcast — marking invalid\n",
+                        req.attempts
+                    ));
+                    let update = ProvenTxReqPartial {
+                        status: Some(ProvenTxReqStatus::Invalid),
+                        notified: Some(false),
+                        ..Default::default()
+                    };
+                    let _ = storage
+                        .update_proven_tx_req(req.proven_tx_req_id, &update)
+                        .await;
+                    result.invalid.push(req.clone());
+                }
+            }
             continue;
         }
 
@@ -729,16 +784,28 @@ pub async fn get_proofs(
                 }
             }
         } else {
-            // No proof found yet
+            // No proof found yet. PERSIST the attempt (F1, parity audit
+            // 2026-07-24): with attempts frozen at 0 the timeout circuit above
+            // was unreachable and an unmined-forever tx was polled eternally,
+            // never rebroadcast, never failed. (TS increments req.attempts and
+            // flushes via updateStorageDynamicProperties.)
             if counts_as_attempt && req.status != ProvenTxReqStatus::Nosend {
-                // Increment attempts -- we do this via a partial update
-                // Note: we cannot directly increment, so we set the incremented value
-                let _new_attempts = req.attempts + 1;
-                // The update_proven_tx_req does not have an attempts field in partial,
-                // so we log the attempt but cannot directly increment via partial.
-                // The TS code increments req.attempts in memory then calls updateStorageDynamicProperties.
-                // In Rust we log and move on -- the attempt tracking is best-effort.
-                result.log.push_str("no proof yet (attempt counted)\n");
+                let update = ProvenTxReqPartial {
+                    attempts: Some(req.attempts + 1),
+                    ..Default::default()
+                };
+                match storage
+                    .update_proven_tx_req(req.proven_tx_req_id, &update)
+                    .await
+                {
+                    Ok(_) => result.log.push_str(&format!(
+                        "no proof yet (attempt {} counted)\n",
+                        req.attempts + 1
+                    )),
+                    Err(e) => result
+                        .log
+                        .push_str(&format!("no proof yet (attempt update failed: {e})\n")),
+                }
             } else {
                 result.log.push_str("no proof yet\n");
             }
@@ -748,6 +815,103 @@ pub async fn get_proofs(
     Ok(result)
 }
 
+/// DoubleSpend input recovery (F4): restore ONLY the consumed inputs that are
+/// still unspent on-chain, per `services.is_utxo`. A genuinely-spent input must
+/// stay `spendable = false` or coin selection reuses it and every subsequent
+/// createAction dies on missing-inputs (the loop TS's `markStaleInputsAsSpent`
+/// exists to stop). Any per-input uncertainty (no script, no txid, lookup
+/// error) leaves that input consumed — fail-closed; a later pass can restore.
+/// Returns how many inputs were restored.
+async fn restore_unspent_inputs_only(
+    storage: &WalletStorageManager,
+    services: &dyn WalletServices,
+    tx_id: i64,
+    log: &mut String,
+) -> u64 {
+    use crate::storage::find_args::{FindOutputsArgs, OutputPartial};
+
+    let outputs = match storage
+        .find_outputs(&FindOutputsArgs {
+            partial: OutputPartial {
+                spent_by: Some(tx_id),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await
+    {
+        Ok(o) => o,
+        Err(e) => {
+            log.push_str(&format!("  warn find_outputs for doubleSpend restore: {e}\n"));
+            return 0;
+        }
+    };
+
+    let mut restored = 0u64;
+    for output in &outputs {
+        let (Some(script), Some(txid)) = (output.locking_script.as_ref(), output.txid.as_ref())
+        else {
+            continue; // cannot verify → stays consumed (fail-closed)
+        };
+        match services.is_utxo(script, txid, output.vout as u32).await {
+            Ok(true) => {
+                match storage
+                    .update_output(
+                        output.output_id,
+                        &OutputPartial {
+                            spendable: Some(true),
+                            spent_by: Some(0),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    Ok(_) => restored += 1,
+                    Err(e) => log.push_str(&format!(
+                        "  warn restoring input {}.{}: {e}\n",
+                        txid, output.vout
+                    )),
+                }
+            }
+            Ok(false) => {
+                // Genuinely spent by the competing tx — stays consumed.
+            }
+            Err(e) => {
+                log.push_str(&format!(
+                    "  warn is_utxo({}.{}) failed — leaving input consumed: {e}\n",
+                    txid, output.vout
+                ));
+            }
+        }
+    }
+    restored
+}
+
+/// What the proof-timeout circuit does to a req whose `attempts` passed the
+/// unproven limit (F2). Pure — the whole decision is derivable from status:
+/// TS's canonical `wasBroadcast` inference (`EntityProvenTxReq.wasBroadcastStatuses`)
+/// is "status is/was unmined | callback | unconfirmed | completed", and the
+/// statuses this task processes make that exactly a current-status check —
+/// `sending`/`unknown` mean no provider ever accepted the tx.
+#[derive(Debug, PartialEq, Eq)]
+enum ProofTimeoutAction {
+    /// The tx WAS broadcast (a provider accepted it) but never mined — reset to
+    /// `unsent` so TaskSendWaiting re-broadcasts (TS default: no cycle cap).
+    Rebroadcast,
+    /// The tx was NEVER successfully broadcast — fail it.
+    Invalid,
+}
+
+fn proof_timeout_action(status: &ProvenTxReqStatus) -> ProofTimeoutAction {
+    match status {
+        ProvenTxReqStatus::Unmined
+        | ProvenTxReqStatus::Callback
+        | ProvenTxReqStatus::Unconfirmed
+        | ProvenTxReqStatus::Completed => ProofTimeoutAction::Rebroadcast,
+        _ => ProofTimeoutAction::Invalid,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -755,6 +919,27 @@ pub async fn get_proofs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn proof_timeout_rebroadcasts_only_what_was_broadcast() {
+        // F2: mempool-evicted (broadcast, unmined) => rebroadcast, never invalid;
+        // never-accepted (sending/unknown) => invalid. Mirrors TS
+        // EntityProvenTxReq.wasBroadcastStatuses + applyProofTimeout defaults.
+        use ProofTimeoutAction::*;
+        assert_eq!(proof_timeout_action(&ProvenTxReqStatus::Unmined), Rebroadcast);
+        assert_eq!(proof_timeout_action(&ProvenTxReqStatus::Callback), Rebroadcast);
+        assert_eq!(
+            proof_timeout_action(&ProvenTxReqStatus::Unconfirmed),
+            Rebroadcast
+        );
+        assert_eq!(
+            proof_timeout_action(&ProvenTxReqStatus::Completed),
+            Rebroadcast
+        );
+        assert_eq!(proof_timeout_action(&ProvenTxReqStatus::Sending), Invalid);
+        assert_eq!(proof_timeout_action(&ProvenTxReqStatus::Unknown), Invalid);
+        assert_eq!(proof_timeout_action(&ProvenTxReqStatus::Unsent), Invalid);
+    }
 
     #[test]
     fn test_now_msecs_returns_reasonable_value() {

@@ -186,6 +186,38 @@ pub struct Monitor {
     run_async_setup: bool,
 }
 
+/// Run one monitor task with PANIC ISOLATION (F3, monitor parity audit
+/// 2026-07-24). A task that unwinds must degrade to one error log line and let
+/// the loop continue — an unwound loop future leaves `running == true` while
+/// nothing broadcasts ever again, which is the rust-mpc#147 "wallet silently
+/// never posts a tx" symptom for every embedder now that the monitor is on by
+/// default. Mirrors the per-task try/catch in TS Monitor.runTask.
+async fn run_task_isolated(
+    task: &mut Box<dyn WalletMonitorTask>,
+) -> Result<String, crate::error::WalletError> {
+    match futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(task.run_task())).await {
+        Ok(result) => result,
+        Err(_) => Err(crate::error::WalletError::Internal(format!(
+            "monitor task {} PANICKED — isolated; the monitor loop continues",
+            task.name()
+        ))),
+    }
+}
+
+/// Truncate `log` to at most `max` BYTES on a char boundary. `&log[..1024]` was
+/// a latent panic (F3): provider error strings are interpolated into task logs,
+/// and a multi-byte char straddling the cut would unwind the monitor loop.
+fn truncate_log(log: &str, max: usize) -> &str {
+    if log.len() <= max {
+        return log;
+    }
+    let mut end = max;
+    while end > 0 && !log.is_char_boundary(end) {
+        end -= 1;
+    }
+    &log[..end]
+}
+
 /// Default purge parameters matching the TS Monitor.defaultPurgeParams.
 pub fn default_purge_params() -> PurgeParams {
     PurgeParams {
@@ -280,10 +312,10 @@ impl Monitor {
                         break;
                     }
                     let task = &mut tasks[idx];
-                    match task.run_task().await {
+                    match run_task_isolated(task).await {
                         Ok(log) => {
                             if !log.is_empty() {
-                                info!("Task {} {}", task.name(), &log[..log.len().min(1024)]);
+                                info!("Task {} {}", task.name(), truncate_log(&log, 1024));
                                 let _ = log_event(&storage, task.name(), &log).await;
                             }
                         }
@@ -349,10 +381,10 @@ impl Monitor {
         // Run triggered tasks
         for idx in triggered_indices {
             let task = &mut self.tasks[idx];
-            match task.run_task().await {
+            match run_task_isolated(task).await {
                 Ok(log) => {
                     if !log.is_empty() {
-                        info!("Task {} {}", task.name(), &log[..log.len().min(1024)]);
+                        info!("Task {} {}", task.name(), truncate_log(&log, 1024));
                         let _ = log_event(&self.storage, task.name(), &log).await;
                     }
                 }
@@ -986,6 +1018,41 @@ mod tests {
         assert_eq!(dh.when_msecs, 1000);
         assert_eq!(dh.tries, 0);
         assert_eq!(dh.header.height, 100);
+    }
+
+    #[tokio::test]
+    async fn a_panicking_task_is_isolated_and_the_loop_survives() {
+        // F3 (parity audit 2026-07-24): a task that unwinds must come back as an
+        // Err, not kill the caller — a dead loop with running==true is a wallet
+        // that silently never broadcasts again.
+        struct PanicTask;
+        #[async_trait::async_trait]
+        impl WalletMonitorTask for PanicTask {
+            fn trigger(&mut self, _now: u64) -> bool {
+                true
+            }
+            async fn run_task(&mut self) -> crate::WalletResult<String> {
+                panic!("boom");
+            }
+            fn name(&self) -> &'static str {
+                "PanicTask"
+            }
+        }
+        let mut task: Box<dyn WalletMonitorTask> = Box::new(PanicTask);
+        let out = run_task_isolated(&mut task).await;
+        let err = out.expect_err("a panic must surface as an Err, not an unwind");
+        assert!(err.to_string().contains("PANICKED"), "got: {err}");
+    }
+
+    #[test]
+    fn truncate_log_never_cuts_mid_char() {
+        // The old `&log[..1024]` slice panicked when byte 1024 fell inside a
+        // multi-byte char — provider error strings make that reachable.
+        let log = "é".repeat(1000); // 2 bytes per char => byte 1024 is mid-char
+        let cut = truncate_log(&log, 1024);
+        assert!(cut.len() <= 1024);
+        assert!(cut.chars().all(|c| c == 'é'));
+        assert_eq!(truncate_log("short", 1024), "short");
     }
 
     #[test]
