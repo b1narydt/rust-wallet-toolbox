@@ -48,6 +48,9 @@ pub async fn create_test_wallet() -> SetupWallet {
         .root_key(root_key)
         .with_sqlite_memory()
         .with_services(Arc::new(MockWalletServices))
+        // Offline test wallets exercise storage/wallet logic; a background
+        // monitor loop (default since 0.3.4) is just churn here.
+        .without_monitor()
         .build()
         .await
         .expect("Failed to create test wallet");
@@ -68,6 +71,7 @@ pub async fn create_test_wallet_with_key(root_key: PrivateKey) -> SetupWallet {
         .root_key(root_key)
         .with_sqlite_memory()
         .with_services(Arc::new(MockWalletServices))
+        .without_monitor()
         .build()
         .await
         .expect("Failed to create test wallet with key");
