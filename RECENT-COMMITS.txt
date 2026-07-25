@@ -1,0 +1,11 @@
+c37b403 Merge feat/monitor-on-by-default: monitor default-on + started, parity-audit MUST fixes (bsv-wallet-toolbox 0.3.4)
+429b7d0 release: bsv-wallet-toolbox 0.3.4 — monitor on by default + parity-audit fixes
+af2466c fix(monitor): parity-audit MUST fixes — panic-isolated loop, live attempts, rebroadcast-on-timeout, gated double-spend restore
+eec304f feat(setup): monitor ON by default, STARTED by build() — the wallet works out of the box
+5be968b Merge fix/parity-batch-1: TS-parity critical+high tier fixes (bsv-wallet-toolbox 0.3.3)
+139711e release: bsv-wallet-toolbox 0.3.3 — TS-parity crit/high fixes
+3b309b2 fix(parity wave2): internalize SPV verify, is_utxo endianness, nosend-change guard, output-substitution defense, local bulk header store
+1aa13b8 fix(storage-sync): TS-parity for cross-chunk idMap, strict FK remap, and sync window
+64e34ed fix(parity): signer/chaintracks/createaction/permissions/authmanager/services parity fixes
+be24efd Merge feat/signing-provider-wallet-payment: delegated BRC-29 wallet-payment script derivation (#31)
+02a4b97 feat(signer): delegated BRC-29 wallet-payment script derivation (issue #31)

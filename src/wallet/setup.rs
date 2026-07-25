@@ -91,8 +91,7 @@ enum StorageKind {
 ///     .root_key(root_key)
 ///     .with_sqlite_memory()
 ///     .with_default_services()
-///     .with_monitor()
-///     .build()
+///     .build() // creates AND starts the monitor (default since 0.3.4)
 ///     .await?;
 /// # Ok(())
 /// # }

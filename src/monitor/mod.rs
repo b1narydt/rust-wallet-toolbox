@@ -603,22 +603,20 @@ impl MonitorBuilder {
         self
     }
 
-    /// Use default tasks preset (single-user with sync).
+    /// Use default tasks preset (single-user with sync) — 16 tasks.
     ///
-    /// Default tasks include: TaskClock, TaskNewHeader, TaskMonitorCallHistory,
-    /// TaskSendWaiting, TaskCheckForProofs, TaskCheckNoSends, TaskFailAbandoned,
-    /// TaskUnFail, TaskReviewStatus, TaskReorg, TaskArcadeSSE, and
-    /// TaskMineBlock (mock chain only).
+    /// Wires: TaskClock, TaskMonitorCallHistory, TaskNewHeader, TaskSendWaiting,
+    /// TaskCheckForProofs, TaskCheckNoSends, TaskFailAbandoned, TaskUnFail,
+    /// TaskReviewStatus, TaskReviewDoubleSpends, TaskReviewProvenTxs,
+    /// TaskReviewUtxos, TaskReorg, TaskArcSse, TaskSyncWhenIdle, TaskPurge.
+    /// (TaskMineBlock exists but is wired by NO preset.)
     pub fn default_tasks(mut self) -> Self {
         self.default_tasks = true;
         self
     }
 
-    /// Use multi-user tasks preset (without sync).
-    ///
-    /// Multi-user tasks include: TaskClock, TaskNewHeader, TaskMonitorCallHistory,
-    /// TaskSendWaiting, TaskCheckForProofs, TaskCheckNoSends, TaskFailAbandoned,
-    /// TaskUnFail, TaskReviewStatus, TaskReorg, and TaskMineBlock (mock chain only).
+    /// Use multi-user tasks preset (without sync) — the default preset minus
+    /// TaskArcSse and TaskSyncWhenIdle (14 tasks).
     pub fn multi_user_tasks(mut self) -> Self {
         self.multi_user_tasks = true;
         self
