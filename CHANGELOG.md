@@ -5,6 +5,90 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-07-24
+
+### Changed
+
+- **Monitor ON by default, STARTED by `build()`** — `WalletBuilder` now enables
+  the background monitor by default, and `build()` both creates and starts it
+  whenever services are configured. Rationale: `createAction` (with the default
+  `acceptDelayedBroadcast`) stores every new transaction as an *unsent*
+  `ProvenTxReq`, and only the monitor's `TaskSendWaiting` ever broadcasts it — a
+  wallet built without a monitor silently never posts a transaction to the
+  network. `with_monitor()` is kept as a back-compat no-op; `without_monitor()`
+  is the explicit opt-out for callers that own broadcasting (or offline tests).
+  Do not call `start_tasks()` on a `WalletBuilder`-produced monitor — it is
+  already running and errors with "monitor tasks are already running". Monitors
+  constructed manually via `Monitor::builder()` still require `start_tasks()`.
+
+### Fixed
+
+Parity-audit MUST fixes vs `@bsv/wallet-toolbox` (all TS-parity ports;
+follow-ups F5–F11 tracked in #34):
+
+- **Panic-isolated task loop** — one panicking task (or a non-char-boundary
+  log-truncation slice) killed the whole spawned monitor loop while
+  `running` stayed true, silently stopping all broadcasting. New
+  `run_task_isolated` (per-task `catch_unwind`, mirroring TS
+  `Monitor.runTask` try/catch) plus a char-boundary-safe `truncate_log`.
+- **`attempts` persisted** — the per-req attempt counter was never written back
+  (in the no-proof branch of `get_proofs` and the serviceError post arm), so
+  the proof-timeout breaker could never fire and a broadcast-but-evicted tx was
+  polled forever.
+- **Rebroadcast-on-timeout** — ported `applyProofTimeout` with the TS-canonical
+  was-broadcast-by-status inference: reqs whose status shows a provider
+  accepted them (`unmined`/`callback`/`unconfirmed`/`completed`) are reset to
+  `unsent` with `attempts = 0` so `TaskSendWaiting` re-broadcasts (TS default:
+  no cycle cap); only never-broadcast reqs are marked `invalid`.
+- **Double-spend restore gated per input** — DoubleSpend recovery previously
+  restored ALL consumed inputs blindly, resurrecting genuinely-spent UTXOs.
+  It now restores only inputs still unspent per `services.is_utxo`,
+  fail-closed on lookup uncertainty; `InvalidTx` (never accepted anywhere)
+  keeps restore-all.
+
+## [0.3.3] - 2026-07-23
+
+### Fixed
+
+TS-parity critical+high tier fixes:
+
+- **Full AtomicBEEF SPV verification on `internalize_action`** — structural and
+  SPV (merkle proof) verification of the incoming BEEF; previously proofless
+  BEEFs were accepted.
+- **`is_utxo` endianness** — fixed a double-reverse in `hash_output_script`
+  that made `is_utxo` lookups miss.
+- **Nosend-change allocation guard** — unbroadcast noSend change is excluded
+  from change allocation.
+- **Output-substitution defense** (GHSA-36f9-7rg5-cpf8) — verification at the
+  permissions layer that signed outputs match what was requested.
+- **Local bulk header storage** — chaintracks SQLite bulk header store
+  (migrate + serve); CDN ingest deferred as labeled backlog.
+- **Storage-sync parity** — persisted `idMap` now accumulates across chunks
+  (was rebuilt fresh every chunk, breaking foreign→local ID mapping); required
+  FK remaps fail loudly on an idMap miss instead of silently attaching rows to
+  unrelated records; the sync window (`since`/`when`) is held fixed per round
+  with counts accumulating as offsets, advancing only on a completed round.
+- **Signer / permissions / auth-manager / services parity batch** — GHSA
+  injected-output and echo-verification defenses, `sign_input` single-hash and
+  `sweep_to` encoding fixes (signer); cumulative-work fork choice
+  (chaintracks); external-input BEEF resolution (`createAction`); PushDrop
+  token, privileged-flag, and monthly-spend fixes (permissions); UMP
+  root-derivation and Argon2id v3 (auth manager); proof-bearing BEEF builder
+  (services).
+
+## [0.3.2] - 2026-07-23
+
+### Added
+
+- **`SigningProvider::derive_wallet_payment_locking_script`** — defaulted
+  (non-breaking) trait method letting a provider derive the expected BRC-29
+  P2PKH locking script for an incoming wallet-payment output during
+  `internalize_action` validation (issue #31). Needed for Q-as-root MPC vaults
+  with no local root private key. `Some(script)` short-circuits the local
+  `key_deriver` path; `Ok(None)` or no provider falls back unchanged; errors
+  propagate (fail closed). `DefaultWalletSigner` passes `None` (identical
+  behavior).
+
 ## [0.2.24]
 
 ### Added

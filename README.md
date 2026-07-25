@@ -58,7 +58,7 @@ Application
 |  +---------------+  +----------------+  +---------------------+ |
 |                                                                   |
 |  +-- Chaintracks -+  +-- Monitor ------+  +-- Auth -----------+ |
-|  | Block headers  |  | 15 bg tasks    |  | WAB client        | |
+|  | Block headers  |  | 16 bg tasks    |  | WAB client        | |
 |  | SPV validation |  | Proofs, sync   |  | Shamir shares     | |
 |  | Reorg detect   |  +----------------+  +-------------------+ |
 |  +---------------+                                              |
@@ -93,6 +93,8 @@ use bsv_wallet_toolbox::{WalletBuilder, WalletError};
 async fn main() -> Result<(), WalletError> {
     // Build a wallet with SQLite storage and default network services.
     // WalletBuilder provides a fluent API for configuring all subsystems.
+    // build() also creates AND starts the background monitor (since services
+    // are configured), so transactions broadcast out of the box.
     let setup = WalletBuilder::new()
         .chain(Chain::Test)
         .root_key(PrivateKey::from_hex(
@@ -100,7 +102,6 @@ async fn main() -> Result<(), WalletError> {
         ).unwrap())
         .with_sqlite("wallet.db")
         .with_default_services()
-        .with_monitor()
         .build()
         .await?;
 
@@ -113,14 +114,21 @@ async fn main() -> Result<(), WalletError> {
 
     println!("Authenticated: {}", auth.authenticated);
 
-    // Start the background monitor for proof collection and chain sync.
-    if let Some(monitor) = &setup.monitor {
-        monitor.start_tasks().await?;
-    }
-
     Ok(())
 }
 ```
+
+Since 0.3.4 the background monitor is on by default and started by `build()` whenever
+services are configured. This matters: `createAction` (with the default
+`acceptDelayedBroadcast`) stores each new transaction as an *unsent* `ProvenTxReq`, and only
+the monitor's `TaskSendWaiting` task ever broadcasts it -- a wallet without a running monitor
+never posts its transactions to the network. Opt out with `without_monitor()` only when
+something else owns broadcasting (or in offline tests). `with_monitor()` remains as a
+back-compatible no-op.
+
+**Never call `start_tasks()` on a monitor produced by `WalletBuilder`** -- it is already
+running, and a second start returns a "monitor tasks are already running" error. Only
+monitors you construct manually via `Monitor::builder()` still need `start_tasks()`.
 
 ## Feature Flags
 
@@ -262,9 +270,15 @@ println!("Found {} outputs", outputs.outputs.len());
 
 ### Monitor
 
-The `Monitor` runs 15 background tasks that handle proof collection, chain synchronization,
-ARC SSE event processing, and periodic health checks. Tasks run in a polling loop managed by
-tokio, with configurable intervals and automatic retry.
+The `Monitor` runs 16 background tasks that handle transaction broadcasting, proof
+collection, chain synchronization, ARC SSE event processing, and periodic health checks.
+Tasks run in a polling loop managed by tokio, with configurable intervals and automatic
+retry.
+
+The monitor is on by default and started by `WalletBuilder::build()` whenever services are
+configured, because the wallet depends on it to broadcast: `createAction` (with the default
+`acceptDelayedBroadcast`) stores each new transaction as an unsent `ProvenTxReq`, and only
+the monitor's `TaskSendWaiting` task posts it to the network.
 
 ```rust,no_run
 # use bsv_wallet_toolbox::{WalletBuilder, WalletError};
@@ -276,17 +290,28 @@ let setup = WalletBuilder::new()
     .root_key(PrivateKey::from_random()?)
     .with_sqlite_memory()
     .with_default_services()
-    .with_monitor()  // enables background proof collection, sync, and chain monitoring
-    .build()
+    .build()  // creates AND starts the monitor
     .await?;
 
-// Start all background tasks
-if let Some(monitor) = &setup.monitor {
-    monitor.start_tasks().await?;
-}
+// setup.monitor is Some(..) and already running. Do NOT call start_tasks()
+// on it -- that returns a "monitor tasks are already running" error.
+assert!(setup.monitor.is_some());
+
+// Opt out only when something else owns broadcasting (or in offline tests):
+let offline = WalletBuilder::new()
+    .chain(Chain::Test)
+    .root_key(PrivateKey::from_random()?)
+    .with_sqlite_memory()
+    .without_monitor()
+    .build()
+    .await?;
+assert!(offline.monitor.is_none());
 # Ok(())
 # }
 ```
+
+`with_monitor()` is retained as a back-compatible no-op. Monitors constructed manually via
+`Monitor::builder()` are not started automatically and still require `start_tasks()`.
 
 ### Authentication
 
