@@ -89,6 +89,33 @@ TS-parity critical+high tier fixes:
   propagate (fail closed). `DefaultWalletSigner` passes `None` (identical
   behavior).
 
+## [0.3.1] - 2026-07-12
+
+### Fixed
+
+- **Restored `SigningProvider::prepare_spend_contexts` on the 0.3 line.** 0.3.0
+  was cut from the `feat/signing-provider` branch and published WITHOUT main's
+  `prepare_spend_contexts` hook (shipped in 0.2.24), so it was a regression
+  against 0.2.24 for any consumer implementing `SigningProvider`. 0.3.1 merges
+  main into the 0.3 line, making the 0.3.x baseline `0.2.24 + the SigningProvider
+  seam`. 0.3.0 is yanked; use 0.3.1 or later.
+
+## [0.3.0] - 2026-04-18 [YANKED]
+
+### Added
+
+- **First 0.3.x cut of the `SigningProvider` seam** — the pluggable async
+  signing-backend abstraction (threshold / remote / HSM) that lets a Q-as-root
+  MPC vault sign without a local root private key, plus the provider-routed
+  transaction builders (`build_signable_transaction_with_provider` /
+  `create_action_with_provider`). Also CI clippy/rustfmt cleanup for Rust 1.95.
+
+### Note
+
+- **Yanked** — published from `feat/signing-provider`, which lacked main's
+  `prepare_spend_contexts` hook (0.2.24), making it a regression for
+  `SigningProvider` implementors. Superseded by 0.3.1.
+
 ## [0.2.24]
 
 ### Added
