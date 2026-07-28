@@ -14,7 +14,7 @@ use bsv::primitives::ecdsa::ecdsa_sign;
 use bsv::primitives::public_key::PublicKey;
 use bsv::script::templates::p2pkh::P2PKH;
 use bsv::script::templates::ScriptTemplateLock;
-use bsv::wallet::types::{Counterparty, CounterpartyType};
+use bsv::wallet::types::{Counterparty, CounterpartyType, Protocol};
 use bsv::wallet::KeyDeriverApi;
 
 use crate::error::{WalletError, WalletResult};
@@ -148,6 +148,55 @@ impl SigningProvider for StandardSigningProvider {
             WalletError::Internal(format!("Failed to build P2PKH locking script: {e}"))
         })?;
         Ok(Some(script.to_binary()))
+    }
+
+    async fn derive_public_key(
+        &self,
+        protocol: &Protocol,
+        key_id: &str,
+        counterparty: &Counterparty,
+        for_self: bool,
+    ) -> WalletResult<PublicKey> {
+        self.key_deriver
+            .derive_public_key(protocol, key_id, counterparty, for_self)
+            .map_err(|e| WalletError::Internal(format!("BRC-42 public key derivation failed: {e}")))
+    }
+
+    async fn derive_symmetric_key(
+        &self,
+        protocol: &Protocol,
+        key_id: &str,
+        counterparty: &Counterparty,
+    ) -> WalletResult<[u8; 32]> {
+        let sym_key = self
+            .key_deriver
+            .derive_symmetric_key(protocol, key_id, counterparty)
+            .map_err(|e| {
+                WalletError::Internal(format!("BRC-42 symmetric key derivation failed: {e}"))
+            })?;
+        let bytes = sym_key.to_bytes();
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&bytes);
+        Ok(key)
+    }
+
+    async fn create_signature(
+        &self,
+        protocol: &Protocol,
+        key_id: &str,
+        counterparty: &Counterparty,
+        digest: &[u8; 32],
+    ) -> WalletResult<Vec<u8>> {
+        let derived_key = self
+            .key_deriver
+            .derive_private_key(protocol, key_id, counterparty)
+            .map_err(|e| {
+                WalletError::Internal(format!("BRC-42 private key derivation failed: {e}"))
+            })?;
+        // force_low_s = true to match TS and ProtoWallet::create_signature_sync.
+        let sig = ecdsa_sign(digest, derived_key.bn(), true)
+            .map_err(|e| WalletError::Internal(format!("ECDSA sign failed: {e}")))?;
+        Ok(sig.to_der())
     }
 
     fn identity_public_key(&self) -> &PublicKey {

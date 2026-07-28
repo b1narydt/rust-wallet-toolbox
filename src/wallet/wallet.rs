@@ -8,7 +8,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use bsv::primitives::ecdsa::ecdsa_verify;
+use bsv::primitives::hash::{sha256, sha256_hmac};
 use bsv::primitives::public_key::PublicKey;
+use bsv::primitives::signature::Signature;
+use bsv::primitives::symmetric_key::SymmetricKey;
 use bsv::services::overlay_tools::LookupResolver;
 use bsv::transaction::beef_party::BeefParty;
 use bsv::wallet::error::WalletError as SdkWalletError;
@@ -28,6 +32,7 @@ use bsv::wallet::interfaces::{
     VerifyHmacResult, VerifySignatureArgs, VerifySignatureResult, WalletInterface,
 };
 use bsv::wallet::proto_wallet::ProtoWallet;
+use bsv::wallet::types::{Counterparty, CounterpartyType, Protocol};
 use bsv::wallet::KeyDeriverApi;
 
 use crate::wallet::discovery::OverlayCache;
@@ -153,9 +158,11 @@ impl Wallet {
             });
         }
 
-        // Create ProtoWallet from key_deriver's root key
-        let root_key = args.key_deriver.root_key().clone();
-        let proto = ProtoWallet::new(root_key);
+        // Wrap the deriver itself, never its root key: a deriver whose identity
+        // is decoupled from a locally-held root (a threshold vault) must answer
+        // identity queries with its true identity and surface derivation errors,
+        // not silently derive from a throwaway root.
+        let proto = ProtoWallet::from_key_deriver(args.key_deriver.clone());
 
         // Derive user_party
         let root_pub_hex = args.key_deriver.root_key().to_public_key().to_der_hex();
@@ -676,6 +683,98 @@ fn payment_derivation_bytes(key_id_b64: &str) -> Result<Vec<u8>, WalletError> {
 }
 
 // ---------------------------------------------------------------------------
+// Delegated-crypto composition helpers
+//
+// When a signing provider is injected, the nine BRC-100 crypto methods use its
+// three key operations (derive_public_key, derive_symmetric_key,
+// create_signature) and compose everything else — AES-GCM, HMAC, signature
+// verification — locally, so a remote backend never sees plaintext. Semantics
+// must match ProtoWallet exactly; these helpers mirror its argument handling.
+// ---------------------------------------------------------------------------
+
+/// Substitute the per-operation default when the caller left the counterparty
+/// Uninitialized — the same dispatch as `ProtoWallet::default_counterparty`
+/// (Self_ for everything except createSignature, which defaults to Anyone).
+fn effective_counterparty(
+    counterparty: &Counterparty,
+    default_type: CounterpartyType,
+) -> Counterparty {
+    if counterparty.counterparty_type == CounterpartyType::Uninitialized {
+        Counterparty {
+            counterparty_type: default_type,
+            public_key: None,
+        }
+    } else {
+        counterparty.clone()
+    }
+}
+
+/// The 32-byte ECDSA digest for createSignature/verifySignature: the caller's
+/// direct hash when provided, otherwise SHA-256 of the data. Mirrors
+/// ProtoWallet's argument handling, including error text.
+fn signature_digest(
+    data: Option<&[u8]>,
+    direct_hash: Option<&[u8]>,
+    direct_hash_param: &str,
+) -> Result<[u8; 32], SdkWalletError> {
+    if let Some(h) = direct_hash {
+        if h.len() != 32 {
+            return Err(SdkWalletError::InvalidParameter(format!(
+                "{direct_hash_param} must be exactly 32 bytes"
+            )));
+        }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(h);
+        Ok(arr)
+    } else if let Some(d) = data {
+        Ok(sha256(d))
+    } else {
+        Err(SdkWalletError::InvalidParameter(format!(
+            "either data or {direct_hash_param} must be provided"
+        )))
+    }
+}
+
+/// Derive the shared symmetric key through the provider and rebuild the SDK
+/// `SymmetricKey` from its 32 bytes, so AES (full 32 bytes) and HMAC (minimal
+/// big-endian via `to_hmac_key_bytes`) keying stay byte-identical to the
+/// local ProtoWallet path.
+async fn provider_symmetric_key(
+    provider: &dyn SigningProvider,
+    protocol: &Protocol,
+    key_id: &str,
+    counterparty: &Counterparty,
+) -> Result<SymmetricKey, SdkWalletError> {
+    let key_bytes = provider
+        .derive_symmetric_key(protocol, key_id, counterparty)
+        .await
+        .map_err(to_sdk_error)?;
+    SymmetricKey::from_bytes(&key_bytes)
+        .map_err(|e| SdkWalletError::Internal(format!("invalid provider symmetric key: {e}")))
+}
+
+/// Constant-time byte comparison for HMAC verification.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff: u8 = 0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// The NotImplemented error for key-linkage revelation under delegation: the
+/// linkage secrets exist only inside the custody backend, and neither reveal
+/// is expressible through the provider's three key operations.
+fn linkage_unsupported_under_delegation(method: &str) -> SdkWalletError {
+    SdkWalletError::NotImplemented(format!(
+        "{method} is not supported when a signing provider is injected"
+    ))
+}
+
+// ---------------------------------------------------------------------------
 // Error conversion: crate::error::WalletError -> bsv::wallet::error::WalletError
 // ---------------------------------------------------------------------------
 
@@ -716,6 +815,37 @@ impl WalletInterface for Wallet {
                 "No privileged key manager configured".to_string(),
             ));
         }
+        if let Some(provider) = self.signing_provider() {
+            if args.identity_key {
+                return Ok(GetPublicKeyResult {
+                    public_key: provider.identity_public_key().clone(),
+                });
+            }
+            let protocol = args.protocol_id.unwrap_or(Protocol {
+                security_level: 0,
+                protocol: String::new(),
+            });
+            let key_id = args.key_id.unwrap_or_default();
+            if protocol.protocol.is_empty() || key_id.is_empty() {
+                return Err(SdkWalletError::InvalidParameter(
+                    "protocolID and keyID are required if identityKey is false".to_string(),
+                ));
+            }
+            let counterparty = effective_counterparty(
+                &args.counterparty.unwrap_or_default(),
+                CounterpartyType::Self_,
+            );
+            let public_key = provider
+                .derive_public_key(
+                    &protocol,
+                    &key_id,
+                    &counterparty,
+                    args.for_self.unwrap_or(false),
+                )
+                .await
+                .map_err(to_sdk_error)?;
+            return Ok(GetPublicKeyResult { public_key });
+        }
         self.proto.get_public_key(args, originator).await
     }
 
@@ -734,6 +864,20 @@ impl WalletInterface for Wallet {
             return Err(SdkWalletError::Internal(
                 "No privileged key manager configured".to_string(),
             ));
+        }
+        if let Some(provider) = self.signing_provider() {
+            let counterparty = effective_counterparty(&args.counterparty, CounterpartyType::Self_);
+            let key = provider_symmetric_key(
+                provider.as_ref(),
+                &args.protocol_id,
+                &args.key_id,
+                &counterparty,
+            )
+            .await?;
+            let ciphertext = key
+                .encrypt(&args.plaintext)
+                .map_err(|e| SdkWalletError::Internal(format!("AES-GCM encryption failed: {e}")))?;
+            return Ok(EncryptResult { ciphertext });
         }
         self.proto.encrypt(args, originator).await
     }
@@ -754,6 +898,18 @@ impl WalletInterface for Wallet {
                 "No privileged key manager configured".to_string(),
             ));
         }
+        if let Some(provider) = self.signing_provider() {
+            let counterparty = effective_counterparty(&args.counterparty, CounterpartyType::Self_);
+            let key = provider_symmetric_key(
+                provider.as_ref(),
+                &args.protocol_id,
+                &args.key_id,
+                &counterparty,
+            )
+            .await?;
+            let plaintext = key.decrypt(&args.ciphertext)?;
+            return Ok(DecryptResult { plaintext });
+        }
         self.proto.decrypt(args, originator).await
     }
 
@@ -772,6 +928,21 @@ impl WalletInterface for Wallet {
             return Err(SdkWalletError::Internal(
                 "No privileged key manager configured".to_string(),
             ));
+        }
+        if let Some(provider) = self.signing_provider() {
+            let counterparty = effective_counterparty(&args.counterparty, CounterpartyType::Self_);
+            let key = provider_symmetric_key(
+                provider.as_ref(),
+                &args.protocol_id,
+                &args.key_id,
+                &counterparty,
+            )
+            .await?;
+            // Minimal big-endian keying: a leading-zero key is a 31-byte HMAC
+            // key, matching TS `key.toArray()`. Full 32 bytes would silently
+            // break interop for ~1 key in 256.
+            let hmac = sha256_hmac(&key.to_hmac_key_bytes(), &args.data).to_vec();
+            return Ok(CreateHmacResult { hmac });
         }
         self.proto.create_hmac(args, originator).await
     }
@@ -792,6 +963,21 @@ impl WalletInterface for Wallet {
                 "No privileged key manager configured".to_string(),
             ));
         }
+        if let Some(provider) = self.signing_provider() {
+            let counterparty = effective_counterparty(&args.counterparty, CounterpartyType::Self_);
+            let key = provider_symmetric_key(
+                provider.as_ref(),
+                &args.protocol_id,
+                &args.key_id,
+                &counterparty,
+            )
+            .await?;
+            let expected = sha256_hmac(&key.to_hmac_key_bytes(), &args.data);
+            if !constant_time_eq(&expected, &args.hmac) {
+                return Err(SdkWalletError::InvalidHmac);
+            }
+            return Ok(VerifyHmacResult { valid: true });
+        }
         self.proto.verify_hmac(args, originator).await
     }
 
@@ -810,6 +996,21 @@ impl WalletInterface for Wallet {
             return Err(SdkWalletError::Internal(
                 "No privileged key manager configured".to_string(),
             ));
+        }
+        if let Some(provider) = self.signing_provider() {
+            // createSignature is the one op whose counterparty defaults to
+            // Anyone, matching TS ProtoWallet.
+            let counterparty = effective_counterparty(&args.counterparty, CounterpartyType::Anyone);
+            let digest = signature_digest(
+                args.data.as_deref(),
+                args.hash_to_directly_sign.as_deref(),
+                "hash_to_directly_sign",
+            )?;
+            let signature = provider
+                .create_signature(&args.protocol_id, &args.key_id, &counterparty, &digest)
+                .await
+                .map_err(to_sdk_error)?;
+            return Ok(CreateSignatureResult { signature });
         }
         self.proto.create_signature(args, originator).await
     }
@@ -830,6 +1031,30 @@ impl WalletInterface for Wallet {
                 "No privileged key manager configured".to_string(),
             ));
         }
+        if let Some(provider) = self.signing_provider() {
+            // Public-key derivation goes through the provider; verification is
+            // local — no secret material is involved in verifying.
+            let counterparty = effective_counterparty(&args.counterparty, CounterpartyType::Self_);
+            let digest = signature_digest(
+                args.data.as_deref(),
+                args.hash_to_directly_verify.as_deref(),
+                "hash_to_directly_verify",
+            )?;
+            let derived_pub = provider
+                .derive_public_key(
+                    &args.protocol_id,
+                    &args.key_id,
+                    &counterparty,
+                    args.for_self.unwrap_or(false),
+                )
+                .await
+                .map_err(to_sdk_error)?;
+            let sig = Signature::from_der(&args.signature)?;
+            if !ecdsa_verify(&digest, &sig, derived_pub.point()) {
+                return Err(SdkWalletError::InvalidSignature);
+            }
+            return Ok(VerifySignatureResult { valid: true });
+        }
         self.proto.verify_signature(args, originator).await
     }
 
@@ -847,6 +1072,11 @@ impl WalletInterface for Wallet {
             }
             return Err(SdkWalletError::Internal(
                 "No privileged key manager configured".to_string(),
+            ));
+        }
+        if self.signing_provider().is_some() {
+            return Err(linkage_unsupported_under_delegation(
+                "revealCounterpartyKeyLinkage",
             ));
         }
         self.proto
@@ -868,6 +1098,11 @@ impl WalletInterface for Wallet {
             }
             return Err(SdkWalletError::Internal(
                 "No privileged key manager configured".to_string(),
+            ));
+        }
+        if self.signing_provider().is_some() {
+            return Err(linkage_unsupported_under_delegation(
+                "revealSpecificKeyLinkage",
             ));
         }
         self.proto

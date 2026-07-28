@@ -33,7 +33,7 @@ mod signer_internalize_provider_tests {
     };
     use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
     use bsv::wallet::interfaces::{InternalizeOutput, Payment};
-    use bsv::wallet::types::{Counterparty, CounterpartyType};
+    use bsv::wallet::types::{Counterparty, CounterpartyType, Protocol};
 
     use bsv_wallet_toolbox::error::{WalletError, WalletResult};
     use bsv_wallet_toolbox::signer::methods::internalize_action::signer_internalize_action;
@@ -106,6 +106,41 @@ mod signer_internalize_provider_tests {
             Ok(self.script.clone())
         }
 
+        async fn derive_public_key(
+            &self,
+            _protocol: &Protocol,
+            _key_id: &str,
+            _counterparty: &Counterparty,
+            _for_self: bool,
+        ) -> WalletResult<PublicKey> {
+            Err(WalletError::Internal(
+                "derive_public_key must not be called".to_string(),
+            ))
+        }
+
+        async fn derive_symmetric_key(
+            &self,
+            _protocol: &Protocol,
+            _key_id: &str,
+            _counterparty: &Counterparty,
+        ) -> WalletResult<[u8; 32]> {
+            Err(WalletError::Internal(
+                "derive_symmetric_key must not be called".to_string(),
+            ))
+        }
+
+        async fn create_signature(
+            &self,
+            _protocol: &Protocol,
+            _key_id: &str,
+            _counterparty: &Counterparty,
+            _digest: &[u8; 32],
+        ) -> WalletResult<Vec<u8>> {
+            Err(WalletError::Internal(
+                "create_signature must not be called".to_string(),
+            ))
+        }
+
         fn identity_public_key(&self) -> &PublicKey {
             &self.identity
         }
@@ -135,6 +170,35 @@ mod signer_internalize_provider_tests {
             _derivation_prefix: &str,
             _derivation_suffix: &str,
             _unlocker_pub_key: &PublicKey,
+        ) -> WalletResult<Vec<u8>> {
+            Err(WalletError::Internal("not used".to_string()))
+        }
+
+        async fn derive_public_key(
+            &self,
+            _protocol: &Protocol,
+            _key_id: &str,
+            _counterparty: &Counterparty,
+            _for_self: bool,
+        ) -> WalletResult<PublicKey> {
+            Err(WalletError::Internal("not used".to_string()))
+        }
+
+        async fn derive_symmetric_key(
+            &self,
+            _protocol: &Protocol,
+            _key_id: &str,
+            _counterparty: &Counterparty,
+        ) -> WalletResult<[u8; 32]> {
+            Err(WalletError::Internal("not used".to_string()))
+        }
+
+        async fn create_signature(
+            &self,
+            _protocol: &Protocol,
+            _key_id: &str,
+            _counterparty: &Counterparty,
+            _digest: &[u8; 32],
         ) -> WalletResult<Vec<u8>> {
             Err(WalletError::Internal("not used".to_string()))
         }

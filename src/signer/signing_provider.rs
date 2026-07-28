@@ -7,6 +7,7 @@
 use async_trait::async_trait;
 use bsv::primitives::public_key::PublicKey;
 use bsv::transaction::transaction::Transaction;
+use bsv::wallet::types::{Counterparty, Protocol};
 
 use crate::error::WalletResult;
 use crate::signer::types::PendingStorageInput;
@@ -68,6 +69,8 @@ use crate::signer::types::PendingStorageInput;
 ///         // Send sighash to remote signer, return P2PKH unlocking script
 ///         # todo!()
 ///     }
+///     // ...plus the three BRC-42 key operations backing the BRC-100 crypto
+///     // methods: derive_public_key, derive_symmetric_key, create_signature.
 ///     fn identity_public_key(&self) -> &PublicKey { /* ... */ # todo!() }
 /// }
 /// ```
@@ -153,6 +156,46 @@ pub trait SigningProvider: Send + Sync {
     ) -> WalletResult<Option<Vec<u8>>> {
         Ok(None)
     }
+
+    /// Derive a BRC-42 public key for the given protocol, key ID, and
+    /// counterparty.
+    ///
+    /// When `for_self` is true, derive the wallet's own child public key;
+    /// otherwise derive the counterparty's. Backs `getPublicKey` (non-identity)
+    /// and the local verification half of `verifySignature`.
+    async fn derive_public_key(
+        &self,
+        protocol: &Protocol,
+        key_id: &str,
+        counterparty: &Counterparty,
+        for_self: bool,
+    ) -> WalletResult<PublicKey>;
+
+    /// Derive the BRC-42 shared symmetric key for the given protocol, key ID,
+    /// and counterparty, as the full 32 big-endian bytes.
+    ///
+    /// The wallet composes AES-256-GCM and HMAC-SHA256 locally on top of this
+    /// key, so a remote backend never sees plaintext. AES keys with the full
+    /// 32 bytes; HMAC keys with the minimal big-endian encoding (see
+    /// [`bsv::primitives::symmetric_key::SymmetricKey::to_hmac_key_bytes`]).
+    async fn derive_symmetric_key(
+        &self,
+        protocol: &Protocol,
+        key_id: &str,
+        counterparty: &Counterparty,
+    ) -> WalletResult<[u8; 32]>;
+
+    /// Sign a 32-byte digest with the BRC-42 private key derived for the given
+    /// protocol, key ID, and counterparty. Returns the DER-encoded ECDSA
+    /// signature (low-S). Backs `createSignature`; the wallet computes the
+    /// digest (SHA-256 of data, or the caller's direct hash) before calling.
+    async fn create_signature(
+        &self,
+        protocol: &Protocol,
+        key_id: &str,
+        counterparty: &Counterparty,
+        digest: &[u8; 32],
+    ) -> WalletResult<Vec<u8>>;
 
     /// Get the wallet's identity public key.
     fn identity_public_key(&self) -> &PublicKey;
