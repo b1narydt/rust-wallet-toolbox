@@ -342,7 +342,7 @@ mod ghsa_provider_tests {
     fn provider() -> StandardSigningProvider {
         let priv_key = PrivateKey::from_hex("aa").unwrap();
         let pub_key = priv_key.to_public_key();
-        let kd = CachedKeyDeriver::new(priv_key, None);
+        let kd = std::sync::Arc::new(CachedKeyDeriver::new(priv_key, None));
         StandardSigningProvider::new(kd, pub_key)
     }
 

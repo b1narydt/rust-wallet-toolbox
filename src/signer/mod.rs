@@ -4,6 +4,7 @@
 //! SigningProvider trait for pluggable signing backends, and all types
 //! used by the signing pipeline.
 
+pub mod backend;
 pub mod broadcast_outcome;
 pub mod build_signable;
 pub mod complete_signed;
@@ -17,6 +18,7 @@ pub mod types;
 pub mod verify_unlock_scripts;
 
 // Re-export key items
+pub use backend::SigningBackend;
 pub use build_signable::build_signable_transaction;
 pub use complete_signed::complete_signed_transaction;
 pub use default_signer::DefaultWalletSigner;

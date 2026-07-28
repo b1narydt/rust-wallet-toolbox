@@ -12,7 +12,7 @@ use bsv::script::unlocking_script::UnlockingScript;
 use bsv::transaction::transaction::Transaction;
 use bsv::transaction::transaction_input::TransactionInput;
 use bsv::transaction::transaction_output::TransactionOutput;
-use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
+use bsv::wallet::KeyDeriverApi;
 
 use crate::error::{WalletError, WalletResult};
 use crate::signer::types::{PendingStorageInput, ValidCreateActionArgs};
@@ -50,7 +50,7 @@ fn hex_to_bytes(hex: &str) -> Vec<u8> {
 pub fn build_signable_transaction(
     dcr: &StorageCreateActionResult,
     args: &ValidCreateActionArgs,
-    key_deriver: &CachedKeyDeriver,
+    key_deriver: &dyn KeyDeriverApi,
     identity_pub_key: &PublicKey,
 ) -> WalletResult<(Transaction, u64, Vec<PendingStorageInput>)> {
     let storage_inputs = &dcr.inputs;
@@ -216,7 +216,7 @@ pub fn build_signable_transaction(
 fn make_change_lock(
     out: &crate::storage::action_types::StorageCreateTransactionSdkOutput,
     dcr: &StorageCreateActionResult,
-    key_deriver: &CachedKeyDeriver,
+    key_deriver: &dyn KeyDeriverApi,
     identity_pub_key: &PublicKey,
 ) -> WalletResult<LockingScript> {
     let derivation_prefix = dcr.derivation_prefix.clone();
@@ -403,6 +403,7 @@ mod tests {
     };
     use crate::types::StorageProvidedBy;
     use bsv::primitives::private_key::PrivateKey;
+    use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 
     fn test_keys() -> (CachedKeyDeriver, PublicKey) {
         let priv_key = PrivateKey::from_hex("aa").unwrap();

@@ -13,9 +13,9 @@ use std::io::Cursor;
 use bsv::script::templates::p2pkh::P2PKH;
 use bsv::script::templates::ScriptTemplateLock;
 use bsv::transaction::beef::Beef;
-use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 use bsv::wallet::interfaces::InternalizeOutput;
 use bsv::wallet::types::{Counterparty, CounterpartyType};
+use bsv::wallet::KeyDeriverApi;
 
 use crate::error::{WalletError, WalletResult};
 use crate::services::traits::WalletServices;
@@ -51,7 +51,7 @@ use crate::wallet::types::AuthId;
 pub async fn signer_internalize_action(
     storage: &WalletStorageManager,
     services: &(dyn WalletServices + Send + Sync),
-    key_deriver: &CachedKeyDeriver,
+    key_deriver: &dyn KeyDeriverApi,
     auth: &str,
     args: &ValidInternalizeActionArgs,
     signing_provider: Option<&dyn SigningProvider>,

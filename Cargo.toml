@@ -1,6 +1,6 @@
 [package]
 name = "bsv-wallet-toolbox"
-version = "0.3.4"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.87"
 description = "Pure Rust BSV wallet-toolbox implementation"
@@ -47,6 +47,13 @@ sqlite = ["sqlx/sqlite"]
 mysql = ["sqlx/mysql"]
 postgres = ["sqlx/postgres"]
 chaintracks-ws = ["dep:tokio-tungstenite", "dep:url"]
+
+# TODO(publish): REMOVE this patch before publishing 0.4.0 to crates.io.
+# 0.4.0 needs `bsv::wallet::KeyDeriverApi`, which lands in bsv-sdk 0.3.4 but is
+# not yet published. Once bsv-sdk 0.3.4 is on crates.io, delete this section and
+# bump the `bsv-sdk` dependency above to "0.3.4".
+[patch.crates-io]
+bsv-sdk = { path = "../bsv-rust-sdk" }
 
 [package.metadata.docs.rs]
 all-features = true

@@ -12,11 +12,13 @@ use async_trait::async_trait;
 
 use bsv::primitives::public_key::PublicKey;
 use bsv::transaction::transaction::Transaction;
-use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 use bsv::wallet::interfaces::AbortActionResult;
+use bsv::wallet::KeyDeriverApi;
 
 use crate::error::{WalletError, WalletResult};
 use crate::services::traits::WalletServices;
+use crate::signer::backend::SigningBackend;
+use crate::signer::signing_provider::SigningProvider;
 use crate::signer::traits::WalletSigner;
 use crate::signer::types::{
     PendingSignAction, PendingStorageInput, SignerCreateActionResult,
@@ -35,18 +37,29 @@ use crate::types::Chain;
 ///
 /// Holds references to storage, services, and key material. Manages
 /// in-memory PendingSignAction state for the delayed signing flow.
+///
+/// This is the **only** signer a [`Wallet`] owns, and it holds the **only**
+/// `pending_sign_actions` map. A delegated custody backend is injected *into*
+/// it as `signing_provider` rather than wrapped around it — a second signer
+/// alongside this one would split that map, and a `signAction` would look for
+/// its reference in the map the matching `createAction` never wrote to.
+///
+/// [`Wallet`]: crate::wallet::wallet::Wallet
 pub struct DefaultWalletSigner {
     /// The storage manager for database operations.
     pub storage: Arc<WalletStorageManager>,
     /// The wallet services for network operations (broadcast, chain tracker, etc).
     pub services: Arc<dyn WalletServices>,
-    /// The cached key deriver for BRC-42/BRC-29 key derivation.
-    /// Uses interior mutability (RwLock with HashMap) so &self suffices.
-    pub key_deriver: Arc<CachedKeyDeriver>,
+    /// The key deriver for BRC-42/BRC-29 key derivation.
+    pub key_deriver: Arc<dyn KeyDeriverApi>,
     /// The chain being operated on.
     pub chain: Chain,
     /// The wallet's identity public key.
     pub identity_key: PublicKey,
+    /// Optional delegated custody backend. When `Some`, every change-output
+    /// derivation and input signature comes from the provider and `key_deriver`
+    /// is never asked for a root key on the action path.
+    signing_provider: Option<Arc<dyn SigningProvider>>,
     /// In-memory store for pending sign actions (delayed signing).
     /// Uses tokio::sync::Mutex for async access.
     pending_sign_actions: tokio::sync::Mutex<HashMap<String, PendingSignAction>>,
@@ -54,12 +67,17 @@ pub struct DefaultWalletSigner {
 
 impl DefaultWalletSigner {
     /// Create a new DefaultWalletSigner.
+    ///
+    /// Pass `signing_provider: None` for a local-key wallet. Pass `Some` to
+    /// delegate derivation and signing to a custody backend that holds no
+    /// local root key.
     pub fn new(
         storage: Arc<WalletStorageManager>,
         services: Arc<dyn WalletServices>,
-        key_deriver: Arc<CachedKeyDeriver>,
+        key_deriver: Arc<dyn KeyDeriverApi>,
         chain: Chain,
         identity_key: PublicKey,
+        signing_provider: Option<Arc<dyn SigningProvider>>,
     ) -> Self {
         Self {
             storage,
@@ -67,7 +85,25 @@ impl DefaultWalletSigner {
             key_deriver,
             chain,
             identity_key,
+            signing_provider,
             pending_sign_actions: tokio::sync::Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// The injected delegated custody backend, if any.
+    pub fn signing_provider(&self) -> Option<&Arc<dyn SigningProvider>> {
+        self.signing_provider.as_ref()
+    }
+
+    /// The custody backend for this signer: the injected provider if there is
+    /// one, otherwise local derivation from `key_deriver`'s root key.
+    fn backend(&self) -> SigningBackend<'_> {
+        match &self.signing_provider {
+            Some(provider) => SigningBackend::Delegated(provider.as_ref()),
+            None => SigningBackend::Local {
+                key_deriver: self.key_deriver.as_ref(),
+                identity_pub_key: &self.identity_key,
+            },
         }
     }
 
@@ -258,8 +294,7 @@ impl WalletSigner for DefaultWalletSigner {
         let (result, pending) = crate::signer::methods::create_action::signer_create_action(
             self.storage.as_ref(),
             self.services.as_ref(),
-            &self.key_deriver,
-            &self.identity_key,
+            &self.backend(),
             &self.auth(),
             &args,
         )
@@ -290,8 +325,7 @@ impl WalletSigner for DefaultWalletSigner {
         let result = crate::signer::methods::sign_action::signer_sign_action(
             self.storage.as_ref(),
             self.services.as_ref(),
-            &self.key_deriver,
-            &self.identity_key,
+            &self.backend(),
             &self.auth(),
             &args,
             &pending,
@@ -308,12 +342,13 @@ impl WalletSigner for DefaultWalletSigner {
         crate::signer::methods::internalize_action::signer_internalize_action(
             self.storage.as_ref(),
             self.services.as_ref(),
-            &self.key_deriver,
+            self.key_deriver.as_ref(),
             &self.auth(),
             &args,
-            // No delegated provider: DefaultWalletSigner derives locally via
-            // its own key_deriver (identical behavior to the pre-provider path).
-            None,
+            // With no injected provider this derives locally via key_deriver,
+            // identical to the pre-provider path. With one, the provider owns
+            // the BRC-29 wallet-payment derivation.
+            self.signing_provider.as_deref(),
         )
         .await
     }

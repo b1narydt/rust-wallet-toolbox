@@ -5,6 +5,95 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-07-28
+
+Breaking. `Wallet` no longer hard-codes its custody model.
+
+### Added
+
+- **`WalletArgs::signing_provider`** — an optional
+  `Arc<dyn SigningProvider>`. When set, `create_action`, `sign_action` and
+  `internalize_action` route every BRC-29 change-output derivation and every
+  input signature through the provider, and the wallet never reaches for a root
+  private key on those paths. When `None`, behaviour is exactly as in 0.3.x.
+  Exposed on the builder as `WalletBuilder::with_signing_provider`.
+
+  This is what the TS reference always allowed by handing `Wallet` a
+  `WalletSigner` the caller had already built. The Rust port instead
+  constructed its own signer and passed `None` for the provider, so it
+  supported exactly one custody model — a local root key — and every other
+  backend (cloud HSM, MPC coordinator) had to bypass `Wallet` and re-implement
+  BRC-100 alongside it. The provider pipeline had existed and been complete
+  since 0.3.1; nothing in the crate ever called it.
+
+  The provider is injected **into** the wallet's single `DefaultWalletSigner`,
+  not wrapped around it, so `createAction` and `signAction` keep sharing one
+  `pending_sign_actions` map. A second signer bolted alongside would split that
+  map and `signAction` would never find its reference.
+
+- **`WalletBuilder::key_deriver`** — supply the deriver directly instead of a
+  root private key, for a wallet whose identity key is a joint or threshold
+  public key. Pair it with a signing provider; such a deriver cannot lock or
+  sign anything itself.
+
+- **`SigningBackend`** — the enum the signer pipeline dispatches on, `Local`
+  (root-key derivation in-process) or `Delegated` (a `SigningProvider` answers
+  everything).
+
+### Changed
+
+- **BREAKING — the key deriver is a trait object.** `WalletArgs::key_deriver`,
+  `Wallet::key_deriver` and `SetupWallet::key_deriver` are now
+  `Arc<dyn KeyDeriverApi>` (the object-safe trait added in `bsv-sdk` 0.3.4,
+  implemented for both `KeyDeriver` and `CachedKeyDeriver`). The concrete
+  `Arc<CachedKeyDeriver>` unsize-coerces at construction, so most call sites are
+  unchanged; `&wallet.key_deriver` becomes `wallet.key_deriver.as_ref()`.
+  Threaded through `build_signable_transaction`, `complete_signed_transaction`,
+  `signer_internalize_action`, `get_key_pair`, `get_lock_p2pkh` and
+  `create_p2pkh_outputs`, which now take `&dyn KeyDeriverApi`. Without this an
+  identity key could not be decoupled from a locally-held root key at all.
+
+- **BREAKING — one createAction, two custody modes.**
+  `signer_create_action_with_provider` and its module are deleted;
+  `signer_create_action` and `signer_sign_action` now take a `&SigningBackend`.
+  The provider variant was a near-verbatim copy of the local one and the two had
+  already drifted (the copy logged post-broadcast status-update failures, the
+  original swallowed them). The merged path keeps the logging.
+
+- **BREAKING — `DefaultWalletSigner::new`** takes a sixth argument, the
+  optional signing provider.
+
+- **BREAKING — `StandardSigningProvider::new`** takes
+  `Arc<dyn KeyDeriverApi>` instead of an owned `CachedKeyDeriver`, and
+  `key_deriver()` returns `&dyn KeyDeriverApi`.
+
+- **BREAKING — `Wallet::get_client_change_key_pair`** returns
+  `WalletResult<KeyPair>` and errors when a signing provider is injected.
+  `Wallet::sweep_to` likewise refuses. Both lock BRC-29 outputs with
+  `key_deriver.root_key()`, which under delegation is not the key that locks the
+  wallet's coins — they now fail closed instead of producing outputs nobody can
+  spend. `SigningProvider` has no lock-to-counterparty member to route them
+  through.
+
+- **BREAKING — `Wallet::pending_sign_actions` is removed.** The field was
+  written once at construction and never read; the live map has always been the
+  signer's. Removing it makes "there is exactly one map" structural rather than
+  a thing to remember.
+
+### Notes
+
+- **The provider does not cover the crypto surface.** The nine `WalletInterface`
+  crypto methods (`get_public_key`, `encrypt`, `decrypt`, `create_hmac`,
+  `verify_hmac`, `create_signature`, `verify_signature`,
+  `reveal_counterparty_key_linkage`, `reveal_specific_key_linkage`) still
+  delegate to a `ProtoWallet` built from `key_deriver.root_key()`. A caller
+  whose root key is a throwaway must wrap the wallet and intercept them.
+- **`internalize_action`** keeps its documented fallback: a provider returning
+  `Ok(None)` from `derive_wallet_payment_locking_script` falls back to local
+  derivation. A provider without a usable root key behind its deriver must
+  implement that method, or incoming wallet payments are rejected (fail-closed,
+  not fund loss).
+
 ## [0.3.4] - 2026-07-24
 
 ### Changed

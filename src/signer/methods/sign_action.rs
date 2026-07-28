@@ -6,13 +6,13 @@
 
 use std::io::Cursor;
 
-use bsv::primitives::public_key::PublicKey;
 use bsv::transaction::transaction::Transaction;
-use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 
 use crate::error::{WalletError, WalletResult};
 use crate::services::traits::WalletServices;
+use crate::signer::backend::SigningBackend;
 use crate::signer::complete_signed::complete_signed_transaction;
+use crate::signer::provider_signing::complete_signed_transaction_with_provider;
 use crate::signer::types::{PendingSignAction, SignerSignActionResult, ValidSignActionArgs};
 use crate::storage::action_types::StorageProcessActionArgs;
 use crate::storage::manager::WalletStorageManager;
@@ -22,14 +22,16 @@ use crate::wallet::types::AuthId;
 ///
 /// 1. Recover the PendingSignAction from in-memory state
 /// 2. Reconstruct the unsigned Transaction from stored bytes
-/// 3. Apply user-provided spends and sign BRC-29 inputs
+/// 3. Apply user-provided spends and sign BRC-29 inputs via `backend`
 /// 4. Process the signed transaction in storage
 /// 5. Optionally broadcast
+///
+/// `backend` must match the one that created the pending action: the change
+/// outputs it locked are only spendable by the same custody backend.
 pub async fn signer_sign_action(
     storage: &WalletStorageManager,
     services: &(dyn WalletServices + Send + Sync),
-    key_deriver: &CachedKeyDeriver,
-    identity_pub_key: &PublicKey,
+    backend: &SigningBackend<'_>,
     auth: &str,
     args: &ValidSignActionArgs,
     pending: &PendingSignAction,
@@ -47,13 +49,28 @@ pub async fn signer_sign_action(
     let is_send_with = args.is_send_with.unwrap_or(pending.args.is_send_with);
 
     // --- Step 2: Sign the transaction ---
-    let signed_tx_bytes = complete_signed_transaction(
-        &mut tx,
-        &pending.pdi,
-        &args.spends,
-        key_deriver,
-        identity_pub_key,
-    )?;
+    let signed_tx_bytes = match backend {
+        SigningBackend::Local {
+            key_deriver,
+            identity_pub_key,
+        } => complete_signed_transaction(
+            &mut tx,
+            &pending.pdi,
+            &args.spends,
+            *key_deriver,
+            identity_pub_key,
+        )?,
+        SigningBackend::Delegated(provider) => {
+            provider.prepare_spend_contexts(&tx, &pending.pdi).await?;
+            complete_signed_transaction_with_provider(
+                &mut tx,
+                &pending.pdi,
+                &args.spends,
+                *provider,
+            )
+            .await?
+        }
+    };
 
     let txid = tx
         .id()

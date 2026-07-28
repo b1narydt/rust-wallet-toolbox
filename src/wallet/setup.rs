@@ -12,10 +12,12 @@ use bsv::primitives::private_key::PrivateKey;
 use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 use bsv::wallet::interfaces::{CreateActionArgs, CreateActionOutput, CreateActionResult};
 use bsv::wallet::types::{Counterparty, CounterpartyType, Protocol};
+use bsv::wallet::KeyDeriverApi;
 
 use crate::error::{WalletError, WalletResult};
 use crate::monitor::Monitor;
 use crate::services::traits::WalletServices;
+use crate::signer::signing_provider::SigningProvider;
 use crate::storage::manager::WalletStorageManager;
 use crate::storage::StorageConfig;
 use crate::types::Chain;
@@ -39,7 +41,7 @@ pub struct SetupWallet {
     /// The chain this wallet operates on.
     pub chain: Chain,
     /// The key deriver used for Type-42 derivation.
-    pub key_deriver: Arc<CachedKeyDeriver>,
+    pub key_deriver: Arc<dyn KeyDeriverApi>,
     /// The wallet's identity key as a hex DER public key string.
     pub identity_key: String,
     /// The storage manager (shared Arc -- same instance used by wallet, monitor, and caller).
@@ -99,6 +101,8 @@ enum StorageKind {
 pub struct WalletBuilder {
     chain: Option<Chain>,
     root_key: Option<PrivateKey>,
+    key_deriver: Option<Arc<dyn KeyDeriverApi>>,
+    signing_provider: Option<Arc<dyn SigningProvider>>,
     storage_config: Option<StorageKind>,
     storage_identity_key: Option<String>,
     services: Option<Arc<dyn WalletServices>>,
@@ -117,6 +121,8 @@ impl WalletBuilder {
         Self {
             chain: None,
             root_key: None,
+            key_deriver: None,
+            signing_provider: None,
             storage_config: None,
             storage_identity_key: None,
             services: None,
@@ -142,9 +148,34 @@ impl WalletBuilder {
         self
     }
 
-    /// Set the root private key (required).
+    /// Set the root private key.
+    ///
+    /// Required unless a `key_deriver` is supplied instead.
     pub fn root_key(mut self, key: PrivateKey) -> Self {
         self.root_key = Some(key);
+        self
+    }
+
+    /// Supply the key deriver directly, instead of a root private key.
+    ///
+    /// This is the entry point for a wallet whose identity key is not backed by
+    /// a local root key — a joint or threshold public key, say. Such a deriver
+    /// cannot lock or sign anything on its own, so pair it with
+    /// [`with_signing_provider`](Self::with_signing_provider).
+    ///
+    /// Takes precedence over [`root_key`](Self::root_key) if both are set.
+    pub fn key_deriver(mut self, key_deriver: Arc<dyn KeyDeriverApi>) -> Self {
+        self.key_deriver = Some(key_deriver);
+        self
+    }
+
+    /// Delegate BRC-29 derivation and input signing to a custody backend.
+    ///
+    /// With a provider set, `create_action`, `sign_action` and
+    /// `internalize_action` never reach for the key deriver's root key. See
+    /// [`WalletArgs::signing_provider`] for what the provider does *not* cover.
+    pub fn with_signing_provider(mut self, provider: Arc<dyn SigningProvider>) -> Self {
+        self.signing_provider = Some(provider);
         self
     }
 
@@ -267,9 +298,16 @@ impl WalletBuilder {
         let chain = self
             .chain
             .ok_or_else(|| WalletError::MissingParameter("chain".to_string()))?;
-        let root_key = self
-            .root_key
-            .ok_or_else(|| WalletError::MissingParameter("root_key".to_string()))?;
+        // Either an explicit deriver or a root key to build one from.
+        let key_deriver: Arc<dyn KeyDeriverApi> = match self.key_deriver {
+            Some(kd) => kd,
+            None => {
+                let root_key = self.root_key.ok_or_else(|| {
+                    WalletError::MissingParameter("root_key (or key_deriver)".to_string())
+                })?;
+                Arc::new(CachedKeyDeriver::new(root_key, None))
+            }
+        };
         let storage_kind = self.storage_config.ok_or_else(|| {
             WalletError::MissingParameter(
                 "storage (call with_sqlite, with_sqlite_memory, with_mysql, or with_postgres)"
@@ -277,8 +315,6 @@ impl WalletBuilder {
             )
         })?;
 
-        // Create key deriver
-        let key_deriver = Arc::new(CachedKeyDeriver::new(root_key, None));
         let identity_key_hex = key_deriver.identity_key().to_der_hex();
 
         // Build a closure to apply pool overrides to StorageConfig
@@ -408,6 +444,7 @@ impl WalletBuilder {
         let wallet_args = WalletArgs {
             chain: chain.clone(),
             key_deriver: key_deriver.clone(),
+            signing_provider: self.signing_provider,
             storage: storage.clone(),
             services: services.clone(),
             monitor: None, // Monitor is created after wallet
@@ -466,11 +503,11 @@ impl Default for WalletBuilder {
 // P2PKH Helper Functions
 // ---------------------------------------------------------------------------
 
-/// Derive a key pair from a `CachedKeyDeriver` using specified protocol, key ID, and counterparty.
+/// Derive a key pair from a key deriver using specified protocol, key ID, and counterparty.
 ///
 /// Returns a `KeyPair` with the derived private and public keys as hex strings.
 pub fn get_key_pair(
-    key_deriver: &CachedKeyDeriver,
+    key_deriver: &dyn KeyDeriverApi,
     protocol_id: &str,
     key_id: &str,
     counterparty: &str,
@@ -490,12 +527,12 @@ pub fn get_key_pair(
     })
 }
 
-/// Derive a P2PKH locking script from a `CachedKeyDeriver`.
+/// Derive a P2PKH locking script from a key deriver.
 ///
 /// Uses the specified protocol, key ID, and counterparty to derive a key pair,
 /// then returns the P2PKH locking script bytes for the derived public key.
 pub fn get_lock_p2pkh(
-    key_deriver: &CachedKeyDeriver,
+    key_deriver: &dyn KeyDeriverApi,
     protocol_id: &str,
     key_id: &str,
     counterparty: &str,
@@ -526,8 +563,12 @@ pub fn get_lock_p2pkh(
 ///
 /// Generates `count` outputs, each paying `satoshis`, using the wallet's identity key
 /// for self-payment via BRC-29 authenticated P2PKH.
+///
+/// Locks with `key_deriver.root_key()`, so this is only meaningful for a deriver
+/// that holds one. Under delegated custody the provider owns BRC-29 locking and
+/// this helper does not apply.
 pub fn create_p2pkh_outputs(
-    key_deriver: &CachedKeyDeriver,
+    key_deriver: &dyn KeyDeriverApi,
     count: usize,
     satoshis: u64,
 ) -> WalletResult<Vec<CreateActionOutput>> {
@@ -566,7 +607,7 @@ pub async fn create_p2pkh_outputs_action(
     satoshis: u64,
     description: &str,
 ) -> WalletResult<CreateActionResult> {
-    let outputs = create_p2pkh_outputs(&wallet.key_deriver, count, satoshis)?;
+    let outputs = create_p2pkh_outputs(wallet.key_deriver.as_ref(), count, satoshis)?;
 
     use bsv::wallet::interfaces::WalletInterface;
     let result = wallet

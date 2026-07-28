@@ -4,7 +4,6 @@
 //! that wires together the signer, storage, and ProtoWallet subsystems. Every method
 //! follows the validate-delegate-postprocess pattern from the TS reference.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -12,7 +11,6 @@ use async_trait::async_trait;
 use bsv::primitives::public_key::PublicKey;
 use bsv::services::overlay_tools::LookupResolver;
 use bsv::transaction::beef_party::BeefParty;
-use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 use bsv::wallet::error::WalletError as SdkWalletError;
 use bsv::wallet::interfaces::{
     AbortActionArgs, AbortActionResult, AcquireCertificateArgs, AcquisitionProtocol,
@@ -30,20 +28,22 @@ use bsv::wallet::interfaces::{
     VerifyHmacResult, VerifySignatureArgs, VerifySignatureResult, WalletInterface,
 };
 use bsv::wallet::proto_wallet::ProtoWallet;
+use bsv::wallet::KeyDeriverApi;
 
 use crate::wallet::discovery::OverlayCache;
 
 use crate::error::WalletError;
 use crate::services::traits::WalletServices;
 use crate::signer::default_signer::DefaultWalletSigner;
+use crate::signer::signing_provider::SigningProvider;
 use crate::signer::traits::WalletSigner;
 use crate::storage::manager::WalletStorageManager;
 use crate::types::Chain;
 use crate::wallet::privileged::PrivilegedKeyManager;
 use crate::wallet::settings::WalletSettingsManager;
 use crate::wallet::types::{
-    AdminStatsResult, AuthId, KeyPair, PendingSignAction, StorageIdentity, UtxoInfo, WalletArgs,
-    WalletBalance, SPEC_OP_FAILED_ACTIONS, SPEC_OP_INVALID_CHANGE, SPEC_OP_NO_SEND_ACTIONS,
+    AdminStatsResult, AuthId, KeyPair, StorageIdentity, UtxoInfo, WalletArgs, WalletBalance,
+    SPEC_OP_FAILED_ACTIONS, SPEC_OP_INVALID_CHANGE, SPEC_OP_NO_SEND_ACTIONS,
     SPEC_OP_SET_WALLET_CHANGE_PARAMS, SPEC_OP_WALLET_BALANCE,
 };
 use crate::wallet::validation::validate_originator;
@@ -83,7 +83,7 @@ pub struct Wallet {
     /// BSV network chain this wallet operates on.
     pub chain: Chain,
     /// Key deriver for BRC-42/BRC-43 child key derivation.
-    pub key_deriver: Arc<CachedKeyDeriver>,
+    pub key_deriver: Arc<dyn KeyDeriverApi>,
     /// Storage manager providing persistence operations.
     pub storage: Arc<WalletStorageManager>,
     /// Optional network services (broadcasting, chain lookups, etc.).
@@ -115,9 +115,6 @@ pub struct Wallet {
     #[allow(dead_code)]
     user_party: String,
 
-    /// In-memory pending sign actions awaiting deferred signing.
-    pub pending_sign_actions: tokio::sync::Mutex<HashMap<String, PendingSignAction>>,
-
     // Overlay discovery cache
     overlay_cache: OverlayCache,
     /// Optional overlay lookup resolver for identity certificate discovery.
@@ -126,7 +123,11 @@ pub struct Wallet {
     /// Test hook: pre-determined random values for deterministic testing.
     pub random_vals: Option<Vec<f64>>,
 
-    // Internal signer
+    /// The wallet's one and only signer.
+    ///
+    /// It owns the single `pending_sign_actions` map that `createAction` writes
+    /// and `signAction` reads. A delegated custody backend goes *inside* it (see
+    /// [`WalletArgs::signing_provider`]) — never alongside it.
     signer: DefaultWalletSigner,
 }
 
@@ -170,13 +171,16 @@ impl Wallet {
             )
         })?;
 
-        // Signer shares the same Arc<WalletStorageManager> as the wallet
+        // Signer shares the same Arc<WalletStorageManager> as the wallet.
+        // The signing provider is injected INTO this signer, so the pending
+        // sign actions it records stay in one map.
         let signer = DefaultWalletSigner::new(
             args.storage.clone(),
             services_for_signer,
             args.key_deriver.clone(),
             args.chain.clone(),
             identity_key.clone(),
+            args.signing_provider,
         );
 
         // Settings manager: use provided or create default
@@ -207,7 +211,6 @@ impl Wallet {
             return_txid_only: false,
             trust_self: Some(TrustSelf::Known),
             user_party,
-            pending_sign_actions: tokio::sync::Mutex::new(HashMap::new()),
             overlay_cache: OverlayCache::new(),
             lookup_resolver: args.lookup_resolver,
             random_vals: None,
@@ -236,13 +239,31 @@ impl Wallet {
         })
     }
 
+    /// The delegated custody backend, if one was injected.
+    ///
+    /// `None` means this wallet derives and signs locally from its own root key.
+    pub fn signing_provider(&self) -> Option<&Arc<dyn SigningProvider>> {
+        self.signer.signing_provider()
+    }
+
     /// Returns the client change key pair (root private + public key).
-    pub fn get_client_change_key_pair(&self) -> KeyPair {
+    ///
+    /// Errors when a signing provider is injected: the root key behind a
+    /// delegated deriver is not the key that locks this wallet's change, so
+    /// handing it out would invite the caller to build outputs nobody can spend.
+    pub fn get_client_change_key_pair(&self) -> Result<KeyPair, WalletError> {
+        if self.signing_provider().is_some() {
+            return Err(WalletError::InvalidOperation(
+                "get_client_change_key_pair is unavailable when a signing provider is injected: \
+                 change is locked by the provider, not by key_deriver's root key"
+                    .to_string(),
+            ));
+        }
         let root = self.key_deriver.root_key();
-        KeyPair {
+        Ok(KeyPair {
             private_key: root.to_hex(),
             public_key: root.to_public_key().to_der_hex(),
-        }
+        })
     }
 
     /// Returns the storage identity for this wallet.
@@ -388,9 +409,24 @@ impl Wallet {
     ///
     /// Creates a sweep transaction sending MAX_POSSIBLE_SATOSHIS to the
     /// receiving wallet via createAction + internalizeAction.
+    ///
+    /// Unavailable when a signing provider is injected: the BRC-29 output is
+    /// locked here with `key_deriver.root_key()` as the ECDH locker, and under
+    /// delegation that key is not the one the receiver will derive against.
+    /// The [`SigningProvider`] trait has no "lock to a counterparty" member to
+    /// route this through, so it fails closed rather than sending funds the
+    /// receiver cannot internalize.
     pub async fn sweep_to(&self, to_wallet: &Wallet) -> Result<(), WalletError> {
         use crate::storage::methods::generate_change::MAX_POSSIBLE_SATOSHIS;
         use crate::utility::script_template_brc29::ScriptTemplateBRC29;
+
+        if self.signing_provider().is_some() {
+            return Err(WalletError::InvalidOperation(
+                "sweep_to is unavailable when a signing provider is injected: it locks the \
+                 outgoing BRC-29 output with the local root key, which the provider does not own"
+                    .to_string(),
+            ));
+        }
 
         // Generate random derivation prefix and suffix
         let derivation_prefix = random_base64(8);

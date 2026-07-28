@@ -6,14 +6,16 @@
 
 use std::collections::HashMap;
 
-use bsv::primitives::public_key::PublicKey;
 use bsv::transaction::Beef;
-use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 
 use crate::error::{WalletError, WalletResult};
 use crate::services::traits::WalletServices;
+use crate::signer::backend::SigningBackend;
 use crate::signer::build_signable::build_signable_transaction;
 use crate::signer::complete_signed::complete_signed_transaction;
+use crate::signer::provider_signing::{
+    build_signable_transaction_with_provider, complete_signed_transaction_with_provider,
+};
 use crate::signer::types::{
     PendingSignAction, SignableTransactionRef, SignerCreateActionResult, ValidCreateActionArgs,
 };
@@ -127,15 +129,21 @@ pub(crate) fn to_storage_args(args: &ValidCreateActionArgs) -> StorageCreateActi
 /// Execute the signer-level createAction flow.
 ///
 /// 1. Call storage.create_action to allocate UTXOs and create records
-/// 2. Build the unsigned transaction via build_signable_transaction
+/// 2. Build the unsigned transaction, deriving change locking scripts via `backend`
 /// 3. Branch based on whether this is a deferred sign action:
 ///    - If `is_sign_action`: store `PendingSignAction`, return `SignableTransaction`.
-///    - Otherwise: sign via `complete_signed_transaction`, process, optionally broadcast.
+///    - Otherwise: sign the inputs via `backend`, process, optionally broadcast.
+///
+/// `backend` selects the custody mode. [`SigningBackend::Local`] derives and
+/// signs in-process from a root private key; [`SigningBackend::Delegated`]
+/// hands both to a [`SigningProvider`], so no root key is touched anywhere in
+/// this flow.
+///
+/// [`SigningProvider`]: crate::signer::signing_provider::SigningProvider
 pub async fn signer_create_action(
     storage: &WalletStorageManager,
     services: &(dyn WalletServices + Send + Sync),
-    key_deriver: &CachedKeyDeriver,
-    identity_pub_key: &PublicKey,
+    backend: &SigningBackend<'_>,
     auth: &str,
     args: &ValidCreateActionArgs,
 ) -> WalletResult<(SignerCreateActionResult, Option<PendingSignAction>)> {
@@ -151,8 +159,17 @@ pub async fn signer_create_action(
     let reference = dcr.reference.clone();
 
     // --- Step 2: Build unsigned transaction ---
-    let (mut tx, amount, pdi) =
-        build_signable_transaction(&dcr, args, key_deriver, identity_pub_key)?;
+    // Change locking scripts are the first custody decision: locally derived
+    // from the root key, or derived by the provider.
+    let (mut tx, amount, pdi) = match backend {
+        SigningBackend::Local {
+            key_deriver,
+            identity_pub_key,
+        } => build_signable_transaction(&dcr, args, *key_deriver, identity_pub_key)?,
+        SigningBackend::Delegated(provider) => {
+            build_signable_transaction_with_provider(&dcr, args, *provider).await?
+        }
+    };
 
     // --- Step 3a: Delayed signing (is_sign_action) ---
     if args.is_sign_action {
@@ -201,13 +218,25 @@ pub async fn signer_create_action(
     }
 
     // --- Step 3b: Immediate signing ---
-    let signed_tx_bytes = complete_signed_transaction(
-        &mut tx,
-        &pdi,
-        &HashMap::new(),
-        key_deriver,
-        identity_pub_key,
-    )?;
+    let signed_tx_bytes = match backend {
+        SigningBackend::Local {
+            key_deriver,
+            identity_pub_key,
+        } => complete_signed_transaction(
+            &mut tx,
+            &pdi,
+            &HashMap::new(),
+            *key_deriver,
+            identity_pub_key,
+        )?,
+        SigningBackend::Delegated(provider) => {
+            // Let the provider capture per-input spend context before it is
+            // asked for signatures (no-op by default).
+            provider.prepare_spend_contexts(&tx, &pdi).await?;
+            complete_signed_transaction_with_provider(&mut tx, &pdi, &HashMap::new(), *provider)
+                .await?
+        }
+    };
 
     let txid = tx
         .id()
@@ -262,10 +291,17 @@ pub async fn signer_create_action(
             | crate::signer::broadcast_outcome::BroadcastOutcome::OrphanMempool { .. } => {
                 // Success or transient orphan — transition to unproven/unmined.
                 // OrphanMempool stays in sending for monitor retry.
-                let _ = crate::signer::broadcast_outcome::apply_success_or_orphan_outcome(
+                if let Err(e) = crate::signer::broadcast_outcome::apply_success_or_orphan_outcome(
                     storage, &txid, &outcome,
                 )
-                .await;
+                .await
+                {
+                    tracing::error!(
+                        error = %e,
+                        txid = %txid,
+                        "createAction: failed to update status after successful broadcast"
+                    );
+                }
             }
             crate::signer::broadcast_outcome::BroadcastOutcome::DoubleSpend { .. }
             | crate::signer::broadcast_outcome::BroadcastOutcome::InvalidTx { .. } => {

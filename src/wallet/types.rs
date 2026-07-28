@@ -7,12 +7,13 @@
 use std::sync::Arc;
 
 use bsv::services::overlay_tools::LookupResolver;
-use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
+use bsv::wallet::KeyDeriverApi;
 use serde::{Deserialize, Serialize};
 
 use crate::tables::ProvenTx;
 
 use crate::services::traits::WalletServices;
+use crate::signer::signing_provider::SigningProvider;
 use crate::storage::manager::WalletStorageManager;
 use crate::types::Chain;
 
@@ -32,8 +33,29 @@ pub use crate::signer::types::PendingSignAction;
 pub struct WalletArgs {
     /// Which chain (main, test, etc.) this wallet operates on.
     pub chain: Chain,
-    /// Key deriver for deriving child keys from the root private key.
-    pub key_deriver: Arc<CachedKeyDeriver>,
+    /// Key deriver for deriving child keys.
+    ///
+    /// Held as a trait object so the wallet's identity key can be decoupled
+    /// from a locally-held root key — a deriver whose identity is a joint or
+    /// threshold public key can stand in here. Such a deriver has no usable
+    /// root key, so it must be paired with a `signing_provider`.
+    pub key_deriver: Arc<dyn KeyDeriverApi>,
+    /// Optional delegated custody backend for the action pipeline.
+    ///
+    /// When `Some`, `create_action`, `sign_action` and `internalize_action`
+    /// route every BRC-29 change-output derivation and every input signature
+    /// through the provider; the wallet never reaches for `key_deriver`'s root
+    /// key on those paths. When `None`, the wallet derives and signs locally,
+    /// exactly as it always has.
+    ///
+    /// **This does not cover the crypto surface.** The nine `WalletInterface`
+    /// crypto methods (`get_public_key`, `encrypt`, `decrypt`, `create_hmac`,
+    /// `verify_hmac`, `create_signature`, `verify_signature`,
+    /// `reveal_counterparty_key_linkage`, `reveal_specific_key_linkage`) still
+    /// delegate to a `ProtoWallet` built from `key_deriver.root_key()`. A
+    /// caller whose root key is a throwaway must wrap the wallet and intercept
+    /// those methods itself.
+    pub signing_provider: Option<Arc<dyn SigningProvider>>,
     /// Storage manager providing active + optional backup persistence.
     pub storage: Arc<WalletStorageManager>,
     /// Optional wallet services (broadcasting, chain lookups, etc.).

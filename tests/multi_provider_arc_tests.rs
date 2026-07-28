@@ -86,6 +86,7 @@ mod multi_provider_arc {
         let wallet_b_args = WalletArgs {
             chain: setup.chain.clone(),
             key_deriver: setup.key_deriver.clone(),
+            signing_provider: None,
             storage: shared_storage.clone(),
             services: setup.services.clone(),
             monitor: None,

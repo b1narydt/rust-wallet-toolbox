@@ -6,14 +6,16 @@
 //!
 //! [`CachedKeyDeriver`]: bsv::wallet::cached_key_deriver::CachedKeyDeriver
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use bsv::primitives::ecdsa::ecdsa_sign;
 use bsv::primitives::public_key::PublicKey;
 use bsv::script::templates::p2pkh::P2PKH;
 use bsv::script::templates::ScriptTemplateLock;
-use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 use bsv::wallet::types::{Counterparty, CounterpartyType};
+use bsv::wallet::KeyDeriverApi;
 
 use crate::error::{WalletError, WalletResult};
 use crate::signer::signing_provider::SigningProvider;
@@ -39,27 +41,26 @@ use crate::utility::script_template_brc29::{brc29_protocol, ScriptTemplateBRC29}
 /// [`CachedKeyDeriver`]: bsv::wallet::cached_key_deriver::CachedKeyDeriver
 /// [`ScriptTemplateBRC29`]: crate::utility::script_template_brc29::ScriptTemplateBRC29
 pub struct StandardSigningProvider {
-    key_deriver: CachedKeyDeriver,
+    key_deriver: Arc<dyn KeyDeriverApi>,
     identity_pub_key: PublicKey,
 }
 
 impl StandardSigningProvider {
     /// Create a new standard provider from a key deriver and identity key.
-    pub fn new(key_deriver: CachedKeyDeriver, identity_pub_key: PublicKey) -> Self {
+    ///
+    /// This provider signs from a locally-held root private key, so
+    /// `key_deriver` must be one that actually has one — it calls
+    /// [`KeyDeriverApi::root_key`] on every derivation and signature.
+    pub fn new(key_deriver: Arc<dyn KeyDeriverApi>, identity_pub_key: PublicKey) -> Self {
         Self {
             key_deriver,
             identity_pub_key,
         }
     }
 
-    /// Access the underlying [`CachedKeyDeriver`].
-    ///
-    /// Useful for backward compatibility with code that expects direct
-    /// access to the key deriver.
-    ///
-    /// [`CachedKeyDeriver`]: bsv::wallet::cached_key_deriver::CachedKeyDeriver
-    pub fn key_deriver(&self) -> &CachedKeyDeriver {
-        &self.key_deriver
+    /// Access the underlying key deriver.
+    pub fn key_deriver(&self) -> &dyn KeyDeriverApi {
+        self.key_deriver.as_ref()
     }
 }
 
@@ -167,6 +168,7 @@ mod tests {
     use bsv::transaction::transaction::Transaction;
     use bsv::transaction::transaction_input::TransactionInput;
     use bsv::transaction::transaction_output::TransactionOutput;
+    use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 
     /// #3 regression: the signature produced by `sign_input` must verify against
     /// the raw sighash under OP_CHECKSIG semantics (ecdsa over hash256(preimage)).
@@ -176,7 +178,7 @@ mod tests {
     async fn test_sign_input_signature_verifies_over_sighash() {
         let priv_key = PrivateKey::from_hex("aa").unwrap();
         let identity_pub = priv_key.to_public_key();
-        let key_deriver = CachedKeyDeriver::new(priv_key, None);
+        let key_deriver = Arc::new(CachedKeyDeriver::new(priv_key, None));
         let provider = StandardSigningProvider::new(key_deriver, identity_pub.clone());
 
         let (prefix, suffix) = ("prefix1", "suffix1");

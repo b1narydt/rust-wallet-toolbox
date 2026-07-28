@@ -293,7 +293,7 @@ mod signer_internalize_provider_tests {
 
         // (c) StandardSigningProvider delegated derivation.
         let provider = StandardSigningProvider::new(
-            CachedKeyDeriver::new(receiver_priv, None),
+            std::sync::Arc::new(CachedKeyDeriver::new(receiver_priv, None)),
             receiver_pub.clone(),
         );
         let provider_script = provider
@@ -343,7 +343,7 @@ mod signer_internalize_provider_tests {
         let result = signer_internalize_action(
             setup.storage.as_ref(),
             &services,
-            &setup.key_deriver,
+            setup.key_deriver.as_ref(),
             &setup.identity_key,
             &args,
             Some(&provider),
@@ -435,7 +435,7 @@ mod signer_internalize_provider_tests {
         let err = signer_internalize_action(
             setup.storage.as_ref(),
             &services,
-            &setup.key_deriver,
+            setup.key_deriver.as_ref(),
             &setup.identity_key,
             &args,
             Some(&provider),
@@ -478,7 +478,7 @@ mod signer_internalize_provider_tests {
         let result = signer_internalize_action(
             setup.storage.as_ref(),
             &services,
-            &setup.key_deriver,
+            setup.key_deriver.as_ref(),
             &setup.identity_key,
             &args,
             Some(&provider),
@@ -528,7 +528,7 @@ mod signer_internalize_provider_tests {
             let result = signer_internalize_action(
                 setup.storage.as_ref(),
                 &services,
-                &setup.key_deriver,
+                setup.key_deriver.as_ref(),
                 &setup.identity_key,
                 &args,
                 provider,
@@ -566,7 +566,7 @@ mod signer_internalize_provider_tests {
         let err = signer_internalize_action(
             setup.storage.as_ref(),
             &services,
-            &setup.key_deriver,
+            setup.key_deriver.as_ref(),
             &setup.identity_key,
             &args,
             None,
@@ -610,7 +610,10 @@ mod signer_internalize_provider_tests {
         // Delegate to a real StandardSigningProvider via a recording wrapper:
         // record args, then return the standard provider's derivation.
         let std_provider = StandardSigningProvider::new(
-            CachedKeyDeriver::new(setup.key_deriver.root_key().clone(), None),
+            std::sync::Arc::new(CachedKeyDeriver::new(
+                setup.key_deriver.root_key().clone(),
+                None,
+            )),
             receiver_pub.clone(),
         );
         let expected_script = std_provider
@@ -623,7 +626,7 @@ mod signer_internalize_provider_tests {
         let result = signer_internalize_action(
             setup.storage.as_ref(),
             &services,
-            &setup.key_deriver,
+            setup.key_deriver.as_ref(),
             &setup.identity_key,
             &args,
             Some(&provider),

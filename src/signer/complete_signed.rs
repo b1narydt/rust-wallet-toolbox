@@ -12,8 +12,8 @@ use bsv::script::locking_script::LockingScript;
 use bsv::script::unlocking_script::UnlockingScript;
 use bsv::transaction::transaction::Transaction;
 use bsv::transaction::transaction_output::TransactionOutput;
-use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 use bsv::wallet::interfaces::SignActionSpend;
+use bsv::wallet::KeyDeriverApi;
 
 use crate::error::{WalletError, WalletResult};
 use crate::signer::types::PendingStorageInput;
@@ -47,7 +47,7 @@ fn hex_to_bytes(hex: &str) -> Vec<u8> {
 /// * `tx` - The transaction to sign (modified in place)
 /// * `pending_inputs` - BRC-29 inputs needing wallet signing
 /// * `spends` - User-provided unlocking scripts keyed by input index
-/// * `key_deriver` - The cached key deriver (root key accessed via key_deriver.root_key())
+/// * `key_deriver` - The key deriver (root key accessed via key_deriver.root_key())
 /// * `identity_pub_key` - The wallet's identity public key
 ///
 /// # Returns
@@ -56,7 +56,7 @@ pub fn complete_signed_transaction(
     tx: &mut Transaction,
     pending_inputs: &[PendingStorageInput],
     spends: &HashMap<u32, SignActionSpend>,
-    key_deriver: &CachedKeyDeriver,
+    key_deriver: &dyn KeyDeriverApi,
     identity_pub_key: &PublicKey,
 ) -> WalletResult<Vec<u8>> {
     let sighash = SIGHASH_ALL | SIGHASH_FORKID;
@@ -156,6 +156,7 @@ pub fn complete_signed_transaction(
 mod tests {
     use super::*;
     use bsv::primitives::private_key::PrivateKey;
+    use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 
     fn test_keys() -> (CachedKeyDeriver, PublicKey) {
         let priv_key = PrivateKey::from_hex("aa").unwrap();
