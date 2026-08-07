@@ -72,6 +72,85 @@ trust domain cannot.
   out-of-tree `SigningProvider` or `WalletSigner` implementation must add the
   `ctx` parameter.
 
+### Added — portable export, and a recovery path with evidence
+
+The wallet database is key material, not a cache. BRC-42 output derivation is
+not enumerable, so a lost `derivation_prefix` leaves UTXOs unspendable with
+every key in hand. That makes export and restore custody-grade features.
+
+- **`storage::portable`** — BRC-38 (portable wallet document) and BRC-39
+  (Argon2id + AES-256-GCM container): `export_brc38`, `encrypt_brc39`,
+  `decrypt_brc39`, `import_brc38` in `Restore` (empty target, primary keys
+  preserved) or `Merge` (into a populated store) mode.
+
+  Verified against the TypeScript implementation in **both directions** with
+  committed fixtures, because a self-consistent bug round-trips perfectly. A
+  TS-produced container with fixed salt/nonce is **re-encrypted byte-identically**
+  by Rust — empirical proof of the Argon2id parameters and the TS SDK's
+  non-standard GHASH framing. A TS container encrypted under an NFD password
+  decrypts under the NFC form, proving normalization. A Rust-produced container
+  round-trips through TS restore and re-export.
+
+  Known limits, documented in-code: restore is SQLite-only (merge works on all
+  backends); `canonicalize` rejects non-integer numbers, where TS stringifies
+  any finite float — ECMAScript float formatting is not reproducible without a
+  JS `Number::toString` port, so Rust fails loudly rather than silently emitting
+  different bytes.
+
+- **`WalletBuilder::with_backup_sqlite` / `with_backup_mysql` /
+  `with_backup_postgres` / `with_backup_provider`** — `WalletStorageManager`
+  always supported backup stores; the builder passed it an empty vector, so the
+  machinery was unreachable. Replication runs at build time and on `set_active`
+  / `add_wallet_storage_provider`. It is **not periodic** — TS's
+  `TaskSyncWhenIdle` is a stub and this port is faithful to that; call
+  `WalletStorageManager::update_backups` to bring a replica current.
+
+- **`tests/recovery_proof.rs`** — from a BRC-39 container and a password alone,
+  with a `WalletServices` that panics on contact, a wallet is restored and a
+  spend of a restored output is validated through the script interpreter. Not a
+  row count: a restore can return rows with wrong derivation coordinates and
+  produce a wallet that owns nothing.
+
+### Fixed — storage
+
+- **Cross-tenant reads and writes on the authenticated storage surface.** Six
+  `*_auth` methods of `WalletStorageProvider` accepted an `AuthId` and
+  discarded it, returning or mutating rows for every user in the database.
+  `outputs` rows carry the complete BRC-42 derivation coordinates, so in a
+  multi-user database this disclosed another tenant's entire output set.
+
+  Enforcement is now a capability: `UserScope` has a private field and one
+  constructor, which resolves the transport-verified identity key and rejects a
+  mismatching `user_id` claim. `StorageReader` stays deliberately
+  tenant-unscoped — the monitor sweeps every user and `proven_txs` is
+  deduplicated chain data shared across users.
+
+  Also: `find_certificates_auth` silently ignored a foreign `user_id` instead of
+  rejecting it and dropped the `certificate_id` filter; `relinquish_*` now scope
+  their find, so a cross-tenant attempt is indistinguishable from "not found".
+
+- **Writes failed instead of waiting under load.** All writes funnel through a
+  single-connection writer pool whose acquire timeout was the 5s *connect*
+  timeout, so at high concurrency roughly half of all writes hard-failed with
+  `PoolTimedOut`. Now a configurable `write_acquire_timeout` (default 60s).
+
+- **SQLite pragmas configured only one connection.** They were issued as pool
+  queries, so replacement connections came up without them. Now set in connect
+  options. `synchronous` is configurable and defaults to `FULL`; the measured
+  cost against `NORMAL` is within noise, because fsync amortizes over large
+  commits.
+
+- **The process-global spend lock was held across broadcast**, so every spend,
+  internalize and abort queued behind a network call. Narrowed to UTXO
+  allocation and `process_action`'s check-then-act; signing and broadcast run
+  outside it.
+
+- **Storage-to-storage sync parity**: the persisted `idMap` was discarded every
+  chunk, so foreign→local ID mappings never accumulated; an unmapped required FK
+  silently fell back to the raw foreign id, attaching rows to unrelated local
+  records; and the sync window advanced per chunk while offsets reset, skipping
+  rows.
+
 ## [0.4.0] - 2026-07-28
 
 Breaking. `Wallet` no longer hard-codes its custody model.
