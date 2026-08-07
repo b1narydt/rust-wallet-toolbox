@@ -1,0 +1,12 @@
+{
+  "identityKey": "035ab4689e400a4a160cf01cd44730845a54768df8547dcdf073d964f109f18c30",
+  "passwordNfd": "Café fixture pw",
+  "passwordNfc": "Café fixture pw",
+  "lowcost": {
+    "iterations": 1,
+    "memoryKiB": 64,
+    "parallelism": 1,
+    "saltByte": 7,
+    "nonceByte": 9
+  }
+}

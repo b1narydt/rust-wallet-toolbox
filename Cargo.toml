@@ -34,6 +34,7 @@ rand = "0.8"
 base64 = "0.22"
 sha2 = "0.10"
 argon2 = "0.5"
+unicode-normalization = "0.1"
 hex = "0.4"
 uuid = { version = "1", features = ["v4"] }
 tokio-tungstenite = { version = "0.24", features = ["native-tls"], optional = true }
@@ -47,6 +48,11 @@ sqlite = ["sqlx/sqlite"]
 mysql = ["sqlx/mysql"]
 postgres = ["sqlx/postgres"]
 chaintracks-ws = ["dep:tokio-tungstenite", "dep:url"]
+
+# Argon2id at the BRC-39 default cost (7 iterations over 128 MiB) is unusably
+# slow unoptimized; keep the KDF fast in dev/test builds.
+[profile.dev.package.argon2]
+opt-level = 3
 
 [package.metadata.docs.rs]
 all-features = true
