@@ -19,10 +19,12 @@ use crate::monitor::Monitor;
 use crate::services::traits::WalletServices;
 use crate::signer::signing_provider::SigningProvider;
 use crate::storage::manager::WalletStorageManager;
+use crate::storage::traits::wallet_provider::WalletStorageProvider;
 use crate::storage::StorageConfig;
 use crate::types::Chain;
 use crate::utility::script_template_brc29::ScriptTemplateBRC29;
 use crate::wallet::privileged::PrivilegedKeyManager;
+use crate::wallet::types::AuthId;
 use crate::wallet::types::{KeyPair, WalletArgs};
 use crate::wallet::wallet::Wallet;
 
@@ -57,6 +59,7 @@ pub struct SetupWallet {
 // ---------------------------------------------------------------------------
 
 /// Internal storage configuration variant for the builder.
+#[derive(Clone)]
 enum StorageKind {
     /// SQLite with a file path or `:memory:`.
     Sqlite(String),
@@ -66,6 +69,124 @@ enum StorageKind {
     /// PostgreSQL connection URL.
     #[allow(dead_code)]
     Postgres(String),
+}
+
+/// Connection-pool settings the builder applies to every store it opens.
+#[derive(Clone, Copy, Default)]
+struct PoolOverrides {
+    max_connections: Option<u32>,
+    min_connections: Option<u32>,
+    idle_timeout: Option<std::time::Duration>,
+    connect_timeout: Option<std::time::Duration>,
+}
+
+impl PoolOverrides {
+    fn apply(&self, config: &mut StorageConfig) {
+        if let Some(max) = self.max_connections {
+            config.max_connections = max;
+        }
+        if let Some(min) = self.min_connections {
+            config.min_connections = min;
+        }
+        if let Some(timeout) = self.idle_timeout {
+            config.idle_timeout = timeout;
+        }
+        if let Some(timeout) = self.connect_timeout {
+            config.connect_timeout = timeout;
+        }
+    }
+}
+
+/// Open one storage provider and run its migrations.
+///
+/// Shared by the active store and every backup so a backup is opened exactly
+/// the way the active store is — same pool settings, same migrations. A backup
+/// built differently from the store it mirrors is a backup that fails when it
+/// is finally needed.
+async fn open_storage_provider(
+    kind: StorageKind,
+    chain: &Chain,
+    storage_identity_key: Option<&str>,
+    pool: PoolOverrides,
+) -> WalletResult<Arc<dyn WalletStorageProvider>> {
+    let provider: Arc<dyn WalletStorageProvider> = match kind {
+        StorageKind::Sqlite(path) => {
+            let url = if path == ":memory:" {
+                "sqlite::memory:".to_string()
+            } else {
+                format!("sqlite:{path}")
+            };
+            let mut config = StorageConfig {
+                url,
+                ..StorageConfig::default()
+            };
+            pool.apply(&mut config);
+            #[cfg(feature = "sqlite")]
+            {
+                let storage =
+                    crate::storage::sqlx_impl::SqliteStorage::new_sqlite(config, chain.clone())
+                        .await?;
+                Arc::new(storage) as Arc<dyn WalletStorageProvider>
+            }
+            #[cfg(not(feature = "sqlite"))]
+            {
+                let _ = config;
+                return Err(WalletError::InvalidOperation(
+                    "SQLite feature not enabled. Add `sqlite` feature to Cargo.toml.".to_string(),
+                ));
+            }
+        }
+        StorageKind::Mysql(url) => {
+            let mut config = StorageConfig {
+                url,
+                ..StorageConfig::default()
+            };
+            pool.apply(&mut config);
+            #[cfg(feature = "mysql")]
+            {
+                let mut storage =
+                    crate::storage::sqlx_impl::MysqlStorage::new_mysql(config, chain.clone())
+                        .await?;
+                if let Some(sik) = storage_identity_key {
+                    storage.storage_identity_key = sik.to_string();
+                }
+                Arc::new(storage) as Arc<dyn WalletStorageProvider>
+            }
+            #[cfg(not(feature = "mysql"))]
+            {
+                let _ = config;
+                let _ = storage_identity_key;
+                return Err(WalletError::InvalidOperation(
+                    "MySQL feature not enabled. Add `mysql` feature to Cargo.toml.".to_string(),
+                ));
+            }
+        }
+        StorageKind::Postgres(url) => {
+            let mut config = StorageConfig {
+                url,
+                ..StorageConfig::default()
+            };
+            pool.apply(&mut config);
+            #[cfg(feature = "postgres")]
+            {
+                let storage =
+                    crate::storage::sqlx_impl::PgStorage::new_postgres(config, chain.clone())
+                        .await?;
+                Arc::new(storage) as Arc<dyn WalletStorageProvider>
+            }
+            #[cfg(not(feature = "postgres"))]
+            {
+                let _ = config;
+                return Err(WalletError::InvalidOperation(
+                    "PostgreSQL feature not enabled. Add `postgres` feature to Cargo.toml."
+                        .to_string(),
+                ));
+            }
+        }
+    };
+
+    provider.migrate("setup", "").await?;
+    Ok(provider)
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +225,8 @@ pub struct WalletBuilder {
     key_deriver: Option<Arc<dyn KeyDeriverApi>>,
     signing_provider: Option<Arc<dyn SigningProvider>>,
     storage_config: Option<StorageKind>,
+    backup_configs: Vec<StorageKind>,
+    backup_providers: Vec<Arc<dyn WalletStorageProvider>>,
     storage_identity_key: Option<String>,
     services: Option<Arc<dyn WalletServices>>,
     use_default_services: bool,
@@ -124,6 +247,8 @@ impl WalletBuilder {
             key_deriver: None,
             signing_provider: None,
             storage_config: None,
+            backup_configs: Vec::new(),
+            backup_providers: Vec::new(),
             storage_identity_key: None,
             services: None,
             use_default_services: false,
@@ -200,6 +325,53 @@ impl WalletBuilder {
     /// Use a PostgreSQL database at the given URL.
     pub fn with_postgres(mut self, url: &str) -> Self {
         self.storage_config = Some(StorageKind::Postgres(url.to_string()));
+        self
+    }
+
+    /// Replicate the active store into a SQLite file at the given path.
+    ///
+    /// The wallet database is key material, not a cache: BRC-42 output
+    /// derivation is not enumerable, so losing `derivation_prefix` /
+    /// `derivation_suffix` leaves UTXOs unspendable even with every key. A
+    /// backup store is a live replica of that metadata.
+    ///
+    /// Replication happens at build time and on `set_active` /
+    /// `add_wallet_storage_provider`. It is **not** periodic — there is no
+    /// background task pushing later writes, so call
+    /// [`WalletStorageManager::update_backups`] when you want the replica
+    /// brought current.
+    ///
+    /// May be called more than once to configure several backups.
+    pub fn with_backup_sqlite(mut self, path: &str) -> Self {
+        self.backup_configs
+            .push(StorageKind::Sqlite(path.to_string()));
+        self
+    }
+
+    /// Replicate the active store into a MySQL database. See
+    /// [`Self::with_backup_sqlite`] for replication timing.
+    pub fn with_backup_mysql(mut self, url: &str) -> Self {
+        self.backup_configs
+            .push(StorageKind::Mysql(url.to_string()));
+        self
+    }
+
+    /// Replicate the active store into a PostgreSQL database. See
+    /// [`Self::with_backup_sqlite`] for replication timing.
+    pub fn with_backup_postgres(mut self, url: &str) -> Self {
+        self.backup_configs
+            .push(StorageKind::Postgres(url.to_string()));
+        self
+    }
+
+    /// Replicate the active store into an already-constructed provider.
+    ///
+    /// For backups the builder cannot open itself — a remote store, or one
+    /// wrapped in custom middleware. The caller owns its migrations; the
+    /// builder runs none against it. See [`Self::with_backup_sqlite`] for
+    /// replication timing.
+    pub fn with_backup_provider(mut self, provider: Arc<dyn WalletStorageProvider>) -> Self {
+        self.backup_providers.push(provider);
         self
     }
 
@@ -317,117 +489,70 @@ impl WalletBuilder {
 
         let identity_key_hex = key_deriver.identity_key().to_der_hex();
 
-        // Build a closure to apply pool overrides to StorageConfig
-        let pool_max = self.pool_max_connections;
-        let pool_min = self.pool_min_connections;
-        let pool_idle = self.pool_idle_timeout;
-        let pool_connect = self.pool_connect_timeout;
-        let apply_pool_overrides = |config: &mut StorageConfig| {
-            if let Some(max) = pool_max {
-                config.max_connections = max;
-            }
-            if let Some(min) = pool_min {
-                config.min_connections = min;
-            }
-            if let Some(timeout) = pool_idle {
-                config.idle_timeout = timeout;
-            }
-            if let Some(timeout) = pool_connect {
-                config.connect_timeout = timeout;
-            }
+        let pool = PoolOverrides {
+            max_connections: self.pool_max_connections,
+            min_connections: self.pool_min_connections,
+            idle_timeout: self.pool_idle_timeout,
+            connect_timeout: self.pool_connect_timeout,
         };
 
-        // Create storage provider based on configuration.
-        // We need two references: one for migration (StorageProvider) and one
-        // as WalletStorageProvider for the manager. Each concrete type implements
-        // both traits, so we create the concrete Arc and coerce separately.
-        use crate::storage::traits::wallet_provider::WalletStorageProvider;
-        let provider: Arc<dyn WalletStorageProvider> = match storage_kind {
-            StorageKind::Sqlite(path) => {
-                let url = if path == ":memory:" {
-                    "sqlite::memory:".to_string()
-                } else {
-                    format!("sqlite:{path}")
-                };
-                let mut config = StorageConfig {
-                    url,
-                    ..StorageConfig::default()
-                };
-                apply_pool_overrides(&mut config);
-                #[cfg(feature = "sqlite")]
-                {
-                    let storage =
-                        crate::storage::sqlx_impl::SqliteStorage::new_sqlite(config, chain.clone())
-                            .await?;
-                    Arc::new(storage) as Arc<dyn WalletStorageProvider>
-                }
-                #[cfg(not(feature = "sqlite"))]
-                {
-                    let _ = config;
-                    return Err(WalletError::InvalidOperation(
-                        "SQLite feature not enabled. Add `sqlite` feature to Cargo.toml."
-                            .to_string(),
-                    ));
-                }
-            }
-            StorageKind::Mysql(url) => {
-                let mut config = StorageConfig {
-                    url,
-                    ..StorageConfig::default()
-                };
-                apply_pool_overrides(&mut config);
-                #[cfg(feature = "mysql")]
-                {
-                    let mut storage =
-                        crate::storage::sqlx_impl::MysqlStorage::new_mysql(config, chain.clone())
-                            .await?;
-                    if let Some(ref sik) = self.storage_identity_key {
-                        storage.storage_identity_key = sik.clone();
-                    }
-                    Arc::new(storage) as Arc<dyn WalletStorageProvider>
-                }
-                #[cfg(not(feature = "mysql"))]
-                {
-                    let _ = config;
-                    return Err(WalletError::InvalidOperation(
-                        "MySQL feature not enabled. Add `mysql` feature to Cargo.toml.".to_string(),
-                    ));
-                }
-            }
-            StorageKind::Postgres(url) => {
-                let mut config = StorageConfig {
-                    url,
-                    ..StorageConfig::default()
-                };
-                apply_pool_overrides(&mut config);
-                #[cfg(feature = "postgres")]
-                {
-                    let storage =
-                        crate::storage::sqlx_impl::PgStorage::new_postgres(config, chain.clone())
-                            .await?;
-                    Arc::new(storage) as Arc<dyn WalletStorageProvider>
-                }
-                #[cfg(not(feature = "postgres"))]
-                {
-                    let _ = config;
-                    return Err(WalletError::InvalidOperation(
-                        "PostgreSQL feature not enabled. Add `postgres` feature to Cargo.toml."
-                            .to_string(),
-                    ));
-                }
-            }
-        };
+        // Open the active store, then every backup, through one path.
+        let provider = open_storage_provider(
+            storage_kind,
+            &chain,
+            self.storage_identity_key.as_deref(),
+            pool,
+        )
+        .await?;
 
-        // Run migrations and make available via the provider's WalletStorageProvider interface.
-        provider.migrate("setup", "").await?;
+        let mut backups: Vec<Arc<dyn WalletStorageProvider>> = self.backup_providers;
+        for kind in self.backup_configs {
+            backups.push(open_storage_provider(kind, &chain, None, pool).await?);
+        }
+        let has_backups = !backups.is_empty();
+
+        // Declare each backup a backup *of this active store* before the
+        // manager partitions them.
+        //
+        // A store's user record names the store it considers active, and a
+        // freshly created one names itself. The manager reads that as two
+        // stores each claiming to be active — a genuine conflict when both
+        // hold data, but wrong for a store the caller has just designated as a
+        // backup. Configuring a backup on the builder IS the declaration, so
+        // record it rather than leaving the manager to guess.
+        if has_backups {
+            let active_sik = provider.make_available().await?.storage_identity_key;
+            for backup in &backups {
+                backup.make_available().await?;
+                let (user, _) = backup.find_or_insert_user(&identity_key_hex).await?;
+                if user.active_storage != active_sik {
+                    let auth = AuthId {
+                        identity_key: identity_key_hex.clone(),
+                        user_id: Some(user.user_id),
+                        is_active: None,
+                    };
+                    backup.set_active(&auth, &active_sik).await?;
+                }
+            }
+        }
 
         // Create ONE storage manager and wrap in Arc -- shared by wallet, monitor, and caller.
         let storage = Arc::new(WalletStorageManager::new(
             identity_key_hex.clone(),
             Some(provider.clone()),
-            vec![],
+            backups,
         ));
         storage.make_available().await?;
+
+        // Replicate the active store into every backup before handing the
+        // wallet out. `make_available` only partitions the stores; without
+        // this a freshly-configured backup stays empty until the next
+        // `set_active` or `add_wallet_storage_provider`, which is a backup
+        // that exists but holds nothing. Subsequent boots are incremental —
+        // the sync engine resumes from the persisted sync_states row.
+        if has_backups {
+            storage.update_backups(None).await?;
+        }
 
         // Determine services
         let services: Option<Arc<dyn WalletServices>> = if let Some(svc) = self.services {
