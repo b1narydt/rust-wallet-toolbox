@@ -25,6 +25,23 @@ pub use traits::{StorageProvider, StorageReader, StorageReaderWriter, WalletStor
 use crate::error::{WalletError, WalletResult};
 use std::time::Duration;
 
+/// SQLite `PRAGMA synchronous` level for the writer pool (WAL mode).
+///
+/// `Full` fsyncs the WAL on every commit: a committed transaction survives
+/// power loss. `Normal` skips the per-commit fsync: commits since the last
+/// WAL checkpoint can be lost on power loss (never on application crash,
+/// and the database never corrupts either way). `Normal` is meaningfully
+/// faster; `Full` is the default because a wallet losing a committed spend
+/// record double-spends later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SqliteSyncMode {
+    /// Fsync per commit — committed means durable across power loss.
+    #[default]
+    Full,
+    /// Fsync at checkpoint only — faster, may lose recent commits on power loss.
+    Normal,
+}
+
 /// Configuration for storage pool connections.
 #[derive(Debug, Clone)]
 pub struct StorageConfig {
@@ -38,8 +55,16 @@ pub struct StorageConfig {
     pub max_connections: u32,
     /// How long an idle connection can remain in the pool before being closed.
     pub idle_timeout: Duration,
-    /// Maximum time to wait when acquiring a connection from the pool.
+    /// Maximum time to wait when acquiring a read connection from the pool.
     pub connect_timeout: Duration,
+    /// Maximum time a write may queue for the single SQLite writer
+    /// connection before failing. All writes serialize through one
+    /// connection, so under a burst of large transactions this is queue
+    /// depth × transaction time; a short timeout converts backpressure
+    /// into failed operations. (SQLite only.)
+    pub write_acquire_timeout: Duration,
+    /// Writer `PRAGMA synchronous` level (SQLite only).
+    pub sqlite_synchronous: SqliteSyncMode,
 }
 
 impl Default for StorageConfig {
@@ -51,6 +76,8 @@ impl Default for StorageConfig {
             max_connections: 50,
             idle_timeout: Duration::from_secs(600), // 10 minutes
             connect_timeout: Duration::from_secs(5),
+            write_acquire_timeout: Duration::from_secs(60),
+            sqlite_synchronous: SqliteSyncMode::Full,
         }
     }
 }

@@ -38,7 +38,7 @@ impl SqliteStorage {
     /// * `database_url` - SQLite database URL (e.g., "sqlite:chaintracks.db" or "sqlite::memory:")
     /// * `chain` - The blockchain network to track
     pub async fn new(database_url: &str, chain: Chain) -> WalletResult<Self> {
-        let pool = SqlitePool::connect(database_url).await?;
+        let pool = Self::connect_pool(database_url).await?;
 
         Ok(Self {
             pool,
@@ -56,7 +56,7 @@ impl SqliteStorage {
         live_height_threshold: u32,
         reorg_height_threshold: u32,
     ) -> WalletResult<Self> {
-        let pool = SqlitePool::connect(database_url).await?;
+        let pool = Self::connect_pool(database_url).await?;
 
         Ok(Self {
             pool,
@@ -65,6 +65,20 @@ impl SqliteStorage {
             reorg_height_threshold,
             available: RwLock::new(false),
         })
+    }
+
+    /// Connect with WAL journal mode and a busy timeout so concurrent
+    /// header reads and writes queue instead of failing with SQLITE_BUSY
+    /// (the pool holds multiple connections that can all write).
+    async fn connect_pool(database_url: &str) -> WalletResult<Pool<Sqlite>> {
+        use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
+        use std::str::FromStr;
+
+        let opts = SqliteConnectOptions::from_str(database_url)?
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(std::time::Duration::from_secs(30))
+            .create_if_missing(true);
+        Ok(SqlitePool::connect_with(opts).await?)
     }
 
     /// Open in-memory database (for testing)

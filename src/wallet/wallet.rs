@@ -1616,11 +1616,10 @@ impl ContextualWallet for Wallet {
         originator: Option<&str>,
         ctx: &SigningContext,
     ) -> Result<CreateActionResult, SdkWalletError> {
-        let _spend_guard = self
-            .storage
-            .acquire_spend_lock()
-            .await
-            .map_err(to_sdk_error)?;
+        // The spend lock is taken inside the signer pipeline, scoped to the
+        // storage allocation and process steps only — holding it here for
+        // the whole pipeline would serialize every spend-path caller behind
+        // signing ceremonies and network broadcast.
         tracing::debug!(description = %args.description, "createAction starting");
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_create_action_args(&args)?;
@@ -1743,11 +1742,8 @@ impl ContextualWallet for Wallet {
         originator: Option<&str>,
         ctx: &SigningContext,
     ) -> Result<SignActionResult, SdkWalletError> {
-        let _spend_guard = self
-            .storage
-            .acquire_spend_lock()
-            .await
-            .map_err(to_sdk_error)?;
+        // Spend lock handling lives in the signer pipeline (see
+        // create_action_in) — never held across signing or broadcast.
         tracing::debug!("signAction starting");
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_sign_action_args(&args)?;

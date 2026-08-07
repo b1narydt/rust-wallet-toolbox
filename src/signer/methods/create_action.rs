@@ -160,8 +160,16 @@ pub async fn signer_create_action(
         is_active: None,
     };
     let storage_args = to_storage_args(args);
-    let mut dcr = storage.create_action(&auth_id, &storage_args).await?;
-    merge_input_beef_signer(storage, &mut dcr).await?;
+    // The spend lock serializes UTXO allocation across concurrent callers.
+    // It covers exactly the allocating call (and the read-back of what was
+    // allocated) — NOT signing or broadcast, which can take seconds over the
+    // network and would stall every other spend-path caller.
+    let dcr = {
+        let _spend_guard = storage.acquire_spend_lock().await?;
+        let mut dcr = storage.create_action(&auth_id, &storage_args).await?;
+        merge_input_beef_signer(storage, &mut dcr).await?;
+        dcr
+    };
     let reference = dcr.reference.clone();
 
     // --- Step 2: Build unsigned transaction ---
@@ -283,7 +291,14 @@ pub async fn signer_create_action(
             vec![]
         },
     };
-    let process_result = storage.process_action(&auth_id, &process_args).await?;
+    // process_action's status check-then-act (find by reference, verify
+    // Unsigned/Unprocessed, then flip) is not atomic on its own; the spend
+    // lock serializes it against a concurrent duplicate submission. Released
+    // before broadcast — the network must never run under this lock.
+    let process_result = {
+        let _spend_guard = storage.acquire_spend_lock().await?;
+        storage.process_action(&auth_id, &process_args).await?
+    };
     // --- Step 5: Broadcast and update status ---
     // In the TS implementation, shareReqsWithWorld handles both broadcast
     // and the post-broadcast status update. The initial status from
