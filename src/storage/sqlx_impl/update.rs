@@ -330,8 +330,15 @@ mod sqlite_impl {
                 binds.push(BindVal::Int64(*v));
             }
             if let Some(v) = &update.basket_id {
-                sets.push("basketId = ?");
-                binds.push(BindVal::Int64(*v));
+                if *v == 0 {
+                    // Convention: basket_id=0 means "clear to NULL" (no basket),
+                    // same as the spent_by=0 convention below. 0 is never a real
+                    // basketId and would violate the FK.
+                    sets.push("basketId = NULL");
+                } else {
+                    sets.push("basketId = ?");
+                    binds.push(BindVal::Int64(*v));
+                }
             }
             if let Some(v) = &update.spendable {
                 sets.push("spendable = ?");
@@ -841,7 +848,15 @@ macro_rules! impl_update_methods {
                     let mut idx = 0usize;
                     if let Some(v) = &update.user_id { idx += 1; sets.push(format!("userId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
                     if let Some(v) = &update.transaction_id { idx += 1; sets.push(format!("transactionId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.basket_id { idx += 1; sets.push(format!("basketId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
+                    if let Some(v) = &update.basket_id {
+                        if *v == 0 {
+                            // Convention: basket_id=0 means "clear to NULL" (no basket),
+                            // same as the spent_by=0 convention below.
+                            sets.push("basketId = NULL".to_string());
+                        } else {
+                            idx += 1; sets.push(format!("basketId = {}", ph(idx))); binds.push(BindVal::Int64(*v));
+                        }
+                    }
                     if let Some(v) = &update.spendable { idx += 1; sets.push(format!("spendable = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
                     if let Some(v) = &update.change { idx += 1; sets.push(format!("{} = {}", qc("change"), ph(idx))); binds.push(BindVal::Bool(*v)); }
                     if let Some(v) = &update.vout { idx += 1; sets.push(format!("vout = {}", ph(idx))); binds.push(BindVal::Int32(*v)); }

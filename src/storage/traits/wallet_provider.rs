@@ -47,6 +47,7 @@ use crate::storage::sync::{ProcessSyncChunkResult, SyncChunk};
 use crate::storage::traits::provider::StorageProvider;
 use crate::storage::traits::reader::StorageReader;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
+use crate::storage::traits::scope::resolve_user_scope;
 use crate::storage::TrxToken;
 use crate::storage::{verify_one, verify_one_or_none};
 use crate::tables::{
@@ -61,6 +62,21 @@ use crate::wallet::types::{AdminStatsResult, AuthId};
 /// - Local providers (SqliteStorage) satisfy via the blanket impl below.
 /// - `StorageClient` (Phase 3) implements directly for remote JSON-RPC storage.
 /// - `WalletStorageManager` (Phase 4) accepts as `Arc<dyn WalletStorageProvider>`.
+///
+/// # Tenant boundary
+///
+/// This trait is where multi-tenant isolation is enforced. Every method that
+/// takes an [`AuthId`] resolves it through
+/// [`resolve_user_scope`](crate::storage::traits::scope::resolve_user_scope)
+/// and confines reads and writes to the resolved user's rows. Methods that
+/// instead carry an identity key inside their args (`find_or_insert_user`,
+/// `get_sync_chunk`, `process_sync_chunk`) transport a *claim*: a remote
+/// server dispatching them MUST verify that claim equals the transport-
+/// authenticated identity before calling (TS StorageServer.ts:177-266 does
+/// exactly this). The layers below (`StorageReader`/`StorageReaderWriter`)
+/// are deliberately tenant-unscoped — the monitor and sync engine operate
+/// across users, and `proven_txs` is deduplicated chain data shared by all
+/// users — so nothing below this trait may be exposed to remote callers.
 ///
 /// Method groupings follow the TypeScript hierarchy:
 /// - WalletStorageReader: is_available, get_settings, find_*, list_*
@@ -157,6 +173,13 @@ pub trait WalletStorageProvider: Send + Sync {
     /// Find proven transaction requests.
     ///
     /// Wire method: `findProvenTxReqs`
+    ///
+    /// Server contract: this method carries no caller identity and
+    /// `proven_tx_reqs` has no tenant column (ownership is derived through
+    /// `transactions.txid`), so it CANNOT be tenant-scoped here. The TS wire
+    /// protocol has the same shape. A multi-tenant server must either not
+    /// expose it or answer it via `get_proven_tx_reqs_for_user`
+    /// (`StorageReader`), which joins through the caller's transactions.
     async fn find_proven_tx_reqs(
         &self,
         args: &FindProvenTxReqsArgs,
@@ -212,6 +235,10 @@ pub trait WalletStorageProvider: Send + Sync {
     /// Find or insert a user record by identity key.
     ///
     /// Wire method: `findOrInsertUser`
+    ///
+    /// Server contract: `identity_key` is a claim; a multi-tenant server must
+    /// require it to equal the transport-authenticated identity
+    /// (TS StorageServer.ts:178).
     async fn find_or_insert_user(&self, identity_key: &str) -> WalletResult<(User, bool)>;
 
     /// Abort (cancel) a transaction by reference, releasing locked UTXOs.
@@ -304,11 +331,19 @@ pub trait WalletStorageProvider: Send + Sync {
     /// Get the next incremental sync chunk of entities changed since the last sync.
     ///
     /// Wire method: `getSyncChunk`
+    ///
+    /// Server contract: `args.identity_key` selects whose rows are exported
+    /// and is a claim; a multi-tenant server must require it to equal the
+    /// transport-authenticated identity (TS StorageServer.ts:261).
     async fn get_sync_chunk(&self, args: &RequestSyncChunkArgs) -> WalletResult<SyncChunk>;
 
     /// Process an incoming sync chunk, applying entities with ID remapping.
     ///
     /// Wire method: `processSyncChunk`
+    ///
+    /// Server contract: `args.identity_key` / `chunk.user_identity_key` are
+    /// claims; a multi-tenant server must require them to equal the
+    /// transport-authenticated identity (TS StorageServer.ts:185-191, 261).
     async fn process_sync_chunk(
         &self,
         args: &RequestSyncChunkArgs,
@@ -321,6 +356,7 @@ pub trait WalletStorageProvider: Send + Sync {
     // internals (signer, certificates, beef helper, monitor).
     // Local providers implement via the blanket impl.
     // StorageClient returns NotImplemented for these.
+    // They are tenant-UNSCOPED: never dispatch them from a remote surface.
     // -----------------------------------------------------------------------
 
     /// Find a user by identity key.
@@ -525,7 +561,14 @@ pub trait WalletStorageProvider: Send + Sync {
         Err(WalletError::NotImplemented("count_monitor_events".into()))
     }
 
-    /// Returns aggregate deployment statistics.
+    /// Returns aggregate deployment statistics (deliberately cross-user).
+    ///
+    /// `auth_id` is the claimed admin identity key, not a tenant scope.
+    /// Server contract (TS StorageServer.ts:180-183): a multi-tenant server
+    /// must require it to equal the transport-authenticated identity AND be
+    /// on the configured admin allowlist before dispatching. No local
+    /// implementation exists yet (`StorageReaderWriter::admin_stats` is
+    /// NotImplemented), so the parameter is unused here.
     async fn admin_stats(&self, auth_id: &str) -> WalletResult<AdminStatsResult> {
         let _ = auth_id;
         Err(WalletError::NotImplemented("admin_stats".into()))
@@ -710,33 +753,9 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         auth: &AuthId,
         args: &FindCertificatesArgs,
     ) -> WalletResult<Vec<Certificate>> {
-        // Resolve user_id to scope the query to this identity
-        let (user, _) =
-            StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
-        let mut scoped_args = FindCertificatesArgs {
-            partial: CertificatePartial {
-                user_id: Some(user.user_id),
-                ..Default::default()
-            },
-            since: args.since,
-            paged: args.paged.clone(),
-        };
-        // Merge caller-supplied partial (caller fields take precedence except user_id)
-        if scoped_args.partial.cert_type.is_none() {
-            scoped_args.partial.cert_type = args.partial.cert_type.clone();
-        }
-        if scoped_args.partial.serial_number.is_none() {
-            scoped_args.partial.serial_number = args.partial.serial_number.clone();
-        }
-        if scoped_args.partial.certifier.is_none() {
-            scoped_args.partial.certifier = args.partial.certifier.clone();
-        }
-        if scoped_args.partial.subject.is_none() {
-            scoped_args.partial.subject = args.partial.subject.clone();
-        }
-        if scoped_args.partial.is_deleted.is_none() {
-            scoped_args.partial.is_deleted = args.partial.is_deleted;
-        }
+        let scope = resolve_user_scope(self, auth).await?;
+        let mut scoped_args = args.clone();
+        scope.apply(&mut scoped_args.partial)?;
         StorageReader::find_certificates(self, &scoped_args, None).await
     }
 
@@ -745,8 +764,10 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         auth: &AuthId,
         args: &FindOutputBasketsArgs,
     ) -> WalletResult<Vec<OutputBasket>> {
-        let _ = auth; // auth context available if needed for future scoping
-        StorageReader::find_output_baskets(self, args, None).await
+        let scope = resolve_user_scope(self, auth).await?;
+        let mut scoped_args = args.clone();
+        scope.apply(&mut scoped_args.partial)?;
+        StorageReader::find_output_baskets(self, &scoped_args, None).await
     }
 
     async fn find_outputs_auth(
@@ -754,8 +775,10 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         auth: &AuthId,
         args: &FindOutputsArgs,
     ) -> WalletResult<Vec<Output>> {
-        let _ = auth; // auth context available if needed for future scoping
-        StorageReader::find_outputs(self, args, None).await
+        let scope = resolve_user_scope(self, auth).await?;
+        let mut scoped_args = args.clone();
+        scope.apply(&mut scoped_args.partial)?;
+        StorageReader::find_outputs(self, &scoped_args, None).await
     }
 
     async fn find_proven_tx_reqs(
@@ -770,12 +793,11 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         auth: &AuthId,
         args: &ListActionsArgs,
     ) -> WalletResult<ListActionsResult> {
-        let (user, _) =
-            StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
+        let scope = resolve_user_scope(self, auth).await?;
         crate::storage::methods::list_actions::list_actions(
             self as &dyn StorageReader,
             &auth.identity_key,
-            user.user_id,
+            scope.user_id(),
             args,
             None,
         )
@@ -787,12 +809,11 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         auth: &AuthId,
         args: &ListCertificatesArgs,
     ) -> WalletResult<ListCertificatesResult> {
-        let (user, _) =
-            StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
+        let scope = resolve_user_scope(self, auth).await?;
         crate::storage::methods::list_certificates::list_certificates(
             self as &dyn StorageReader,
             &auth.identity_key,
-            user.user_id,
+            scope.user_id(),
             args,
             None,
         )
@@ -804,13 +825,12 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         auth: &AuthId,
         args: &ListOutputsArgs,
     ) -> WalletResult<ListOutputsResult> {
-        let (user, _) =
-            StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
+        let scope = resolve_user_scope(self, auth).await?;
         // Use list_outputs_rw so that specOp basket names (e.g. wallet balance) are handled.
         crate::storage::methods::list_outputs::list_outputs_rw(
             self as &dyn StorageReaderWriter,
             &auth.identity_key,
-            user.user_id,
+            scope.user_id(),
             args,
             None,
         )
@@ -857,15 +877,18 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         auth: &AuthId,
         certificate: &Certificate,
     ) -> WalletResult<i64> {
-        let _ = auth; // auth context available if needed for future scoping
-        StorageReaderWriter::insert_certificate(self, certificate, None).await
+        let scope = resolve_user_scope(self, auth).await?;
+        let mut owned = certificate.clone();
+        owned.user_id = scope.check_owner(owned.user_id)?;
+        StorageReaderWriter::insert_certificate(self, &owned, None).await
     }
 
     async fn relinquish_certificate(
         &self,
-        _auth: &AuthId,
+        auth: &AuthId,
         args: &RelinquishCertificateArgs,
     ) -> WalletResult<i64> {
+        let scope = resolve_user_scope(self, auth).await?;
         let certifier_hex = args.certifier.to_der_hex();
         let cert_type_str = String::from_utf8_lossy(args.cert_type.bytes()).to_string();
         let cert_type_str = cert_type_str.trim_end_matches('\0').to_string();
@@ -873,11 +896,14 @@ impl<T: StorageProvider> WalletStorageProvider for T {
             .trim_end_matches('\0')
             .to_string();
 
+        // Only the caller's own certificate is eligible: a foreign user's
+        // matching (certifier, serial, type) triple looks like "not found".
         let cert = verify_one(
             StorageReader::find_certificates(
                 self,
                 &FindCertificatesArgs {
                     partial: CertificatePartial {
+                        user_id: Some(scope.user_id()),
                         certifier: Some(certifier_hex),
                         serial_number: Some(serial_number_str),
                         cert_type: Some(cert_type_str),
@@ -906,9 +932,10 @@ impl<T: StorageProvider> WalletStorageProvider for T {
 
     async fn relinquish_output(
         &self,
-        _auth: &AuthId,
+        auth: &AuthId,
         args: &RelinquishOutputArgs,
     ) -> WalletResult<i64> {
+        let scope = resolve_user_scope(self, auth).await?;
         // Parse outpoint: "txid.vout"
         let outpoint_str = args.output.to_string();
         let parts: Vec<&str> = outpoint_str.rsplitn(2, '.').collect();
@@ -926,11 +953,15 @@ impl<T: StorageProvider> WalletStorageProvider for T {
             })?;
         let txid = parts[1].to_string();
 
+        // Only the caller's own output is eligible: a foreign user's row at
+        // the same outpoint looks like "not found" (TS StorageProvider.ts:761
+        // scopes this find by auth.userId).
         let output = verify_one(
             StorageReader::find_outputs(
                 self,
                 &FindOutputsArgs {
                     partial: OutputPartial {
+                        user_id: Some(scope.user_id()),
                         txid: Some(txid),
                         vout: Some(vout),
                         ..Default::default()
@@ -962,9 +993,7 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         storage_identity_key: &str,
         storage_name: &str,
     ) -> WalletResult<(SyncState, bool)> {
-        // Resolve user_id first
-        let (user, _) =
-            StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
+        let scope = resolve_user_scope(self, auth).await?;
 
         // Look up existing sync state
         let existing = verify_one_or_none(
@@ -972,7 +1001,7 @@ impl<T: StorageProvider> WalletStorageProvider for T {
                 self,
                 &FindSyncStatesArgs {
                     partial: SyncStatePartial {
-                        user_id: Some(user.user_id),
+                        user_id: Some(scope.user_id()),
                         storage_identity_key: Some(storage_identity_key.to_string()),
                         ..Default::default()
                     },
@@ -1000,7 +1029,7 @@ impl<T: StorageProvider> WalletStorageProvider for T {
             created_at: now,
             updated_at: now,
             sync_state_id: 0,
-            user_id: user.user_id,
+            user_id: scope.user_id(),
             storage_identity_key: storage_identity_key.to_string(),
             storage_name: storage_name.to_string(),
             status: SyncStatus::Unknown,
@@ -1023,11 +1052,10 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         auth: &AuthId,
         new_active_storage_identity_key: &str,
     ) -> WalletResult<i64> {
-        let (user, _) =
-            StorageReaderWriter::find_or_insert_user(self, &auth.identity_key, None).await?;
+        let scope = resolve_user_scope(self, auth).await?;
         StorageReaderWriter::update_user(
             self,
-            user.user_id,
+            scope.user_id(),
             &UserPartial {
                 active_storage: Some(new_active_storage_identity_key.to_string()),
                 ..Default::default()
