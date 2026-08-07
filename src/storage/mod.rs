@@ -9,6 +9,7 @@ pub mod beef;
 pub mod find_args;
 pub mod manager;
 pub mod methods;
+pub mod portable;
 pub mod remoting;
 pub mod sqlx_impl;
 pub mod sync;
