@@ -109,7 +109,14 @@ pub async fn signer_sign_action(
         user_id: None,
         is_active: None,
     };
-    let process_result = storage.process_action(&auth_id, &process_args).await?;
+    // The spend lock serializes process_action's status check-then-act
+    // against a concurrent duplicate submission of the same reference.
+    // Signing above and broadcast below run outside it — both can take
+    // seconds and would stall every other spend-path caller.
+    let process_result = {
+        let _spend_guard = storage.acquire_spend_lock().await?;
+        storage.process_action(&auth_id, &process_args).await?
+    };
 
     // --- Step 5: Broadcast and update status ---
     // Must mirror create_action's post-broadcast handling. In the TS reference
