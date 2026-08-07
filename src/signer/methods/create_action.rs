@@ -139,6 +139,11 @@ pub(crate) fn to_storage_args(args: &ValidCreateActionArgs) -> StorageCreateActi
 /// hands both to a [`SigningProvider`], so no root key is touched anywhere in
 /// this flow.
 ///
+/// `ctx` is who the action is made on behalf of — the transport-authenticated
+/// caller, or the wallet itself. It reaches the provider's ceremony-driving
+/// methods; `auth` is distinct — it is the wallet's own identity, scoping the
+/// storage rows.
+///
 /// [`SigningProvider`]: crate::signer::signing_provider::SigningProvider
 pub async fn signer_create_action(
     storage: &WalletStorageManager,
@@ -146,6 +151,7 @@ pub async fn signer_create_action(
     backend: &SigningBackend<'_>,
     auth: &str,
     args: &ValidCreateActionArgs,
+    ctx: &crate::signer::signing_context::SigningContext,
 ) -> WalletResult<(SignerCreateActionResult, Option<PendingSignAction>)> {
     // --- Step 1: Storage create action ---
     let auth_id = AuthId {
@@ -167,7 +173,7 @@ pub async fn signer_create_action(
             identity_pub_key,
         } => build_signable_transaction(&dcr, args, *key_deriver, identity_pub_key)?,
         SigningBackend::Delegated(provider) => {
-            build_signable_transaction_with_provider(&dcr, args, *provider).await?
+            build_signable_transaction_with_provider(&dcr, args, *provider, ctx).await?
         }
     };
 
@@ -232,9 +238,15 @@ pub async fn signer_create_action(
         SigningBackend::Delegated(provider) => {
             // Let the provider capture per-input spend context before it is
             // asked for signatures (no-op by default).
-            provider.prepare_spend_contexts(&tx, &pdi).await?;
-            complete_signed_transaction_with_provider(&mut tx, &pdi, &HashMap::new(), *provider)
-                .await?
+            provider.prepare_spend_contexts(&tx, &pdi, ctx).await?;
+            complete_signed_transaction_with_provider(
+                &mut tx,
+                &pdi,
+                &HashMap::new(),
+                *provider,
+                ctx,
+            )
+            .await?
         }
     };
 

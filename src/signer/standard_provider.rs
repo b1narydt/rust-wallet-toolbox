@@ -18,6 +18,7 @@ use bsv::wallet::types::{Counterparty, CounterpartyType, Protocol};
 use bsv::wallet::KeyDeriverApi;
 
 use crate::error::{WalletError, WalletResult};
+use crate::signer::signing_context::SigningContext;
 use crate::signer::signing_provider::SigningProvider;
 use crate::utility::script_template_brc29::{brc29_protocol, ScriptTemplateBRC29};
 
@@ -76,6 +77,9 @@ impl SigningProvider for StandardSigningProvider {
         template.lock(self.key_deriver.root_key(), &self.identity_pub_key)
     }
 
+    // The ctx is unused here and in create_signature below: this provider signs
+    // with a locally-held root key, so it is the same trust domain as the wallet
+    // — there is nothing below the seam to enforce per-caller.
     async fn sign_input(
         &self,
         sighash: &[u8; 32],
@@ -83,6 +87,7 @@ impl SigningProvider for StandardSigningProvider {
         derivation_prefix: &str,
         derivation_suffix: &str,
         unlocker_pub_key: &PublicKey,
+        _ctx: &SigningContext,
     ) -> WalletResult<Vec<u8>> {
         let template =
             ScriptTemplateBRC29::new(derivation_prefix.to_string(), derivation_suffix.to_string());
@@ -186,6 +191,7 @@ impl SigningProvider for StandardSigningProvider {
         key_id: &str,
         counterparty: &Counterparty,
         digest: &[u8; 32],
+        _ctx: &SigningContext,
     ) -> WalletResult<Vec<u8>> {
         let derived_key = self
             .key_deriver
@@ -270,7 +276,14 @@ mod tests {
         sighash.copy_from_slice(&hash);
 
         let script = provider
-            .sign_input(&sighash, sighash_type, prefix, suffix, &identity_pub)
+            .sign_input(
+                &sighash,
+                sighash_type,
+                prefix,
+                suffix,
+                &identity_pub,
+                &SigningContext::itself(),
+            )
             .await
             .unwrap();
 

@@ -40,6 +40,7 @@ use crate::wallet::discovery::OverlayCache;
 use crate::error::WalletError;
 use crate::services::traits::WalletServices;
 use crate::signer::default_signer::DefaultWalletSigner;
+use crate::signer::signing_context::{ContextualWallet, SigningContext};
 use crate::signer::signing_provider::SigningProvider;
 use crate::signer::traits::WalletSigner;
 use crate::storage::manager::WalletStorageManager;
@@ -1006,8 +1007,17 @@ impl WalletInterface for Wallet {
                 args.hash_to_directly_sign.as_deref(),
                 "hash_to_directly_sign",
             )?;
+            // BRC-100 surface: the wallet signs for itself. A host that
+            // authenticates a caller reaches the provider seam through the
+            // action path (`ContextualWallet`), not this method.
             let signature = provider
-                .create_signature(&args.protocol_id, &args.key_id, &counterparty, &digest)
+                .create_signature(
+                    &args.protocol_id,
+                    &args.key_id,
+                    &counterparty,
+                    &digest,
+                    &SigningContext::itself(),
+                )
                 .await
                 .map_err(to_sdk_error)?;
             return Ok(CreateSignatureResult { signature });
@@ -1193,125 +1203,10 @@ impl WalletInterface for Wallet {
         args: CreateActionArgs,
         originator: Option<&str>,
     ) -> Result<CreateActionResult, SdkWalletError> {
-        let _spend_guard = self
-            .storage
-            .acquire_spend_lock()
+        // The BRC-100 surface has no caller context: the wallet acts for
+        // itself. Transports that authenticate a caller use `create_action_in`.
+        self.create_action_in(args, originator, &SigningContext::itself())
             .await
-            .map_err(to_sdk_error)?;
-        tracing::debug!(description = %args.description, "createAction starting");
-        self.validate_originator(originator).map_err(to_sdk_error)?;
-        bsv::wallet::validation::validate_create_action_args(&args)?;
-
-        // Merge wallet defaults into options
-        let mut options = args.options.clone().unwrap_or_default();
-
-        // Merge trust_self from wallet defaults if not set
-        if options.trust_self.is_none() {
-            options.trust_self = self.trust_self.clone();
-        }
-
-        // Merge auto_known_txids: add wallet's BeefParty known txids
-        if self.auto_known_txids {
-            let mut beef_lock = self.beef.lock().await;
-            let known = crate::wallet::beef_helpers::get_known_txids(
-                &mut beef_lock,
-                Some(&options.known_txids),
-            );
-            options.known_txids = known;
-        }
-
-        // Build validated args for signer
-        let sign_and_process = *options.sign_and_process;
-        let no_send = *options.no_send;
-        let accept_delayed = *options.accept_delayed_broadcast;
-
-        let valid_args = crate::signer::types::ValidCreateActionArgs {
-            description: args.description,
-            inputs: args
-                .inputs
-                .iter()
-                .map(|input| {
-                    let parts: Vec<&str> = input.outpoint.rsplitn(2, '.').collect();
-                    let (vout_str, txid_str) = if parts.len() == 2 {
-                        (parts[0], parts[1])
-                    } else {
-                        ("0", input.outpoint.as_str())
-                    };
-                    crate::signer::types::ValidCreateActionInput {
-                        outpoint: crate::signer::types::OutpointInfo {
-                            txid: txid_str.to_string(),
-                            vout: vout_str.parse().unwrap_or(0),
-                        },
-                        input_description: input.input_description.clone(),
-                        unlocking_script: input.unlocking_script.clone(),
-                        unlocking_script_length: input.unlocking_script_length.unwrap_or(0)
-                            as usize,
-                        sequence_number: input.sequence_number.unwrap_or(0xffffffff),
-                    }
-                })
-                .collect(),
-            outputs: args.outputs,
-            lock_time: args.lock_time.unwrap_or(0),
-            version: args.version.unwrap_or(1),
-            labels: args.labels,
-            options: options.clone(),
-            input_beef: args.input_beef,
-            is_new_tx: true,
-            is_sign_action: !sign_and_process,
-            is_no_send: no_send,
-            is_delayed: accept_delayed,
-            is_send_with: !options.send_with.is_empty(),
-        };
-
-        let signer_result = self
-            .signer
-            .create_action(valid_args)
-            .await
-            .map_err(to_sdk_error)?;
-
-        // Convert signer result to SDK result
-        let mut result = CreateActionResult {
-            txid: signer_result.txid,
-            tx: signer_result.tx,
-            no_send_change: signer_result.no_send_change,
-            send_with_results: signer_result.send_with_results,
-            signable_transaction: signer_result.signable_transaction.map(|st| {
-                bsv::wallet::interfaces::SignableTransaction {
-                    reference: st.reference.into_bytes(),
-                    tx: st.tx,
-                }
-            }),
-        };
-
-        // Merge result beef into BeefParty
-        if let Some(ref tx_bytes) = result.tx {
-            let mut beef_lock = self.beef.lock().await;
-            if let Ok(beef) =
-                bsv::transaction::beef::Beef::from_binary(&mut std::io::Cursor::new(tx_bytes))
-            {
-                if let Err(e) = beef_lock.beef.merge_beef(&beef) {
-                    tracing::warn!("BeefParty merge failed: {e}");
-                }
-            }
-        }
-
-        // Verify returned txid-only if applicable
-        if let Some(ref mut tx_bytes) = result.tx {
-            let beef_lock = self.beef.lock().await;
-            let verified = crate::wallet::beef_helpers::verify_returned_txid_only_atomic_beef(
-                tx_bytes,
-                &beef_lock,
-                self.return_txid_only,
-                None,
-            )?;
-            *tx_bytes = verified;
-        }
-
-        // Check for unsuccessful results
-        crate::wallet::error_helpers::throw_if_any_unsuccessful_create_actions(&result)?;
-
-        tracing::info!(txid = ?result.txid, "createAction completed");
-        Ok(result)
     }
 
     async fn sign_action(
@@ -1319,75 +1214,10 @@ impl WalletInterface for Wallet {
         args: SignActionArgs,
         originator: Option<&str>,
     ) -> Result<SignActionResult, SdkWalletError> {
-        let _spend_guard = self
-            .storage
-            .acquire_spend_lock()
+        // The BRC-100 surface has no caller context: the wallet acts for
+        // itself. Transports that authenticate a caller use `sign_action_in`.
+        self.sign_action_in(args, originator, &SigningContext::itself())
             .await
-            .map_err(to_sdk_error)?;
-        tracing::debug!("signAction starting");
-        self.validate_originator(originator).map_err(to_sdk_error)?;
-        bsv::wallet::validation::validate_sign_action_args(&args)?;
-
-        let reference = String::from_utf8_lossy(&args.reference).to_string();
-        let raw_options = &args.options;
-        let options = raw_options.clone().unwrap_or_default();
-
-        // Derive Option<bool> flags from raw options, preserving None when the
-        // caller didn't specify a value.  This enables mergePriorOptions in
-        // sign_action.rs: None means "inherit from createAction", Some(v) means
-        // "caller explicitly set this".
-        let (is_no_send, is_delayed, is_send_with) = match raw_options {
-            Some(opts) => (
-                opts.no_send.0,
-                opts.accept_delayed_broadcast.0.map(|abd| !abd),
-                if opts.send_with.is_empty() {
-                    None
-                } else {
-                    Some(true)
-                },
-            ),
-            None => (None, None, None),
-        };
-
-        let valid_args = crate::signer::types::ValidSignActionArgs {
-            reference: reference.clone(),
-            spends: args.spends,
-            options,
-            is_new_tx: true,
-            is_no_send,
-            is_delayed,
-            is_send_with,
-        };
-
-        let signer_result = self
-            .signer
-            .sign_action(valid_args)
-            .await
-            .map_err(to_sdk_error)?;
-
-        let mut result = SignActionResult {
-            txid: signer_result.txid,
-            tx: signer_result.tx,
-            send_with_results: signer_result.send_with_results,
-        };
-
-        // Verify returned txid-only if applicable
-        if let Some(ref mut tx_bytes) = result.tx {
-            let beef_lock = self.beef.lock().await;
-            let verified = crate::wallet::beef_helpers::verify_returned_txid_only_atomic_beef(
-                tx_bytes,
-                &beef_lock,
-                self.return_txid_only,
-                None,
-            )?;
-            *tx_bytes = verified;
-        }
-
-        // Check for unsuccessful results
-        crate::wallet::error_helpers::throw_if_any_unsuccessful_sign_actions(&result)?;
-
-        tracing::info!(txid = ?result.txid, "signAction completed");
-        Ok(result)
     }
 
     async fn internalize_action(
@@ -1772,6 +1602,220 @@ impl WalletInterface for Wallet {
 }
 
 // ---------------------------------------------------------------------------
+// ContextualWallet implementation
+// ---------------------------------------------------------------------------
+
+/// The context-taking action variants. These hold the full createAction /
+/// signAction pipelines; `WalletInterface::create_action` / `sign_action`
+/// delegate here with [`SigningContext::itself`].
+#[async_trait]
+impl ContextualWallet for Wallet {
+    async fn create_action_in(
+        &self,
+        args: CreateActionArgs,
+        originator: Option<&str>,
+        ctx: &SigningContext,
+    ) -> Result<CreateActionResult, SdkWalletError> {
+        let _spend_guard = self
+            .storage
+            .acquire_spend_lock()
+            .await
+            .map_err(to_sdk_error)?;
+        tracing::debug!(description = %args.description, "createAction starting");
+        self.validate_originator(originator).map_err(to_sdk_error)?;
+        bsv::wallet::validation::validate_create_action_args(&args)?;
+
+        // Merge wallet defaults into options
+        let mut options = args.options.clone().unwrap_or_default();
+
+        // Merge trust_self from wallet defaults if not set
+        if options.trust_self.is_none() {
+            options.trust_self = self.trust_self.clone();
+        }
+
+        // Merge auto_known_txids: add wallet's BeefParty known txids
+        if self.auto_known_txids {
+            let mut beef_lock = self.beef.lock().await;
+            let known = crate::wallet::beef_helpers::get_known_txids(
+                &mut beef_lock,
+                Some(&options.known_txids),
+            );
+            options.known_txids = known;
+        }
+
+        // Build validated args for signer
+        let sign_and_process = *options.sign_and_process;
+        let no_send = *options.no_send;
+        let accept_delayed = *options.accept_delayed_broadcast;
+
+        let valid_args = crate::signer::types::ValidCreateActionArgs {
+            description: args.description,
+            inputs: args
+                .inputs
+                .iter()
+                .map(|input| {
+                    let parts: Vec<&str> = input.outpoint.rsplitn(2, '.').collect();
+                    let (vout_str, txid_str) = if parts.len() == 2 {
+                        (parts[0], parts[1])
+                    } else {
+                        ("0", input.outpoint.as_str())
+                    };
+                    crate::signer::types::ValidCreateActionInput {
+                        outpoint: crate::signer::types::OutpointInfo {
+                            txid: txid_str.to_string(),
+                            vout: vout_str.parse().unwrap_or(0),
+                        },
+                        input_description: input.input_description.clone(),
+                        unlocking_script: input.unlocking_script.clone(),
+                        unlocking_script_length: input.unlocking_script_length.unwrap_or(0)
+                            as usize,
+                        sequence_number: input.sequence_number.unwrap_or(0xffffffff),
+                    }
+                })
+                .collect(),
+            outputs: args.outputs,
+            lock_time: args.lock_time.unwrap_or(0),
+            version: args.version.unwrap_or(1),
+            labels: args.labels,
+            options: options.clone(),
+            input_beef: args.input_beef,
+            is_new_tx: true,
+            is_sign_action: !sign_and_process,
+            is_no_send: no_send,
+            is_delayed: accept_delayed,
+            is_send_with: !options.send_with.is_empty(),
+        };
+
+        let signer_result = self
+            .signer
+            .create_action(valid_args, ctx)
+            .await
+            .map_err(to_sdk_error)?;
+
+        // Convert signer result to SDK result
+        let mut result = CreateActionResult {
+            txid: signer_result.txid,
+            tx: signer_result.tx,
+            no_send_change: signer_result.no_send_change,
+            send_with_results: signer_result.send_with_results,
+            signable_transaction: signer_result.signable_transaction.map(|st| {
+                bsv::wallet::interfaces::SignableTransaction {
+                    reference: st.reference.into_bytes(),
+                    tx: st.tx,
+                }
+            }),
+        };
+
+        // Merge result beef into BeefParty
+        if let Some(ref tx_bytes) = result.tx {
+            let mut beef_lock = self.beef.lock().await;
+            if let Ok(beef) =
+                bsv::transaction::beef::Beef::from_binary(&mut std::io::Cursor::new(tx_bytes))
+            {
+                if let Err(e) = beef_lock.beef.merge_beef(&beef) {
+                    tracing::warn!("BeefParty merge failed: {e}");
+                }
+            }
+        }
+
+        // Verify returned txid-only if applicable
+        if let Some(ref mut tx_bytes) = result.tx {
+            let beef_lock = self.beef.lock().await;
+            let verified = crate::wallet::beef_helpers::verify_returned_txid_only_atomic_beef(
+                tx_bytes,
+                &beef_lock,
+                self.return_txid_only,
+                None,
+            )?;
+            *tx_bytes = verified;
+        }
+
+        // Check for unsuccessful results
+        crate::wallet::error_helpers::throw_if_any_unsuccessful_create_actions(&result)?;
+
+        tracing::info!(txid = ?result.txid, "createAction completed");
+        Ok(result)
+    }
+
+    async fn sign_action_in(
+        &self,
+        args: SignActionArgs,
+        originator: Option<&str>,
+        ctx: &SigningContext,
+    ) -> Result<SignActionResult, SdkWalletError> {
+        let _spend_guard = self
+            .storage
+            .acquire_spend_lock()
+            .await
+            .map_err(to_sdk_error)?;
+        tracing::debug!("signAction starting");
+        self.validate_originator(originator).map_err(to_sdk_error)?;
+        bsv::wallet::validation::validate_sign_action_args(&args)?;
+
+        let reference = String::from_utf8_lossy(&args.reference).to_string();
+        let raw_options = &args.options;
+        let options = raw_options.clone().unwrap_or_default();
+
+        // Derive Option<bool> flags from raw options, preserving None when the
+        // caller didn't specify a value.  This enables mergePriorOptions in
+        // sign_action.rs: None means "inherit from createAction", Some(v) means
+        // "caller explicitly set this".
+        let (is_no_send, is_delayed, is_send_with) = match raw_options {
+            Some(opts) => (
+                opts.no_send.0,
+                opts.accept_delayed_broadcast.0.map(|abd| !abd),
+                if opts.send_with.is_empty() {
+                    None
+                } else {
+                    Some(true)
+                },
+            ),
+            None => (None, None, None),
+        };
+
+        let valid_args = crate::signer::types::ValidSignActionArgs {
+            reference: reference.clone(),
+            spends: args.spends,
+            options,
+            is_new_tx: true,
+            is_no_send,
+            is_delayed,
+            is_send_with,
+        };
+
+        let signer_result = self
+            .signer
+            .sign_action(valid_args, ctx)
+            .await
+            .map_err(to_sdk_error)?;
+
+        let mut result = SignActionResult {
+            txid: signer_result.txid,
+            tx: signer_result.tx,
+            send_with_results: signer_result.send_with_results,
+        };
+
+        // Verify returned txid-only if applicable
+        if let Some(ref mut tx_bytes) = result.tx {
+            let beef_lock = self.beef.lock().await;
+            let verified = crate::wallet::beef_helpers::verify_returned_txid_only_atomic_beef(
+                tx_bytes,
+                &beef_lock,
+                self.return_txid_only,
+                None,
+            )?;
+            *tx_bytes = verified;
+        }
+
+        // Check for unsuccessful results
+        crate::wallet::error_helpers::throw_if_any_unsuccessful_sign_actions(&result)?;
+
+        tracing::info!(txid = ?result.txid, "signAction completed");
+        Ok(result)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // WalletArc -- Clone-able newtype for Wallet
 // ---------------------------------------------------------------------------
 //
@@ -2031,6 +2075,30 @@ impl WalletInterface for WalletArc {
             .as_ref()
             .discover_by_attributes(args, originator)
             .await
+    }
+}
+
+// WalletArc is the shape auth middleware holds (`W: WalletInterface + Clone`),
+// i.e. exactly the transport that authenticates callers — so it must be able
+// to hand the caller through too.
+#[async_trait]
+impl ContextualWallet for WalletArc {
+    async fn create_action_in(
+        &self,
+        args: CreateActionArgs,
+        originator: Option<&str>,
+        ctx: &SigningContext,
+    ) -> Result<CreateActionResult, SdkWalletError> {
+        self.0.as_ref().create_action_in(args, originator, ctx).await
+    }
+
+    async fn sign_action_in(
+        &self,
+        args: SignActionArgs,
+        originator: Option<&str>,
+        ctx: &SigningContext,
+    ) -> Result<SignActionResult, SdkWalletError> {
+        self.0.as_ref().sign_action_in(args, originator, ctx).await
     }
 }
 

@@ -37,6 +37,7 @@ mod signer_internalize_provider_tests {
 
     use bsv_wallet_toolbox::error::{WalletError, WalletResult};
     use bsv_wallet_toolbox::signer::methods::internalize_action::signer_internalize_action;
+    use bsv_wallet_toolbox::signer::signing_context::SigningContext;
     use bsv_wallet_toolbox::signer::signing_provider::SigningProvider;
     use bsv_wallet_toolbox::signer::standard_provider::StandardSigningProvider;
     use bsv_wallet_toolbox::signer::types::ValidInternalizeActionArgs;
@@ -86,6 +87,7 @@ mod signer_internalize_provider_tests {
             _derivation_prefix: &str,
             _derivation_suffix: &str,
             _unlocker_pub_key: &PublicKey,
+            _ctx: &SigningContext,
         ) -> WalletResult<Vec<u8>> {
             Err(WalletError::Internal(
                 "sign_input must not be called".to_string(),
@@ -135,6 +137,7 @@ mod signer_internalize_provider_tests {
             _key_id: &str,
             _counterparty: &Counterparty,
             _digest: &[u8; 32],
+            _ctx: &SigningContext,
         ) -> WalletResult<Vec<u8>> {
             Err(WalletError::Internal(
                 "create_signature must not be called".to_string(),
@@ -170,6 +173,7 @@ mod signer_internalize_provider_tests {
             _derivation_prefix: &str,
             _derivation_suffix: &str,
             _unlocker_pub_key: &PublicKey,
+            _ctx: &SigningContext,
         ) -> WalletResult<Vec<u8>> {
             Err(WalletError::Internal("not used".to_string()))
         }
@@ -199,6 +203,7 @@ mod signer_internalize_provider_tests {
             _key_id: &str,
             _counterparty: &Counterparty,
             _digest: &[u8; 32],
+            _ctx: &SigningContext,
         ) -> WalletResult<Vec<u8>> {
             Err(WalletError::Internal("not used".to_string()))
         }

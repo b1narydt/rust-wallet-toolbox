@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use bsv::wallet::interfaces::AbortActionResult;
 
 use crate::error::WalletResult;
+use crate::signer::signing_context::SigningContext;
 use crate::signer::types::{
     SignerCreateActionResult, SignerInternalizeActionResult, SignerSignActionResult,
     ValidAbortActionArgs, ValidCreateActionArgs, ValidInternalizeActionArgs, ValidSignActionArgs,
@@ -26,16 +27,25 @@ pub trait WalletSigner: Send + Sync {
     ///
     /// If `args.is_sign_action` is true, returns a `SignableTransaction` reference
     /// instead of signing immediately. The caller must later call `sign_action`.
+    ///
+    /// `ctx` is who the action is made on behalf of; it reaches the signing
+    /// provider's ceremony-driving methods.
     async fn create_action(
         &self,
         args: ValidCreateActionArgs,
+        ctx: &SigningContext,
     ) -> WalletResult<SignerCreateActionResult>;
 
     /// Sign a previously created transaction (delayed signing flow).
     ///
     /// The `args.reference` must match a pending sign action from a prior
-    /// `create_action` call with `is_sign_action=true`.
-    async fn sign_action(&self, args: ValidSignActionArgs) -> WalletResult<SignerSignActionResult>;
+    /// `create_action` call with `is_sign_action=true`. `ctx` is who this
+    /// signing call acts on behalf of.
+    async fn sign_action(
+        &self,
+        args: ValidSignActionArgs,
+        ctx: &SigningContext,
+    ) -> WalletResult<SignerSignActionResult>;
 
     /// Internalize outputs from an external transaction.
     ///

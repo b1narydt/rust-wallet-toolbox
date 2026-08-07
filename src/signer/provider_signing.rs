@@ -22,6 +22,7 @@ use crate::error::{WalletError, WalletResult};
 use crate::signer::build_signable::{
     verify_requested_outputs_unchanged, verify_unrequested_outputs_are_change_or_commission,
 };
+use crate::signer::signing_context::SigningContext;
 use crate::signer::signing_provider::SigningProvider;
 use crate::signer::types::{PendingStorageInput, ValidCreateActionArgs};
 use crate::storage::action_types::{StorageCreateActionResult, StorageCreateTransactionSdkInput};
@@ -37,11 +38,17 @@ use crate::types::StorageProvidedBy;
 /// All other logic — input/output ordering, fee calculation, pending input
 /// collection — follows the same algorithms as the sync version.
 ///
+/// `_ctx` identifies who the build is being made on behalf of. The build step
+/// itself only performs change derivation (an ECDH-only provider method), so
+/// the context is not consumed here yet; it is threaded so the build/sign
+/// pipeline carries one caller identity end to end.
+///
 /// [`build_signable_transaction`]: crate::signer::build_signable::build_signable_transaction
 pub async fn build_signable_transaction_with_provider(
     dcr: &StorageCreateActionResult,
     args: &ValidCreateActionArgs,
     provider: &dyn SigningProvider,
+    _ctx: &SigningContext,
 ) -> WalletResult<(Transaction, u64, Vec<PendingStorageInput>)> {
     let storage_inputs = &dcr.inputs;
     let storage_outputs = &dcr.outputs;
@@ -222,6 +229,7 @@ pub async fn complete_signed_transaction_with_provider(
     pending_inputs: &[PendingStorageInput],
     spends: &std::collections::HashMap<u32, bsv::wallet::interfaces::SignActionSpend>,
     provider: &dyn SigningProvider,
+    ctx: &SigningContext,
 ) -> WalletResult<Vec<u8>> {
     let sighash_type = bsv::primitives::transaction_signature::SIGHASH_ALL
         | bsv::primitives::transaction_signature::SIGHASH_FORKID;
@@ -301,6 +309,7 @@ pub async fn complete_signed_transaction_with_provider(
                 &pdi.derivation_prefix,
                 &pdi.derivation_suffix,
                 &unlocker_pub_key,
+                ctx,
             )
             .await?;
 
@@ -416,7 +425,7 @@ mod ghsa_provider_tests {
     #[tokio::test]
     async fn provider_valid_build_ok() {
         let p = provider();
-        let res = build_signable_transaction_with_provider(&base_dcr(), &base_args(), &p).await;
+        let res = build_signable_transaction_with_provider(&base_dcr(), &base_args(), &p, &SigningContext::itself()).await;
         assert!(res.is_ok(), "valid dcr should build: {:?}", res.err());
     }
 
@@ -438,7 +447,7 @@ mod ghsa_provider_tests {
             custom_instructions: None,
         });
         let p = provider();
-        let res = build_signable_transaction_with_provider(&dcr, &base_args(), &p).await;
+        let res = build_signable_transaction_with_provider(&dcr, &base_args(), &p, &SigningContext::itself()).await;
         assert!(res.is_err(), "provider path must reject injected output");
     }
 
@@ -449,7 +458,7 @@ mod ghsa_provider_tests {
         dcr.outputs[0].locking_script =
             "76a914eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee88ac".to_string();
         let p = provider();
-        let res = build_signable_transaction_with_provider(&dcr, &base_args(), &p).await;
+        let res = build_signable_transaction_with_provider(&dcr, &base_args(), &p, &SigningContext::itself()).await;
         assert!(
             res.is_err(),
             "provider path must reject substituted recipient"
