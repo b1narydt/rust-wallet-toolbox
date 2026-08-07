@@ -55,7 +55,7 @@ pub struct FindUsersArgs {
 // ---------------------------------------------------------------------------
 
 /// Partial filter for the `certificates` table.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CertificatePartial {
     /// Filter by certificate primary key.
@@ -81,7 +81,7 @@ pub struct CertificatePartial {
 }
 
 /// Arguments for querying certificates.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FindCertificatesArgs {
     /// Column equality filters.
@@ -183,7 +183,7 @@ pub struct FindMonitorEventsArgs {
 // ---------------------------------------------------------------------------
 
 /// Partial filter for the `output_baskets` table.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputBasketPartial {
     /// Filter by basket primary key.
@@ -201,7 +201,7 @@ pub struct OutputBasketPartial {
 }
 
 /// Arguments for querying output baskets.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FindOutputBasketsArgs {
     /// Column equality filters.
@@ -271,7 +271,7 @@ pub struct FindOutputTagMapsArgs {
 // ---------------------------------------------------------------------------
 
 /// Partial filter for the `outputs` table.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputPartial {
     /// Filter by output primary key.
@@ -305,7 +305,7 @@ pub struct OutputPartial {
 }
 
 /// Arguments for querying outputs.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FindOutputsArgs {
     /// Column equality filters.
