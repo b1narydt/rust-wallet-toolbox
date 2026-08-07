@@ -29,7 +29,9 @@ use crate::storage::traits::provider::StorageProvider;
 
 use super::canonical::canonicalize;
 use super::export::export_brc38;
-use super::import::{import_brc38, parse_brc38_json, Brc38ImportOptions, Brc38ImportResult, PortableStorage};
+use super::import::{
+    import_brc38, parse_brc38_json, Brc38ImportOptions, Brc38ImportResult, PortableStorage,
+};
 use super::validate::Brc38WalletData;
 
 const BRC39_MAGIC: [u8; 4] = *b"WDAT";
@@ -61,7 +63,11 @@ pub async fn export_brc39(
     password: &str,
     options: Option<&Brc39Options>,
 ) -> WalletResult<Vec<u8>> {
-    encrypt_brc39(&export_brc38(storage, identity_key).await?, password, options)
+    encrypt_brc39(
+        &export_brc38(storage, identity_key).await?,
+        password,
+        options,
+    )
 }
 
 /// Import an encrypted BRC-39 file into storage.
@@ -84,9 +90,15 @@ pub fn encrypt_brc39(
     let mut nonce = [0u8; BRC39_NONCE_LENGTH];
     rand::thread_rng().fill_bytes(&mut salt);
     rand::thread_rng().fill_bytes(&mut nonce);
-    let iterations = options.and_then(|o| o.iterations).unwrap_or(BRC39_DEFAULT_ITERATIONS);
-    let memory_kib = options.and_then(|o| o.memory_kib).unwrap_or(BRC39_DEFAULT_MEMORY_KIB);
-    let parallelism = options.and_then(|o| o.parallelism).unwrap_or(BRC39_DEFAULT_PARALLELISM);
+    let iterations = options
+        .and_then(|o| o.iterations)
+        .unwrap_or(BRC39_DEFAULT_ITERATIONS);
+    let memory_kib = options
+        .and_then(|o| o.memory_kib)
+        .unwrap_or(BRC39_DEFAULT_MEMORY_KIB);
+    let parallelism = options
+        .and_then(|o| o.parallelism)
+        .unwrap_or(BRC39_DEFAULT_PARALLELISM);
     if iterations < BRC39_DEFAULT_ITERATIONS {
         return Err(WalletError::BadRequest(
             "BRC-39 export iterations must not be weaker than the canonical default".to_string(),
@@ -97,7 +109,15 @@ pub fn encrypt_brc39(
             "BRC-39 export memoryKiB must not be weaker than the canonical default".to_string(),
         ));
     }
-    encrypt_with_params(data, password, &salt, &nonce, iterations, memory_kib, parallelism)
+    encrypt_with_params(
+        data,
+        password,
+        &salt,
+        &nonce,
+        iterations,
+        memory_kib,
+        parallelism,
+    )
 }
 
 /// Assemble a BRC-39 file from explicit KDF inputs. Split from
@@ -118,7 +138,9 @@ pub(super) fn encrypt_with_params(
     let ciphertext_and_tag = aes_gcm_encrypt_ts_compat(&key, nonce, &plaintext)
         .map_err(|e| WalletError::Internal(format!("BRC-39 encryption failed: {e}")))?;
 
-    let mut file = Vec::with_capacity(BRC39_HEADER_LENGTH + salt.len() + nonce.len() + ciphertext_and_tag.len());
+    let mut file = Vec::with_capacity(
+        BRC39_HEADER_LENGTH + salt.len() + nonce.len() + ciphertext_and_tag.len(),
+    );
     file.extend_from_slice(&BRC39_MAGIC);
     file.push(1); // format version
     file.push(1); // protector type: password
@@ -201,7 +223,9 @@ pub fn decrypt_brc39(bytes: &[u8], password: &str) -> WalletResult<Brc38WalletDa
     let header = parse_brc39_header(bytes)?;
     let payload_start = BRC39_HEADER_LENGTH + header.salt_length + header.nonce_length;
     if bytes.len() <= payload_start + BRC39_TAG_LENGTH {
-        return Err(WalletError::BadRequest("Invalid BRC-39 ciphertext".to_string()));
+        return Err(WalletError::BadRequest(
+            "Invalid BRC-39 ciphertext".to_string(),
+        ));
     }
     let salt = &bytes[BRC39_HEADER_LENGTH..BRC39_HEADER_LENGTH + header.salt_length];
     let nonce = &bytes[BRC39_HEADER_LENGTH + header.salt_length..payload_start];
@@ -230,8 +254,13 @@ fn derive_brc39_key(
     parallelism: u8,
 ) -> WalletResult<[u8; BRC39_HASH_LENGTH]> {
     let normalized: String = password.nfc().collect();
-    let params = Params::new(memory_kib, iterations, parallelism as u32, Some(BRC39_HASH_LENGTH))
-        .map_err(|e| WalletError::BadRequest(format!("Invalid BRC-39 Argon2id parameters: {e}")))?;
+    let params = Params::new(
+        memory_kib,
+        iterations,
+        parallelism as u32,
+        Some(BRC39_HASH_LENGTH),
+    )
+    .map_err(|e| WalletError::BadRequest(format!("Invalid BRC-39 Argon2id parameters: {e}")))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut key = [0u8; BRC39_HASH_LENGTH];
     argon2
@@ -248,16 +277,24 @@ fn validate_kdf_params(
     hash_length: u8,
 ) -> WalletResult<()> {
     if iterations == 0 {
-        return Err(WalletError::BadRequest("Invalid BRC-39 Argon2id iterations".to_string()));
+        return Err(WalletError::BadRequest(
+            "Invalid BRC-39 Argon2id iterations".to_string(),
+        ));
     }
     if memory_kib == 0 {
-        return Err(WalletError::BadRequest("Invalid BRC-39 Argon2id memoryKiB".to_string()));
+        return Err(WalletError::BadRequest(
+            "Invalid BRC-39 Argon2id memoryKiB".to_string(),
+        ));
     }
     if parallelism == 0 {
-        return Err(WalletError::BadRequest("Invalid BRC-39 Argon2id parallelism".to_string()));
+        return Err(WalletError::BadRequest(
+            "Invalid BRC-39 Argon2id parallelism".to_string(),
+        ));
     }
     if hash_length as usize != BRC39_HASH_LENGTH {
-        return Err(WalletError::BadRequest("Invalid BRC-39 Argon2id hashLength".to_string()));
+        return Err(WalletError::BadRequest(
+            "Invalid BRC-39 Argon2id hashLength".to_string(),
+        ));
     }
     Ok(())
 }
@@ -300,7 +337,10 @@ mod tests {
         let nonce = [9u8; 32];
         let reencrypted =
             encrypt_with_params(&decrypted, PASSWORD_NFC, &salt, &nonce, 1, 64, 1).unwrap();
-        assert_eq!(reencrypted, file, "Rust encryption must be byte-identical to TS");
+        assert_eq!(
+            reencrypted, file,
+            "Rust encryption must be byte-identical to TS"
+        );
     }
 
     /// The default-KDF fixture came from the real TS `encryptBRC39` path

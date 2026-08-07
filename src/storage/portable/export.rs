@@ -207,12 +207,18 @@ pub async fn export_brc38(
     let mut tables = Map::new();
     tables.insert("provenTxs".into(), rows("provenTx", &proven_txs)?);
     tables.insert("provenTxReqs".into(), rows("provenTxReq", &proven_tx_reqs)?);
-    tables.insert("outputBaskets".into(), rows("outputBasket", &output_baskets)?);
+    tables.insert(
+        "outputBaskets".into(),
+        rows("outputBasket", &output_baskets)?,
+    );
     tables.insert("transactions".into(), rows("transaction", &transactions)?);
     tables.insert("commissions".into(), rows("commission", &commissions)?);
     tables.insert("outputs".into(), rows("output", &outputs)?);
     tables.insert("outputTags".into(), rows("outputTag", &output_tags)?);
-    tables.insert("outputTagMaps".into(), rows("outputTagMap", &output_tag_maps)?);
+    tables.insert(
+        "outputTagMaps".into(),
+        rows("outputTagMap", &output_tag_maps)?,
+    );
     tables.insert("txLabels".into(), rows("txLabel", &tx_labels)?);
     tables.insert("txLabelMaps".into(), rows("txLabelMap", &tx_label_maps)?);
     tables.insert("certificates".into(), rows("certificate", &certificates)?);

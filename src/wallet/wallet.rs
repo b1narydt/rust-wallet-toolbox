@@ -2085,7 +2085,10 @@ impl ContextualWallet for WalletArc {
         originator: Option<&str>,
         ctx: &SigningContext,
     ) -> Result<CreateActionResult, SdkWalletError> {
-        self.0.as_ref().create_action_in(args, originator, ctx).await
+        self.0
+            .as_ref()
+            .create_action_in(args, originator, ctx)
+            .await
     }
 
     async fn sign_action_in(

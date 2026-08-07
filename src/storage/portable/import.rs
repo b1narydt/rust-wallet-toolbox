@@ -219,25 +219,39 @@ async fn restore_brc38<S: PortableStorage>(
 
 /// TS `assertRestoreTargetEmpty`: every table (including monitor events)
 /// must be empty; only settings may exist.
-async fn assert_restore_target_empty<S: StorageProvider + ?Sized>(
-    storage: &S,
-) -> WalletResult<()> {
+async fn assert_restore_target_empty<S: StorageProvider + ?Sized>(storage: &S) -> WalletResult<()> {
     let counts = [
         storage.count_users(&Default::default(), None).await?,
         storage.count_proven_txs(&Default::default(), None).await?,
-        storage.count_proven_tx_reqs(&Default::default(), None).await?,
-        storage.count_output_baskets(&Default::default(), None).await?,
-        storage.count_transactions(&Default::default(), None).await?,
+        storage
+            .count_proven_tx_reqs(&Default::default(), None)
+            .await?,
+        storage
+            .count_output_baskets(&Default::default(), None)
+            .await?,
+        storage
+            .count_transactions(&Default::default(), None)
+            .await?,
         storage.count_commissions(&Default::default(), None).await?,
         storage.count_outputs(&Default::default(), None).await?,
         storage.count_output_tags(&Default::default(), None).await?,
-        storage.count_output_tag_maps(&Default::default(), None).await?,
+        storage
+            .count_output_tag_maps(&Default::default(), None)
+            .await?,
         storage.count_tx_labels(&Default::default(), None).await?,
-        storage.count_tx_label_maps(&Default::default(), None).await?,
-        storage.count_certificates(&Default::default(), None).await?,
-        storage.count_certificate_fields(&Default::default(), None).await?,
+        storage
+            .count_tx_label_maps(&Default::default(), None)
+            .await?,
+        storage
+            .count_certificates(&Default::default(), None)
+            .await?,
+        storage
+            .count_certificate_fields(&Default::default(), None)
+            .await?,
         storage.count_sync_states(&Default::default(), None).await?,
-        storage.count_monitor_events(&Default::default(), None).await?,
+        storage
+            .count_monitor_events(&Default::default(), None)
+            .await?,
     ];
     if counts.iter().any(|c| *c > 0) {
         return Err(WalletError::BadRequest(
@@ -307,7 +321,13 @@ async fn merge_brc38<S: StorageProvider>(
     let mut import_map = normalize_sync_map(
         &serde_json::from_str::<Value>(&import_state.sync_map).unwrap_or(Value::Null),
     );
-    let chunk_result = process_sync_chunk(storage as &dyn StorageProvider, chunk, &mut import_map, None).await?;
+    let chunk_result = process_sync_chunk(
+        storage as &dyn StorageProvider,
+        chunk,
+        &mut import_map,
+        None,
+    )
+    .await?;
 
     // Persist the updated id-maps with counts reset, as TS does once a sync
     // round completes (EntitySyncState.processSyncChunk done-handling).
@@ -537,9 +557,7 @@ fn merge_sync_map_entry(
     if let Some(id_map) = incoming.get("idMap").and_then(Value::as_object) {
         target.id_map = id_map
             .iter()
-            .filter_map(|(remote, local)| {
-                Some((remote.parse::<i64>().ok()?, local.as_i64()?))
-            })
+            .filter_map(|(remote, local)| Some((remote.parse::<i64>().ok()?, local.as_i64()?)))
             .collect();
     }
     if let Some(when) = incoming.get("maxUpdated_at").and_then(Value::as_str) {
@@ -568,7 +586,10 @@ fn sync_map_to_ts_json(map: &SyncMap) -> String {
                     .collect(),
             ),
         );
-        out.insert("entityName".to_string(), Value::String(esm.entity_name.clone()));
+        out.insert(
+            "entityName".to_string(),
+            Value::String(esm.entity_name.clone()),
+        );
         if let Some(at) = &esm.max_updated_at {
             out.insert(
                 "maxUpdated_at".to_string(),
@@ -589,7 +610,10 @@ fn sync_map_to_ts_json(map: &SyncMap) -> String {
     out.insert("outputTag".to_string(), entity(&map.output_tag));
     out.insert("outputTagMap".to_string(), entity(&map.output_tag_map));
     out.insert("certificate".to_string(), entity(&map.certificate));
-    out.insert("certificateField".to_string(), entity(&map.certificate_field));
+    out.insert(
+        "certificateField".to_string(),
+        entity(&map.certificate_field),
+    );
     out.insert("commission".to_string(), entity(&map.commission));
     serde_json::to_string(&Value::Object(out)).expect("sync map serialization is infallible")
 }

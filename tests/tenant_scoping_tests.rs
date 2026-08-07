@@ -31,7 +31,8 @@ mod tenant_scoping {
     const TXID_A: &str = "aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11";
     const TXID_B: &str = "bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22";
     // secp256k1 generator point: a parseable compressed public key.
-    const CERTIFIER_HEX: &str = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+    const CERTIFIER_HEX: &str =
+        "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
 
     fn now() -> NaiveDateTime {
         NaiveDateTime::parse_from_str("2026-01-15 10:30:00", "%Y-%m-%d %H:%M:%S").unwrap()
@@ -81,97 +82,97 @@ mod tenant_scoping {
         {
             let basket_id = StorageReaderWriter::insert_output_basket(
                 &storage,
-                    &OutputBasket {
-                        created_at: now(),
-                        updated_at: now(),
-                        basket_id: 0,
-                        user_id,
-                        name: "shared".to_string(),
-                        number_of_desired_utxos: 6,
-                        minimum_desired_utxo_value: 1000,
-                        is_deleted: false,
-                    },
-                    None,
-                )
-                .await?;
+                &OutputBasket {
+                    created_at: now(),
+                    updated_at: now(),
+                    basket_id: 0,
+                    user_id,
+                    name: "shared".to_string(),
+                    number_of_desired_utxos: 6,
+                    minimum_desired_utxo_value: 1000,
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await?;
             basket_ids.push(basket_id);
             let tx_id = StorageReaderWriter::insert_transaction(
                 &storage,
-                    &Transaction {
-                        created_at: now(),
-                        updated_at: now(),
-                        transaction_id: 0,
-                        user_id,
-                        proven_tx_id: None,
-                        status: TransactionStatus::Completed,
-                        reference: format!("ref-{user_id}"),
-                        is_outgoing: false,
-                        satoshis: 4000,
-                        description: "seed".to_string(),
-                        version: Some(1),
-                        lock_time: Some(0),
-                        txid: Some(txid.to_string()),
-                        input_beef: None,
-                        raw_tx: None,
-                    },
-                    None,
-                )
-                .await?;
+                &Transaction {
+                    created_at: now(),
+                    updated_at: now(),
+                    transaction_id: 0,
+                    user_id,
+                    proven_tx_id: None,
+                    status: TransactionStatus::Completed,
+                    reference: format!("ref-{user_id}"),
+                    is_outgoing: false,
+                    satoshis: 4000,
+                    description: "seed".to_string(),
+                    version: Some(1),
+                    lock_time: Some(0),
+                    txid: Some(txid.to_string()),
+                    input_beef: None,
+                    raw_tx: None,
+                },
+                None,
+            )
+            .await?;
             StorageReaderWriter::insert_output(
                 &storage,
-                    &Output {
-                        created_at: now(),
-                        updated_at: now(),
-                        output_id: 0,
-                        user_id,
-                        transaction_id: tx_id,
-                        basket_id: Some(basket_id),
-                        spendable: true,
-                        change: false,
-                        output_description: None,
-                        vout: 0,
-                        satoshis: 4000,
-                        provided_by: StorageProvidedBy::Storage,
-                        purpose: "seed".to_string(),
-                        output_type: "P2PKH".to_string(),
-                        txid: Some(txid.to_string()),
-                        sender_identity_key: sender.map(str::to_string),
-                        derivation_prefix: sender.map(|_| "prefixB==".to_string()),
-                        derivation_suffix: sender.map(|_| "suffixB==".to_string()),
-                        custom_instructions: None,
-                        spent_by: None,
-                        sequence_number: None,
-                        spending_description: None,
-                        script_length: None,
-                        script_offset: None,
-                        locking_script: None,
-                    },
-                    None,
-                )
-                .await?;
+                &Output {
+                    created_at: now(),
+                    updated_at: now(),
+                    output_id: 0,
+                    user_id,
+                    transaction_id: tx_id,
+                    basket_id: Some(basket_id),
+                    spendable: true,
+                    change: false,
+                    output_description: None,
+                    vout: 0,
+                    satoshis: 4000,
+                    provided_by: StorageProvidedBy::Storage,
+                    purpose: "seed".to_string(),
+                    output_type: "P2PKH".to_string(),
+                    txid: Some(txid.to_string()),
+                    sender_identity_key: sender.map(str::to_string),
+                    derivation_prefix: sender.map(|_| "prefixB==".to_string()),
+                    derivation_suffix: sender.map(|_| "suffixB==".to_string()),
+                    custom_instructions: None,
+                    spent_by: None,
+                    sequence_number: None,
+                    spending_description: None,
+                    script_length: None,
+                    script_offset: None,
+                    locking_script: None,
+                },
+                None,
+            )
+            .await?;
         }
 
         let mut cert_ids = Vec::new();
         for (user_id, serial) in [(a.user_id, "SN-A-1"), (b.user_id, "SN-B-1")] {
             let cert_id = StorageReaderWriter::insert_certificate(
                 &storage,
-                    &Certificate {
-                        created_at: now(),
-                        updated_at: now(),
-                        certificate_id: 0,
-                        user_id,
-                        cert_type: "identity".to_string(),
-                        serial_number: serial.to_string(),
-                        certifier: CERTIFIER_HEX.to_string(),
-                        subject: "subject".to_string(),
-                        verifier: None,
-                        revocation_outpoint: "outpoint:0".to_string(),
-                        signature: "sig".to_string(),
-                        is_deleted: false,
-                    },
-                    None,
-                )
-                .await?;
+                &Certificate {
+                    created_at: now(),
+                    updated_at: now(),
+                    certificate_id: 0,
+                    user_id,
+                    cert_type: "identity".to_string(),
+                    serial_number: serial.to_string(),
+                    certifier: CERTIFIER_HEX.to_string(),
+                    subject: "subject".to_string(),
+                    verifier: None,
+                    revocation_outpoint: "outpoint:0".to_string(),
+                    signature: "sig".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await?;
             cert_ids.push(cert_id);
         }
 

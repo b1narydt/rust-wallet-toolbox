@@ -128,14 +128,15 @@ pub fn from_portable_row<T: DeserializeOwned>(
             out.insert(key.clone(), value.clone());
         }
     }
-    serde_json::from_value(Value::Object(out)).map_err(|e| {
-        WalletError::BadRequest(format!("BRC-38 {kind} row does not decode: {e}"))
-    })
+    serde_json::from_value(Value::Object(out))
+        .map_err(|e| WalletError::BadRequest(format!("BRC-38 {kind} row does not decode: {e}")))
 }
 
 fn value_to_bytes(value: &Value, key: &str) -> WalletResult<Vec<u8>> {
     let items = value.as_array().ok_or_else(|| {
-        WalletError::Internal(format!("portableRow binary field {key} is not a byte array"))
+        WalletError::Internal(format!(
+            "portableRow binary field {key} is not a byte array"
+        ))
     })?;
     items
         .iter()
@@ -189,7 +190,10 @@ mod tests {
         assert_eq!(row["inputBEEF"], Value::String("AQID".to_string()));
         assert!(row["history"].is_object());
         assert!(!row.contains_key("batch"), "null fields must be omitted");
-        assert_eq!(row["created_at"], Value::String("2026-01-02T03:04:05.006Z".into()));
+        assert_eq!(
+            row["created_at"],
+            Value::String("2026-01-02T03:04:05.006Z".into())
+        );
 
         let back: ProvenTxReq = from_portable_row("provenTxReq", &row).unwrap();
         assert_eq!(back.raw_tx, vec![4, 5, 6]);

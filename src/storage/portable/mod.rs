@@ -22,9 +22,9 @@ pub mod brc39;
 pub mod canonical;
 pub mod export;
 pub mod import;
-pub mod row;
 #[cfg(feature = "sqlite")]
 mod restore_sqlite;
+pub mod row;
 pub mod validate;
 
 pub use brc39::{decrypt_brc39, encrypt_brc39, export_brc39, import_brc39, Brc39Options};

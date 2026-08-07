@@ -142,7 +142,10 @@ mod store_durability {
                             spending_description: None,
                             script_length: Some(25),
                             script_offset: None,
-                            locking_script: Some(vec![0x76, 0xa9, 0x14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x88, 0xac]),
+                            locking_script: Some(vec![
+                                0x76, 0xa9, 0x14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                0, 0, 0, 0x88, 0xac,
+                            ]),
                         },
                         None,
                     )
@@ -190,7 +193,11 @@ mod store_durability {
 
     /// Runar-shaped createAction args: many token-sized outputs plus a large
     /// input BEEF.
-    fn runar_args(n_outputs: usize, script_bytes: usize, beef: Option<Vec<u8>>) -> StorageCreateActionArgs {
+    fn runar_args(
+        n_outputs: usize,
+        script_bytes: usize,
+        beef: Option<Vec<u8>>,
+    ) -> StorageCreateActionArgs {
         let script_hex = {
             let mut s = vec![0x51u8; script_bytes];
             s[0] = 0x76;
@@ -296,24 +303,55 @@ mod store_durability {
         let user_id = seed_user(&storage, 4_000, 50_000).await;
 
         for (label, n_out, script_b, beef_mb, raw_kb) in [
-            ("small (2 out, 25B scripts, no BEEF, 1KB rawTx)", 2usize, 25usize, 0usize, 1usize),
-            ("runar-2MB (30 out, 5KB scripts, 2MB BEEF, 300KB rawTx)", 30, 5 * 1024, 2, 300),
-            ("runar-8MB (60 out, 5KB scripts, 8MB BEEF, 800KB rawTx)", 60, 5 * 1024, 8, 800),
+            (
+                "small (2 out, 25B scripts, no BEEF, 1KB rawTx)",
+                2usize,
+                25usize,
+                0usize,
+                1usize,
+            ),
+            (
+                "runar-2MB (30 out, 5KB scripts, 2MB BEEF, 300KB rawTx)",
+                30,
+                5 * 1024,
+                2,
+                300,
+            ),
+            (
+                "runar-8MB (60 out, 5KB scripts, 8MB BEEF, 800KB rawTx)",
+                60,
+                5 * 1024,
+                8,
+                800,
+            ),
         ] {
-            let beef = if beef_mb == 0 { None } else { Some(big_beef(beef_mb << 20)) };
+            let beef = if beef_mb == 0 {
+                None
+            } else {
+                Some(big_beef(beef_mb << 20))
+            };
             let mut creates = vec![];
             let mut processes = vec![];
             for _ in 0..10 {
-                let (c, p) = one_spend(&storage, user_id, n_out, script_b, beef.clone(), raw_kb * 1024)
-                    .await
-                    .expect("spend");
+                let (c, p) = one_spend(
+                    &storage,
+                    user_id,
+                    n_out,
+                    script_b,
+                    beef.clone(),
+                    raw_kb * 1024,
+                )
+                .await
+                .expect("spend");
                 creates.push(c);
                 processes.push(p);
             }
             summarize(&format!("{label} create"), creates, &[]);
             summarize(&format!("{label} process"), processes, &[]);
         }
-        let db_size = std::fs::metadata(dir.join("wallet.db")).map(|m| m.len()).unwrap_or(0);
+        let db_size = std::fs::metadata(dir.join("wallet.db"))
+            .map(|m| m.len())
+            .unwrap_or(0);
         println!("  db file: {:.1} MB", db_size as f64 / 1e6);
         drop(storage);
 
@@ -352,7 +390,9 @@ mod store_durability {
                 let mut errs = vec![];
                 while !stop.load(std::sync::atomic::Ordering::Relaxed) {
                     let t = Instant::now();
-                    match one_spend(&st, user_id, 30, 5 * 1024, Some(beef.clone()), 300 * 1024).await {
+                    match one_spend(&st, user_id, 30, 5 * 1024, Some(beef.clone()), 300 * 1024)
+                        .await
+                    {
                         Ok(_) => lat.push(t.elapsed().as_secs_f64() * 1e3),
                         Err(e) => errs.push(format!("{e}")),
                     }
@@ -746,7 +786,12 @@ mod spend_lock_scope {
         fn hash_output_script(&self, script: &[u8]) -> String {
             self.inner.hash_output_script(script)
         }
-        async fn is_utxo(&self, locking_script: &[u8], txid: &str, vout: u32) -> WalletResult<bool> {
+        async fn is_utxo(
+            &self,
+            locking_script: &[u8],
+            txid: &str,
+            vout: u32,
+        ) -> WalletResult<bool> {
             self.inner.is_utxo(locking_script, txid, vout).await
         }
     }
@@ -765,9 +810,10 @@ mod spend_lock_scope {
     ) {
         use bsv::script::locking_script::LockingScript;
 
-        let locking_script = ScriptTemplateBRC29::new(SEED_PREFIX.to_string(), SEED_SUFFIX.to_string())
-            .lock(root_key, &root_key.to_public_key())
-            .expect("BRC-29 lock");
+        let locking_script =
+            ScriptTemplateBRC29::new(SEED_PREFIX.to_string(), SEED_SUFFIX.to_string())
+                .lock(root_key, &root_key.to_public_key())
+                .expect("BRC-29 lock");
 
         let now = Utc::now().naive_utc();
         let (user, _) = storage
@@ -798,7 +844,9 @@ mod spend_lock_scope {
             });
         }
         let mut funding_raw = Vec::new();
-        funding.to_binary(&mut funding_raw).expect("serialize funding");
+        funding
+            .to_binary(&mut funding_raw)
+            .expect("serialize funding");
         let funding_txid = funding.id().expect("funding txid");
 
         let tx_id = storage

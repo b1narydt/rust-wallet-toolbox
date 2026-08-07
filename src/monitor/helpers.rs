@@ -842,7 +842,9 @@ async fn restore_unspent_inputs_only(
     {
         Ok(o) => o,
         Err(e) => {
-            log.push_str(&format!("  warn find_outputs for doubleSpend restore: {e}\n"));
+            log.push_str(&format!(
+                "  warn find_outputs for doubleSpend restore: {e}\n"
+            ));
             return 0;
         }
     };
@@ -926,8 +928,14 @@ mod tests {
         // never-accepted (sending/unknown) => invalid. Mirrors TS
         // EntityProvenTxReq.wasBroadcastStatuses + applyProofTimeout defaults.
         use ProofTimeoutAction::*;
-        assert_eq!(proof_timeout_action(&ProvenTxReqStatus::Unmined), Rebroadcast);
-        assert_eq!(proof_timeout_action(&ProvenTxReqStatus::Callback), Rebroadcast);
+        assert_eq!(
+            proof_timeout_action(&ProvenTxReqStatus::Unmined),
+            Rebroadcast
+        );
+        assert_eq!(
+            proof_timeout_action(&ProvenTxReqStatus::Callback),
+            Rebroadcast
+        );
         assert_eq!(
             proof_timeout_action(&ProvenTxReqStatus::Unconfirmed),
             Rebroadcast

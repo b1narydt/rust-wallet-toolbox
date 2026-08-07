@@ -425,7 +425,13 @@ mod ghsa_provider_tests {
     #[tokio::test]
     async fn provider_valid_build_ok() {
         let p = provider();
-        let res = build_signable_transaction_with_provider(&base_dcr(), &base_args(), &p, &SigningContext::itself()).await;
+        let res = build_signable_transaction_with_provider(
+            &base_dcr(),
+            &base_args(),
+            &p,
+            &SigningContext::itself(),
+        )
+        .await;
         assert!(res.is_ok(), "valid dcr should build: {:?}", res.err());
     }
 
@@ -447,7 +453,13 @@ mod ghsa_provider_tests {
             custom_instructions: None,
         });
         let p = provider();
-        let res = build_signable_transaction_with_provider(&dcr, &base_args(), &p, &SigningContext::itself()).await;
+        let res = build_signable_transaction_with_provider(
+            &dcr,
+            &base_args(),
+            &p,
+            &SigningContext::itself(),
+        )
+        .await;
         assert!(res.is_err(), "provider path must reject injected output");
     }
 
@@ -458,7 +470,13 @@ mod ghsa_provider_tests {
         dcr.outputs[0].locking_script =
             "76a914eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee88ac".to_string();
         let p = provider();
-        let res = build_signable_transaction_with_provider(&dcr, &base_args(), &p, &SigningContext::itself()).await;
+        let res = build_signable_transaction_with_provider(
+            &dcr,
+            &base_args(),
+            &p,
+            &SigningContext::itself(),
+        )
+        .await;
         assert!(
             res.is_err(),
             "provider path must reject substituted recipient"

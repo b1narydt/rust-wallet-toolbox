@@ -128,7 +128,9 @@ pub async fn resolve_user_scope<T: StorageReaderWriter + ?Sized>(
     storage: &T,
     auth: &AuthId,
 ) -> WalletResult<UserScope> {
-    let (user, _) = storage.find_or_insert_user(&auth.identity_key, None).await?;
+    let (user, _) = storage
+        .find_or_insert_user(&auth.identity_key, None)
+        .await?;
     if let Some(claimed) = auth.user_id {
         if claimed != 0 && claimed != user.user_id {
             return Err(WalletError::Unauthorized(format!(

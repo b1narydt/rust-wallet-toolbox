@@ -50,7 +50,9 @@ async fn empty_storage() -> SqliteStorage {
         url: "sqlite::memory:".to_string(),
         ..Default::default()
     };
-    let storage = SqliteStorage::new_sqlite(config, Chain::Test).await.unwrap();
+    let storage = SqliteStorage::new_sqlite(config, Chain::Test)
+        .await
+        .unwrap();
     storage.migrate_database().await.unwrap();
     storage.make_available().await.unwrap();
     storage
@@ -331,15 +333,15 @@ async fn merge_ts_export_remaps_ids_and_sync_maps() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|s| {
-            s["storageIdentityKey"].as_str() == Some("remote-sync-storage-identity-key")
-        })
+        .find(|s| s["storageIdentityKey"].as_str() == Some("remote-sync-storage-identity-key"))
         .expect("fixture has the remote sync state")["syncMap"]
         .clone();
     let source_777 = source_remote_map["transaction"]["idMap"]["777"]
         .as_i64()
         .unwrap();
-    let source_778 = source_remote_map["output"]["idMap"]["778"].as_i64().unwrap();
+    let source_778 = source_remote_map["output"]["idMap"]["778"]
+        .as_i64()
+        .unwrap();
     let expected_777 = import_map["transaction"]["idMap"][source_777.to_string()]
         .as_i64()
         .unwrap();
@@ -361,7 +363,11 @@ async fn merge_ts_export_remaps_ids_and_sync_maps() {
         )
         .await
         .unwrap();
-    assert_eq!(remote_state.len(), 1, "imported remote sync state must exist");
+    assert_eq!(
+        remote_state.len(),
+        1,
+        "imported remote sync state must exist"
+    );
     let remote_map: Value = serde_json::from_str(&remote_state[0].sync_map).unwrap();
     assert_eq!(
         remote_map["transaction"]["idMap"]["777"].as_i64(),
@@ -430,7 +436,9 @@ fn minimal_document() -> Value {
 }
 
 fn expect_reject(document: Value, needle: &str) {
-    let err = parse_brc38_json(&document.to_string()).unwrap_err().to_string();
+    let err = parse_brc38_json(&document.to_string())
+        .unwrap_err()
+        .to_string();
     assert!(err.contains(needle), "expected {needle:?} in: {err}");
 }
 
@@ -562,16 +570,13 @@ async fn generate_rust_export_artifacts() {
 
     // One export, encrypted as-is, so the .json and .bin artifacts carry the
     // same document (including exportedAt).
-    let exported = bsv_wallet_toolbox::storage::portable::export_brc38(
-        &target,
-        &fixture_identity_key(),
-    )
-    .await
-    .unwrap();
-    let json = canonicalize(exported.as_value()).unwrap();
-    let brc39 =
-        bsv_wallet_toolbox::storage::portable::encrypt_brc39(&exported, PASSWORD_NFC, None)
+    let exported =
+        bsv_wallet_toolbox::storage::portable::export_brc38(&target, &fixture_identity_key())
+            .await
             .unwrap();
+    let json = canonicalize(exported.as_value()).unwrap();
+    let brc39 = bsv_wallet_toolbox::storage::portable::encrypt_brc39(&exported, PASSWORD_NFC, None)
+        .unwrap();
     assert_eq!(&brc39[..4], b"WDAT");
 
     if std::env::var("RUST_ARTIFACT_OUT").is_ok() {
@@ -587,8 +592,8 @@ async fn generate_rust_export_artifacts() {
 async fn committed_rust_artifact_still_imports() {
     let bytes = fixture_bytes("brc39-rust-export.bin");
     let json = fixture_string("brc38-rust-export.json");
-    let decrypted = bsv_wallet_toolbox::storage::portable::decrypt_brc39(&bytes, PASSWORD_NFC)
-        .unwrap();
+    let decrypted =
+        bsv_wallet_toolbox::storage::portable::decrypt_brc39(&bytes, PASSWORD_NFC).unwrap();
     assert_eq!(canonicalize(decrypted.as_value()).unwrap(), json);
 
     let target = empty_storage().await;

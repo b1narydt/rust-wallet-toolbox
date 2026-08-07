@@ -358,7 +358,9 @@ fn require_ref(
 
 fn require_user_id(row: &Map<String, Value>, user_id: i64, label: &str) -> WalletResult<()> {
     if require_number(row.get("userId"), &format!("{label}.userId"))? != user_id {
-        return Err(bad(&format!("BRC-38 {label}.userId does not match user.userId")));
+        return Err(bad(&format!(
+            "BRC-38 {label}.userId does not match user.userId"
+        )));
     }
     Ok(())
 }

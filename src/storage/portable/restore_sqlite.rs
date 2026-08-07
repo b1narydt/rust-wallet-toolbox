@@ -42,11 +42,7 @@ macro_rules! exec {
 
 #[async_trait]
 impl PortableStorage for SqliteStorage {
-    async fn restore_brc38_rows(
-        &self,
-        decoded: &DecodedBrc38,
-        trx: &TrxToken,
-    ) -> WalletResult<()> {
+    async fn restore_brc38_rows(&self, decoded: &DecodedBrc38, trx: &TrxToken) -> WalletResult<()> {
         let u = &decoded.user;
         exec!(
             trx,
