@@ -18,6 +18,7 @@ use bsv::wallet::KeyDeriverApi;
 use crate::error::{WalletError, WalletResult};
 use crate::services::traits::WalletServices;
 use crate::signer::backend::SigningBackend;
+use crate::signer::signing_context::SigningContext;
 use crate::signer::signing_provider::SigningProvider;
 use crate::signer::traits::WalletSigner;
 use crate::signer::types::{
@@ -290,6 +291,7 @@ impl WalletSigner for DefaultWalletSigner {
     async fn create_action(
         &self,
         args: ValidCreateActionArgs,
+        ctx: &SigningContext,
     ) -> WalletResult<SignerCreateActionResult> {
         let (result, pending) = crate::signer::methods::create_action::signer_create_action(
             self.storage.as_ref(),
@@ -297,6 +299,7 @@ impl WalletSigner for DefaultWalletSigner {
             &self.backend(),
             &self.auth(),
             &args,
+            ctx,
         )
         .await?;
 
@@ -309,7 +312,11 @@ impl WalletSigner for DefaultWalletSigner {
         Ok(result)
     }
 
-    async fn sign_action(&self, args: ValidSignActionArgs) -> WalletResult<SignerSignActionResult> {
+    async fn sign_action(
+        &self,
+        args: ValidSignActionArgs,
+        ctx: &SigningContext,
+    ) -> WalletResult<SignerSignActionResult> {
         // Look up the pending sign action from in-memory state.
         // If not found (e.g. after a process restart), recover from storage.
         let pending = {
@@ -329,6 +336,7 @@ impl WalletSigner for DefaultWalletSigner {
             &self.auth(),
             &args,
             &pending,
+            ctx,
         )
         .await?;
 

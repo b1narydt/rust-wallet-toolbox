@@ -28,6 +28,10 @@ use crate::wallet::types::AuthId;
 ///
 /// `backend` must match the one that created the pending action: the change
 /// outputs it locked are only spendable by the same custody backend.
+///
+/// `ctx` is who THIS signAction call acts on behalf of — deliberately not
+/// stored with the pending action, because the signing ceremony belongs to
+/// the caller completing it, not the one that deferred it.
 pub async fn signer_sign_action(
     storage: &WalletStorageManager,
     services: &(dyn WalletServices + Send + Sync),
@@ -35,6 +39,7 @@ pub async fn signer_sign_action(
     auth: &str,
     args: &ValidSignActionArgs,
     pending: &PendingSignAction,
+    ctx: &crate::signer::signing_context::SigningContext,
 ) -> WalletResult<SignerSignActionResult> {
     // --- Step 1: Reconstruct the unsigned transaction ---
     let mut cursor = Cursor::new(&pending.tx);
@@ -61,12 +66,15 @@ pub async fn signer_sign_action(
             identity_pub_key,
         )?,
         SigningBackend::Delegated(provider) => {
-            provider.prepare_spend_contexts(&tx, &pending.pdi).await?;
+            provider
+                .prepare_spend_contexts(&tx, &pending.pdi, ctx)
+                .await?;
             complete_signed_transaction_with_provider(
                 &mut tx,
                 &pending.pdi,
                 &args.spends,
                 *provider,
+                ctx,
             )
             .await?
         }

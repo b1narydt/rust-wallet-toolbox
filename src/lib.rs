@@ -93,6 +93,13 @@ pub use status::SyncStatus;
 /// Status of a wallet transaction.
 pub use status::TransactionStatus;
 
+/// Who a wallet call acts on behalf of at the signing seam.
+pub use signer::signing_context::CallerRef;
+/// Context-taking companion to `WalletInterface` for transport-authenticated callers.
+pub use signer::signing_context::ContextualWallet;
+/// Per-call context threaded to the signing seam.
+pub use signer::signing_context::SigningContext;
+
 /// Trait for wallet setup and configuration.
 pub use wallet::setup::SetupWallet;
 /// Builder for constructing configured Wallet instances.

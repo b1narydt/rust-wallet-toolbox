@@ -45,6 +45,9 @@ mod wallet_signing_provider_tests {
     use bsv::wallet::KeyDeriverApi;
 
     use bsv_wallet_toolbox::error::{WalletError, WalletResult};
+    use bsv_wallet_toolbox::signer::signing_context::{
+        CallerRef, ContextualWallet, SigningContext,
+    };
     use bsv_wallet_toolbox::signer::signing_provider::SigningProvider;
     use bsv_wallet_toolbox::signer::standard_provider::StandardSigningProvider;
     use bsv_wallet_toolbox::status::TransactionStatus;
@@ -75,6 +78,9 @@ mod wallet_signing_provider_tests {
         identity_pub_key: PublicKey,
         /// Every (derivation_prefix, derivation_suffix) it was asked to lock.
         seen_change: Mutex<Vec<(String, String)>>,
+        /// Every `CallerRef` handed to a ceremony-driving method
+        /// (`prepare_spend_contexts` and `sign_input`), in call order.
+        seen_callers: Mutex<Vec<CallerRef>>,
         derive_change_calls: AtomicUsize,
         sign_input_calls: AtomicUsize,
         prepare_spend_context_calls: AtomicUsize,
@@ -94,6 +100,7 @@ mod wallet_signing_provider_tests {
                 root_key,
                 identity_pub_key,
                 seen_change: Mutex::new(Vec::new()),
+                seen_callers: Mutex::new(Vec::new()),
                 derive_change_calls: AtomicUsize::new(0),
                 sign_input_calls: AtomicUsize::new(0),
                 prepare_spend_context_calls: AtomicUsize::new(0),
@@ -148,8 +155,10 @@ mod wallet_signing_provider_tests {
             derivation_prefix: &str,
             derivation_suffix: &str,
             unlocker_pub_key: &PublicKey,
+            ctx: &SigningContext,
         ) -> WalletResult<Vec<u8>> {
             self.sign_input_calls.fetch_add(1, Ordering::SeqCst);
+            self.seen_callers.lock().unwrap().push(ctx.caller.clone());
             self.inner
                 .sign_input(
                     sighash,
@@ -157,6 +166,7 @@ mod wallet_signing_provider_tests {
                     derivation_prefix,
                     derivation_suffix,
                     unlocker_pub_key,
+                    ctx,
                 )
                 .await
         }
@@ -165,9 +175,11 @@ mod wallet_signing_provider_tests {
             &self,
             _tx: &BsvTransaction,
             _pending_inputs: &[bsv_wallet_toolbox::signer::types::PendingStorageInput],
+            ctx: &SigningContext,
         ) -> WalletResult<()> {
             self.prepare_spend_context_calls
                 .fetch_add(1, Ordering::SeqCst);
+            self.seen_callers.lock().unwrap().push(ctx.caller.clone());
             Ok(())
         }
 
@@ -203,10 +215,11 @@ mod wallet_signing_provider_tests {
             key_id: &str,
             counterparty: &Counterparty,
             digest: &[u8; 32],
+            ctx: &SigningContext,
         ) -> WalletResult<Vec<u8>> {
             self.create_signature_calls.fetch_add(1, Ordering::SeqCst);
             self.inner
-                .create_signature(protocol, key_id, counterparty, digest)
+                .create_signature(protocol, key_id, counterparty, digest, ctx)
                 .await
         }
 
@@ -635,6 +648,7 @@ mod wallet_signing_provider_tests {
             &setup.identity_key,
             &valid_sign_action_args(&reference),
             &pending,
+            &SigningContext::itself(),
         )
         .await
         .expect("delegated signer_sign_action");
@@ -651,6 +665,72 @@ mod wallet_signing_provider_tests {
                 unlocking_script_pubkey_hash(&input.unlocking_script.as_ref().unwrap().to_binary()),
                 expected_hash,
                 "signAction inputs must be unlocked by the provider's derived key"
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 1b. The caller context reaches the signing seam
+    // -----------------------------------------------------------------------
+
+    /// `ContextualWallet::create_action_in` must deliver the transport-
+    /// authenticated caller, unchanged, to every ceremony-driving provider
+    /// method (`prepare_spend_contexts`, then `sign_input` per input).
+    #[tokio::test]
+    async fn create_action_in_threads_authenticated_caller_to_provider() {
+        let provider = Arc::new(RecordingProvider::new(common::random_root_key()));
+        let setup = funded_wallet(common::random_root_key(), Some(provider.clone())).await;
+
+        // Any string the transport vouched for; the toolbox must not interpret it.
+        let principal = "02a1b2c3d4e5f60718293a4b5c6d7e8f9091a2b3c4d5e6f708192a3b4c5d6e7f80";
+        setup
+            .wallet
+            .create_action_in(
+                payment_args(true),
+                None,
+                &SigningContext::authenticated(principal),
+            )
+            .await
+            .expect("delegated create_action_in should succeed");
+
+        let seen = provider.seen_callers.lock().unwrap().clone();
+        assert!(
+            seen.len() >= 2,
+            "prepare_spend_contexts and at least one sign_input must fire; saw {seen:?}"
+        );
+        for caller in &seen {
+            assert_eq!(
+                caller,
+                &CallerRef::Authenticated(principal.to_string()),
+                "every ceremony-driving call must carry the authenticated caller"
+            );
+        }
+    }
+
+    /// The plain BRC-100 `WalletInterface::create_action` has no caller
+    /// parameter, so it must reach the seam as `CallerRef::Itself` — the
+    /// wallet's own authority stated explicitly, never an inherited default.
+    #[tokio::test]
+    async fn wallet_interface_create_action_reaches_seam_as_itself() {
+        let provider = Arc::new(RecordingProvider::new(common::random_root_key()));
+        let setup = funded_wallet(common::random_root_key(), Some(provider.clone())).await;
+
+        setup
+            .wallet
+            .create_action(payment_args(true), None)
+            .await
+            .expect("delegated createAction should succeed");
+
+        let seen = provider.seen_callers.lock().unwrap().clone();
+        assert!(
+            seen.len() >= 2,
+            "prepare_spend_contexts and at least one sign_input must fire; saw {seen:?}"
+        );
+        for caller in &seen {
+            assert_eq!(
+                caller,
+                &CallerRef::Itself,
+                "the BRC-100 surface must sign as the wallet itself"
             );
         }
     }
@@ -1206,6 +1286,7 @@ mod wallet_signing_provider_tests {
             _derivation_prefix: &str,
             _derivation_suffix: &str,
             _unlocker_pub_key: &PublicKey,
+            _ctx: &SigningContext,
         ) -> WalletResult<Vec<u8>> {
             Err(WalletError::Internal("not used".to_string()))
         }
@@ -1235,6 +1316,7 @@ mod wallet_signing_provider_tests {
             _key_id: &str,
             _counterparty: &Counterparty,
             _digest: &[u8; 32],
+            _ctx: &SigningContext,
         ) -> WalletResult<Vec<u8>> {
             Err(WalletError::Internal("not used".to_string()))
         }

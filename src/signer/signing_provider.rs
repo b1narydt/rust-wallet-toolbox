@@ -10,6 +10,7 @@ use bsv::transaction::transaction::Transaction;
 use bsv::wallet::types::{Counterparty, Protocol};
 
 use crate::error::WalletResult;
+use crate::signer::signing_context::SigningContext;
 use crate::signer::types::PendingStorageInput;
 
 /// Async trait for pluggable signing backends.
@@ -65,8 +66,11 @@ use crate::signer::types::PendingStorageInput;
 ///     async fn sign_input(
 ///         &self, sighash: &[u8; 32], sighash_type: u32,
 ///         prefix: &str, suffix: &str, unlocker: &PublicKey,
+///         ctx: &SigningContext,
 ///     ) -> WalletResult<Vec<u8>> {
-///         // Send sighash to remote signer, return P2PKH unlocking script
+///         // Send sighash to remote signer, return P2PKH unlocking script.
+///         // ctx.caller identifies who this signature is being made for, so
+///         // a backend in another trust domain can enforce per-caller policy.
 ///         # todo!()
 ///     }
 ///     // ...plus the three BRC-42 key operations backing the BRC-100 crypto
@@ -108,6 +112,10 @@ pub trait SigningProvider: Send + Sync {
     /// * `derivation_prefix` — BRC-29 derivation prefix for key offset.
     /// * `derivation_suffix` — BRC-29 derivation suffix for key offset.
     /// * `unlocker_pub_key` — Counterparty identity key (or self) for ECDH.
+    /// * `ctx` — Who this signature is being made on behalf of. Backends in
+    ///   another trust domain (an MPC cosigner) use it to scope enforcement
+    ///   to the transport-authenticated caller instead of the vault's union
+    ///   of grants.
     ///
     /// # Returns
     /// P2PKH unlocking script bytes ready for insertion into `TransactionInput`.
@@ -118,17 +126,20 @@ pub trait SigningProvider: Send + Sync {
         derivation_prefix: &str,
         derivation_suffix: &str,
         unlocker_pub_key: &PublicKey,
+        ctx: &SigningContext,
     ) -> WalletResult<Vec<u8>>;
 
     /// Hook invoked after a signable transaction is built and before inline
     /// signing, providing the full unsigned transaction and its per-input
     /// prevout data (`pending_inputs`). Implementations that bind signatures to
     /// the transaction (for example MPC cosigners) can use this to capture
-    /// per-input spend context keyed by sighash. Defaults to a no-op.
+    /// per-input spend context keyed by sighash, scoped to `ctx.caller`.
+    /// Defaults to a no-op.
     async fn prepare_spend_contexts(
         &self,
         _tx: &Transaction,
         _pending_inputs: &[PendingStorageInput],
+        _ctx: &SigningContext,
     ) -> WalletResult<()> {
         Ok(())
     }
@@ -189,12 +200,14 @@ pub trait SigningProvider: Send + Sync {
     /// protocol, key ID, and counterparty. Returns the DER-encoded ECDSA
     /// signature (low-S). Backs `createSignature`; the wallet computes the
     /// digest (SHA-256 of data, or the caller's direct hash) before calling.
+    /// `ctx` carries who the signature is being made on behalf of.
     async fn create_signature(
         &self,
         protocol: &Protocol,
         key_id: &str,
         counterparty: &Counterparty,
         digest: &[u8; 32],
+        ctx: &SigningContext,
     ) -> WalletResult<Vec<u8>>;
 
     /// Get the wallet's identity public key.

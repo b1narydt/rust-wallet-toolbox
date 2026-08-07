@@ -5,6 +5,73 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-08-07
+
+Breaking. Signing calls now say who they are made on behalf of.
+
+A wallet authenticates its caller at the transport, then loses that identity
+before signing, because no signer seam carries it. When the signer is a
+different trust domain (an MPC cosigner below the seam), it enforces blind —
+applying the union of every grant on the vault instead of just that caller's.
+The reference TS implementation has the identical hole and avoids the cost by
+enforcing above the signer, in the same trust domain; a provider in another
+trust domain cannot.
+
+### Added
+
+- **`SigningContext` / `CallerRef`** (`signer::signing_context`) — per-call
+  context threaded to the signing seam. `caller` is deliberately **not** an
+  `Option`: a wallet acting for itself says `CallerRef::Itself` explicitly, so
+  a call site that forgets cannot silently inherit the wallet's own authority.
+  `CallerRef::Authenticated(String)` carries the principal the transport
+  authenticated, and **the toolbox never interprets the string** — a
+  browser-substrate wallet puts an origin domain there, a mutually
+  authenticated server boundary an identity public key; the provider decides
+  what it means. That makes the channel usable by a domain-keyed wallet
+  without a further breaking change. It is deliberately not the BRC-100
+  `originator`, which is specified and validated as an FQDN, so a value of
+  another shape cannot ride in it. The struct is `#[non_exhaustive]` — that
+  does not make this change non-breaking (nothing does); it makes the *next*
+  field free. `host` is an opaque `Option<Arc<dyn Any + Send + Sync>>` the
+  toolbox never inspects, for authorization artifacts whose shape it must not
+  know.
+
+- **`ContextualWallet`** — object-safe companion trait to `WalletInterface`
+  (which belongs to `bsv-sdk` and is the BRC-100 surface, so it cannot carry
+  the context) with `create_action_in` / `sign_action_in` taking a
+  `&SigningContext`. Implemented for `Wallet` and for `WalletArc` (the
+  `Clone`-able shape auth middleware holds — exactly the transport that
+  authenticates callers). Purely additive: `WalletInterface::create_action` /
+  `sign_action` delegate with `SigningContext::itself()`, so no BRC-100 client
+  can observe it.
+
+### Changed
+
+- **BREAKING — `SigningProvider`'s ceremony-driving methods take
+  `ctx: &SigningContext`**: `sign_input`, `prepare_spend_contexts`, and
+  `create_signature`. The ECDH-only derivation methods
+  (`derive_change_locking_script`, `derive_wallet_payment_locking_script`,
+  `derive_public_key`, `derive_symmetric_key`) and `identity_public_key` are
+  unchanged — they produce public data or keys, not signatures, and drive no
+  ceremony. `StandardSigningProvider` ignores the context: it signs from a
+  locally-held root key, the same trust domain as the wallet.
+
+- **BREAKING — the signer pipeline threads the context.**
+  `WalletSigner::create_action` / `sign_action`, `signer_create_action`,
+  `signer_sign_action`, `build_signable_transaction_with_provider` and
+  `complete_signed_transaction_with_provider` all take a `&SigningContext`.
+  It is distinct from the existing `auth: &str` (`AuthId`), which is the
+  wallet's own identity scoping storage rows. The context is deliberately not
+  stored in `PendingSignAction`: a deferred ceremony belongs to the caller
+  completing it, not the one that deferred it. On the BRC-100
+  `createSignature` path the wallet passes `SigningContext::itself()` to the
+  provider — that surface has no caller parameter.
+
+- crates.io reports zero reverse dependencies for `bsv-wallet-toolbox`, so no
+  published crate breaks; private consumers are unverifiable and any
+  out-of-tree `SigningProvider` or `WalletSigner` implementation must add the
+  `ctx` parameter.
+
 ## [0.4.0] - 2026-07-28
 
 Breaking. `Wallet` no longer hard-codes its custody model.

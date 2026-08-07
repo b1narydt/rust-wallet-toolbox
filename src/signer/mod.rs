@@ -11,6 +11,7 @@ pub mod complete_signed;
 pub mod default_signer;
 pub mod methods;
 pub mod provider_signing;
+pub mod signing_context;
 pub mod signing_provider;
 pub mod standard_provider;
 pub mod traits;
@@ -25,6 +26,7 @@ pub use default_signer::DefaultWalletSigner;
 pub use provider_signing::{
     build_signable_transaction_with_provider, complete_signed_transaction_with_provider,
 };
+pub use signing_context::{CallerRef, ContextualWallet, SigningContext};
 pub use signing_provider::SigningProvider;
 pub use standard_provider::StandardSigningProvider;
 pub use traits::WalletSigner;
