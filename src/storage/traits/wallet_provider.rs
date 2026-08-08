@@ -1066,6 +1066,7 @@ impl<T: StorageProvider> WalletStorageProvider for T {
     }
 
     async fn get_sync_chunk(&self, args: &RequestSyncChunkArgs) -> WalletResult<SyncChunk> {
+        args.validate()?;
         let (sync_map, offsets) = build_sync_map_and_offsets(args);
         let internal_args = GetSyncChunkArgs {
             from_storage_identity_key: args.from_storage_identity_key.clone(),
@@ -1083,6 +1084,24 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         args: &RequestSyncChunkArgs,
         chunk: &SyncChunk,
     ) -> WalletResult<ProcessSyncChunkResult> {
+        // A chunk that answers for a different user than the request asked
+        // about must be rejected, not merged (BRC-40; conformance vector
+        // sync.brc40.response.error.3). Without this check the mismatched
+        // chunk's identity key was passed to find_or_insert_user below, which
+        // CREATED a phantom user and merged the foreign rows under it. TS
+        // avoids the phantom differently — it keys every lookup on
+        // args.identityKey and never reads chunk.userIdentityKey — so
+        // rejecting here is the strictest behavior both agree is safe.
+        if chunk.user_identity_key != args.identity_key {
+            return Err(WalletError::InvalidParameter {
+                parameter: "syncChunk.userIdentityKey".to_string(),
+                must_be: format!(
+                    "the requested identityKey {} (chunk answered for {})",
+                    args.identity_key, chunk.user_identity_key
+                ),
+            });
+        }
+
         // Determine if the chunk carried any *entity* rows. A round is complete
         // only when the reader has no more entity rows for the fixed `since`
         // window. TS parity: `done` is computed solely from the 12 entity arrays

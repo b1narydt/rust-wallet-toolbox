@@ -7,6 +7,8 @@
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
+use crate::error::{WalletError, WalletResult};
+
 /// Wire-format arguments for getSyncChunk / processSyncChunk requests.
 ///
 /// Matches TypeScript `RequestSyncChunkArgs` from WalletStorage.interfaces.ts.
@@ -34,6 +36,35 @@ pub struct RequestSyncChunkArgs {
     pub max_items: i64,
     /// Per-entity row offsets for pagination within a sync window.
     pub offsets: Vec<SyncChunkOffset>,
+}
+
+impl RequestSyncChunkArgs {
+    /// Producer-side validation per BRC-40: limits must be positive and
+    /// offsets non-negative (conformance vectors sync.brc40.request.error.5/6).
+    /// Missing required fields are already rejected at deserialization.
+    pub fn validate(&self) -> WalletResult<()> {
+        if self.max_items < 1 {
+            return Err(WalletError::InvalidParameter {
+                parameter: "maxItems".to_string(),
+                must_be: "an integer >= 1".to_string(),
+            });
+        }
+        if self.max_rough_size < 1 {
+            return Err(WalletError::InvalidParameter {
+                parameter: "maxRoughSize".to_string(),
+                must_be: "an integer >= 1".to_string(),
+            });
+        }
+        for o in &self.offsets {
+            if o.offset < 0 {
+                return Err(WalletError::InvalidParameter {
+                    parameter: "offsets".to_string(),
+                    must_be: format!("non-negative; entity {:?} has offset {}", o.name, o.offset),
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A single per-entity offset for sync chunk pagination.
