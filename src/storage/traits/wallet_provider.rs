@@ -67,7 +67,7 @@ use crate::wallet::types::{AdminStatsResult, AuthId};
 ///
 /// This trait is where multi-tenant isolation is enforced. Every method that
 /// takes an [`AuthId`] resolves it through
-/// [`resolve_user_scope`](crate::storage::traits::scope::resolve_user_scope)
+/// [`crate::storage::traits::scope::resolve_user_scope`]
 /// and confines reads and writes to the resolved user's rows. Methods that
 /// instead carry an identity key inside their args (`find_or_insert_user`,
 /// `get_sync_chunk`, `process_sync_chunk`) transport a *claim*: a remote

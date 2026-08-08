@@ -78,6 +78,17 @@ pub fn make_request_sync_chunk_args(
     // Build offsets from each EntitySyncMap's count field.
     // The `count` tracks cumulative items received in the current sync window
     // — this IS the pagination offset, matching TS `ess.count`.
+    //
+    // THE ORDER IS THE WIRE CONTRACT, not a stylistic choice. TS's producer
+    // validates positionally and throws `WERR_INVALID_PARAMETER('offsets', "in
+    // dependency order. '<expected>' expected, found <got>.")` on the first
+    // mismatch (`getSyncChunk.ts:236`), so a permuted list makes every sync
+    // against a TS-backed store fail on the third chunker. This sequence is
+    // `getSyncChunk.ts:41,54,71,88,105,122,139,152,165,182,199,216` verbatim.
+    //
+    // Our own consumer matches offsets BY NAME (`wallet_provider.rs`), which is
+    // why Rust↔Rust never surfaced the divergence and why correcting the order
+    // cannot break it.
     let offsets = vec![
         SyncChunkOffset {
             name: sync_map.proven_tx.entity_name.clone(),
@@ -88,6 +99,14 @@ pub fn make_request_sync_chunk_args(
             offset: sync_map.output_basket.count,
         },
         SyncChunkOffset {
+            name: sync_map.output_tag.entity_name.clone(),
+            offset: sync_map.output_tag.count,
+        },
+        SyncChunkOffset {
+            name: sync_map.tx_label.entity_name.clone(),
+            offset: sync_map.tx_label.count,
+        },
+        SyncChunkOffset {
             name: sync_map.transaction.entity_name.clone(),
             offset: sync_map.transaction.count,
         },
@@ -96,16 +115,8 @@ pub fn make_request_sync_chunk_args(
             offset: sync_map.output.count,
         },
         SyncChunkOffset {
-            name: sync_map.tx_label.entity_name.clone(),
-            offset: sync_map.tx_label.count,
-        },
-        SyncChunkOffset {
             name: sync_map.tx_label_map.entity_name.clone(),
             offset: sync_map.tx_label_map.count,
-        },
-        SyncChunkOffset {
-            name: sync_map.output_tag.entity_name.clone(),
-            offset: sync_map.output_tag.count,
         },
         SyncChunkOffset {
             name: sync_map.output_tag_map.entity_name.clone(),
@@ -1764,15 +1775,42 @@ impl WalletStorageManager {
         let mut full_log = String::new();
 
         for (backup_arc, maybe_backup_settings) in &backup_arcs_and_settings {
-            let backup_settings = match maybe_backup_settings {
-                Some(s) => s.clone(),
-                None => {
-                    warn!("update_backups: backup has no cached settings, skipping");
-                    continue;
-                }
-            };
+            // A backup we cannot identify is a backup we cannot claim to have
+            // written. Previously this `continue`d, so a manager whose every
+            // backup lacked cached settings reported a clean sync having
+            // touched nothing.
+            let backup_settings = maybe_backup_settings.clone().ok_or_else(|| {
+                WalletError::InvalidOperation(
+                    "update_backups: a configured backup has no cached settings, so it cannot be \
+                     synced or named. Refusing to report success for a replica that was skipped."
+                        .to_string(),
+                )
+            })?;
 
-            match self
+            // PROPAGATE. This used to swallow the error, log a `warn!`, and
+            // continue — justified in-source as "(TS parity)". It is not TS
+            // parity, and the comment is why nobody checked: TS's
+            // `updateBackups` (`WalletStorageManager.ts:779-790`) awaits
+            // `syncToWriter` bare inside the loop with no try/catch, so the
+            // first failure rejects the promise and aborts the remaining
+            // backups. Go propagates too (`storage_manager.go:241,270`). Rust
+            // was the only implementation that swallowed, and the only one
+            // claiming parity for it.
+            //
+            // The cost of swallowing was not a missing log line. `update_backups`
+            // returns `(inserts, updates, log)`, and every production call site
+            // passes `prog_log: None` — so a total replication failure returned
+            // `(0, 0, "")`, which is BIT-IDENTICAL to a backup that was already
+            // perfectly in sync. `WalletBuilder::build()` calls this to seed a
+            // new replica; a failed seed produced a valid, empty backup file and
+            // an `Ok(wallet)`. Nothing distinguished it from a healthy one until
+            // a restore was attempted, which is the one moment it must not fail.
+            //
+            // This makes the two callers' doc comments true for the first time:
+            // `set_active` and `add_wallet_storage_provider` both say they
+            // propagate so callers learn when replication failed, and both use
+            // `?` on a function that could not produce an error for that case.
+            let (ins, upd, log) = self
                 .sync_to_writer(
                     backup_arc.as_ref(),
                     active_arc.as_ref(),
@@ -1781,20 +1819,17 @@ impl WalletStorageManager {
                     prog_log,
                 )
                 .await
-            {
-                Ok((ins, upd, log)) => {
-                    total_inserts += ins;
-                    total_updates += upd;
-                    full_log.push_str(&log);
-                }
-                Err(e) => {
-                    // Per-backup failure must not block other backups (TS parity).
-                    warn!(
-                        "update_backups: sync to backup '{}' failed: {e}",
+                .map_err(|e| {
+                    WalletError::InvalidOperation(format!(
+                        "update_backups: sync to backup '{}' failed: {e}. The active store is \
+                         unchanged; this backup is stale and must not be relied on for recovery.",
                         backup_settings.storage_identity_key
-                    );
-                }
-            }
+                    ))
+                })?;
+
+            total_inserts += ins;
+            total_updates += upd;
+            full_log.push_str(&log);
         }
 
         Ok((total_inserts, total_updates, full_log))

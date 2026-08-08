@@ -44,6 +44,29 @@ const BRC39_HASH_LENGTH: usize = 32;
 const BRC39_SALT_LENGTH: usize = 32;
 const BRC39_NONCE_LENGTH: usize = 32;
 
+/// Ceilings on the Argon2id cost an IMPORTED file may ask us to spend.
+///
+/// The KDF parameters live in the file header, unauthenticated (BRC-39 uses an
+/// empty AAD, so the header is outside the GCM tag), and they must be honoured
+/// BEFORE the tag can be checked — that is inherent to a password KDF and not
+/// something a signature can gate. So these are the only bound that exists.
+///
+/// Without them a ~51-byte file could name `memory_kib = u32::MAX`, and
+/// `argon2` allocates one 1 KiB block per unit: a 4 TiB request, which Rust
+/// answers by ABORTING the process rather than unwinding. `iterations` is the
+/// same story in CPU.
+///
+/// The asymmetry these close is the tell: the EXPORT path already enforced a
+/// strength floor (see `export_brc39`), so the weakening direction was guarded
+/// and the exhaustion direction was not.
+///
+/// Sized to admit every file the reference implementations produce — TS's
+/// defaults are 7 iterations over 128 MiB — with headroom for a deliberately
+/// hardened export, while refusing anything that could not be a real backup.
+/// A legitimate file has never needed more.
+const BRC39_MAX_IMPORT_MEMORY_KIB: u32 = 4 * 1024 * 1024; // 4 GiB
+const BRC39_MAX_IMPORT_ITERATIONS: u32 = 64;
+
 /// Argon2id cost overrides for BRC-39 encryption (TS `BRC39Options`).
 /// Values weaker than the canonical defaults are rejected on export.
 #[derive(Debug, Clone, Default)]
@@ -286,6 +309,23 @@ fn validate_kdf_params(
             "Invalid BRC-39 Argon2id memoryKiB".to_string(),
         ));
     }
+    // Refuse before allocating, not after. An over-large `memory_kib` is not a
+    // slow decrypt — `argon2` allocates one 1 KiB block per unit up front, and
+    // an allocation failure aborts the process instead of returning an error we
+    // could map. There is no recovering from it downstream.
+    if memory_kib > BRC39_MAX_IMPORT_MEMORY_KIB {
+        return Err(WalletError::BadRequest(format!(
+            "BRC-39 Argon2id memoryKiB {memory_kib} exceeds the {BRC39_MAX_IMPORT_MEMORY_KIB} \
+             ceiling — refusing to allocate {} GiB for an unauthenticated file header",
+            memory_kib / (1024 * 1024)
+        )));
+    }
+    if iterations > BRC39_MAX_IMPORT_ITERATIONS {
+        return Err(WalletError::BadRequest(format!(
+            "BRC-39 Argon2id iterations {iterations} exceeds the \
+             {BRC39_MAX_IMPORT_ITERATIONS} ceiling"
+        )));
+    }
     if parallelism == 0 {
         return Err(WalletError::BadRequest(
             "Invalid BRC-39 Argon2id parallelism".to_string(),
@@ -362,6 +402,85 @@ mod tests {
         let file = fixture("brc39-ts-lowcost.bin");
         let err = decrypt_brc39(&file, "wrong-password").unwrap_err();
         assert!(err.to_string().contains("authentication failed"), "{err}");
+    }
+
+    /// The DECOMPOSED form of the fixture password: `Cafe` + U+0301 (combining
+    /// acute), which is what `meta.json` records as `passwordNfd`.
+    ///
+    /// It is a distinct byte sequence from [`PASSWORD_NFC`] (`Caf` + U+00E9),
+    /// so hashing it without normalizing derives a different key.
+    const PASSWORD_NFD: &str = "Cafe\u{301} fixture pw";
+
+    /// NFC normalization is REAL, not decorative.
+    ///
+    /// The suite previously claimed to prove this and did not: every test fed
+    /// `PASSWORD_NFC`, which is already precomposed, so `.nfc()` was a no-op and
+    /// deleting it left every test green. `meta.json` has carried `passwordNfd`
+    /// for exactly this purpose since the fixtures were generated, and nothing
+    /// read it.
+    ///
+    /// TS normalizes before hashing (`index.ts:974`), so the fixture's key was
+    /// derived from the NFC form. Decrypting it with the DECOMPOSED form can
+    /// only succeed if Rust normalizes too — which is the actual cross-
+    /// implementation property, and the one that breaks for any user whose
+    /// passphrase carries a composable non-ASCII character and whose OS emits
+    /// NFD (macOS filesystem strings do). They would get `authentication
+    /// failed` from a correct passphrase, indistinguishable from a corrupt
+    /// file, at restore time.
+    #[test]
+    fn brc39_normalizes_a_decomposed_password_to_nfc() {
+        assert_ne!(
+            PASSWORD_NFD.as_bytes(),
+            PASSWORD_NFC.as_bytes(),
+            "the two forms must differ as bytes or this test proves nothing"
+        );
+        let file = fixture("brc39-ts-lowcost.bin");
+        decrypt_brc39(&file, PASSWORD_NFD)
+            .expect("the decomposed password must decrypt a file TS encrypted under NFC");
+    }
+
+    /// The Argon2id defaults are the exported strength; pin the VALUES.
+    ///
+    /// `brc39_export_rejects_weakened_kdf_params` asserts only relative to these
+    /// constants, so halving either one kept it green while silently weakening
+    /// every export produced afterwards. It costs nothing to interoperate — the
+    /// parameters are self-describing in the header — which is precisely why it
+    /// would never have surfaced as a bug.
+    #[test]
+    fn brc39_default_kdf_cost_is_pinned() {
+        assert_eq!(BRC39_DEFAULT_ITERATIONS, 7);
+        assert_eq!(BRC39_DEFAULT_MEMORY_KIB, 131072);
+        assert_eq!(BRC39_DEFAULT_PARALLELISM, 1);
+    }
+
+    /// An unauthenticated header may not ask us to allocate the machine.
+    ///
+    /// The KDF cost is read from the file before the GCM tag can be checked, so
+    /// this ceiling is the only thing between a ~51-byte file and a 4 TiB
+    /// allocation — which aborts the process rather than returning an error.
+    #[test]
+    fn brc39_refuses_a_hostile_kdf_cost() {
+        let file = fixture("brc39-ts-lowcost.bin");
+
+        let mut huge_mem = file.clone();
+        huge_mem[15..19].copy_from_slice(&u32::MAX.to_be_bytes());
+        let err = decrypt_brc39(&huge_mem, PASSWORD_NFC)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("memoryKiB"),
+            "expected a memory refusal, got: {err}"
+        );
+
+        let mut huge_iters = file.clone();
+        huge_iters[11..15].copy_from_slice(&u32::MAX.to_be_bytes());
+        let err = decrypt_brc39(&huge_iters, PASSWORD_NFC)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("iterations"),
+            "expected an iteration refusal, got: {err}"
+        );
     }
 
     #[test]
