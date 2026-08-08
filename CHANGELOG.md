@@ -5,6 +5,88 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-08-08
+
+Breaking. Sync replication now carries the data it claimed to.
+
+The replication path silently lost and mis-stamped rows on the update path,
+so a backup could report success while holding stale content. That is a
+recovery failure that only surfaces on restore day, and the fixes to it are
+behavioural — hence the minor bump rather than a patch.
+
+Also lands the cross-implementation conformance corpus, which is how three of
+the defects below were found at all.
+
+### Breaking
+
+- **`*Partial` types carry `updated_at`.** All sixteen update paths previously
+  stamped `datetime('now')` unconditionally, outside every field check, so no
+  caller could supply a timestamp. TS passes `max(ei.updated_at,
+  this.updated_at)` through. Merge now does the same. A caller relying on the
+  automatic touch still gets it (the field defaults to now); a caller that
+  sets it is now honoured.
+- **`GetSyncChunkArgs.max_items_per_entity` is replaced** by `max_items` +
+  `max_rough_size`. The chunker spent a per-entity budget where TS spends one
+  global budget in dependency order; `max_rough_size` was declared on the wire
+  since 0.5.0 and never consumed.
+- **Version skew:** a 0.6.0 consumer against a 0.5.0 producer relies on the
+  BRC-40 done-rule fix landed in this line. **Roll producers first.**
+
+### Fixed
+
+- **Merge-update wrote a fraction of the fields.** Transactions merged three
+  of TS's eleven, outputs three of fourteen. A backup that replicated a
+  transaction between create and sign never received the `rawTx`, so the
+  restored wallet could not rebroadcast or SPV-prove it — while the backup's
+  `updated_at` claimed it was current. Rust was also writing three fields TS
+  deliberately never merges (provenTx height/blockHash, commission satoshis,
+  output basketId).
+- **The dependent-entity filter dropped rows permanently.** Child rows whose
+  parent was not in the same chunk were dropped while offsets advanced past
+  them, and `when` then moved beyond their `updated_at`. TS has no such
+  filter; its chunker is ported here instead.
+- **Paged queries had no `ORDER BY`.** All 41 sites relied on SQLite's
+  plan-dependent enumeration order; a shift between chunks silently skipped
+  rows that then fell outside the window forever.
+- **`signAction` inverted `acceptDelayedBroadcast`.** `is_delayed` was its
+  negation, so "defer the broadcast" broadcast immediately and "broadcast now"
+  suppressed it. Found by the funded conformance recording.
+- **`options.noSendChange` was accepted and never honoured**, so BRC-100
+  noSend batch chaining failed with `WERR_INSUFFICIENT_FUNDS`.
+- **Admin-reserved names matched more narrowly than TS.** `default` — the
+  wallet's own change basket — was absent from `is_admin_basket` entirely, so
+  a third-party app could enumerate the user's change outputs. The `admin`
+  prefix required a trailing space, admitting names like `administrative`, and
+  the `p ` label namespace was missing.
+- **A corrupt stored sync map was swallowed** and then overwritten, destroying
+  the record of which rows had landed where. Now fatal inside the merge
+  transaction, so the import rolls back cleanly and stays retryable.
+- **Restore rollback failures were invisible.** Both errors now surface, with
+  the original as the primary.
+- **`when` was never set on a merged sync state**, so every later round
+  re-scanned from the beginning of time.
+- **The no-progress guard failed the boot on healthy data.** It keyed on row
+  counts, but a chunk that skips every row still advances offsets — an
+  already-current backup looks exactly like that. Now keyed on the request.
+- **An unreplicable backup no longer fails the boot.** The active store holds
+  the funds; refusing to start because a replica is down makes redundancy a
+  liability. Warns instead.
+
+### Added
+
+- **Cross-implementation conformance corpus** (`conformance/`), vendored from
+  `bsv-blockchain/ts-stack` and embedded, with runners for BRC-42 derivation
+  (201/201 passing), BRC-40 sync, the BRC-100 read and action surfaces, and
+  the storage adapter contract. Divergences are pinned per vector id, so the
+  build breaks if one appears, disappears, or changes shape.
+- **A funded BRC-100 corpus recorded on mainnet** — `createaction-funded.json`
+  (92) and `signaction-funded.json` (8). Upstream's expected values are
+  fabrications (every `expected.tx` is a zero-input transaction) and no
+  implementation in any language executes them. These carry their funding as
+  AtomicBEEF fixtures and replay offline, byte-for-byte, with the harness
+  services panicking on any network call.
+- `SECURITY.md`, naming the yanked `0.2.0`–`0.4.0` range.
+
 ## [0.5.0] - 2026-08-07
 
 Breaking. Signing calls now say who they are made on behalf of.
