@@ -98,8 +98,15 @@ pub async fn signer_sign_action(
         reference: Some(pending.reference.clone()),
         txid: Some(txid.clone()),
         raw_tx: Some(signed_tx_bytes),
+        // TS mergePriorOptions: signAction's own sendWith list wins; the
+        // createAction list is only the fallback when the caller supplied
+        // none. Previously the caller's list was discarded outright.
         send_with: if is_send_with {
-            pending.args.options.send_with.clone()
+            if args.options.send_with.is_empty() {
+                pending.args.options.send_with.clone()
+            } else {
+                args.options.send_with.clone()
+            }
         } else {
             vec![]
         },
