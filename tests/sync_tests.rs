@@ -856,4 +856,90 @@ mod sync_tests {
             );
         }
     }
+
+    // -----------------------------------------------------------------------
+    // A round that changes nothing is still a round that ADVANCED
+    // -----------------------------------------------------------------------
+
+    /// `inserts == 0 && updates == 0` does not mean the sync is stuck.
+    ///
+    /// `process_sync_chunk` counts every row it RECEIVES, before deciding
+    /// whether to insert, update or skip it, and those counts become the next
+    /// request's pagination offsets. So a backup that is already current skips
+    /// every row while still marching through the table — the next request is
+    /// a different question, and the answer will eventually be `done`.
+    ///
+    /// `WalletStorageManager`'s no-progress guard keys on the request rather
+    /// than on these counters precisely because of this. Keying it on
+    /// `inserts`/`updates` alone made re-attaching an up-to-date backup look
+    /// like a stall, and since `WalletBuilder::build()` propagates that error,
+    /// the wallet failed to boot on healthy data.
+    ///
+    /// The mutation this must catch: moving `count += 1` below the
+    /// insert/update/skip decision in `process_sync_chunk`.
+    #[tokio::test]
+    async fn a_chunk_of_already_present_rows_still_advances_the_offsets() {
+        let source = setup_storage().await.unwrap();
+        let target = setup_storage().await.unwrap();
+        let source_user_id = insert_test_user(&source, "02abc999").await;
+        let _target_user_id = insert_test_user(&target, "02abc999").await;
+        let now = dt("2024-01-15 12:00:00");
+
+        let tx = Transaction {
+            created_at: now,
+            updated_at: now,
+            transaction_id: 0,
+            user_id: source_user_id,
+            proven_tx_id: None,
+            status: TransactionStatus::Completed,
+            reference: "ref-idempotent".to_string(),
+            is_outgoing: false,
+            satoshis: 4200,
+            description: "already current".to_string(),
+            version: Some(1),
+            lock_time: Some(0),
+            txid: Some("cafebabe9999".to_string()),
+            input_beef: None,
+            raw_tx: None,
+        };
+        source.insert_transaction(&tx, None).await.unwrap();
+
+        let empty_map = SyncMap::new();
+        let args = || GetSyncChunkArgs {
+            from_storage_identity_key: "storage-a".to_string(),
+            to_storage_identity_key: "storage-b".to_string(),
+            user_identity_key: "02abc999".to_string(),
+            sync_map: &empty_map,
+            max_items_per_entity: 1000,
+            offsets: Default::default(),
+        };
+
+        // First pass populates the target.
+        let first_chunk = get_sync_chunk(&source, args(), None).await.unwrap();
+        let mut first_map = SyncMap::new();
+        let first = process_sync_chunk(&target, first_chunk, &mut first_map, None)
+            .await
+            .unwrap();
+        assert!(first.inserts > 0, "the first pass must insert the row");
+
+        // Second pass over the same data, from a FRESH sync map — exactly what
+        // re-attaching an already-current backup looks like.
+        let second_chunk = get_sync_chunk(&source, args(), None).await.unwrap();
+        let mut second_map = SyncMap::new();
+        let second = process_sync_chunk(&target, second_chunk, &mut second_map, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            (second.inserts, second.updates),
+            (0, 0),
+            "the row is already present and current, so nothing should be written"
+        );
+        assert!(
+            second_map.transaction.count > 0,
+            "the skipped row must still be COUNTED — that count is the next \
+             request's offset, and treating this round as no-progress fails \
+             the wallet to boot on a healthy backup"
+        );
+    }
 }

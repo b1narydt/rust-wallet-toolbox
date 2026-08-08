@@ -153,6 +153,26 @@ pub fn make_request_sync_chunk_args(
     })
 }
 
+/// Everything about a sync request that the producer's answer depends on:
+/// the window (`since`) and the position within it (`offsets`).
+///
+/// The other fields are fixed for the life of a sync pair (the two identity
+/// keys, the user) or are constants (`max_rough_size`, `max_items`), so two
+/// requests with equal keys are the same question.
+type SyncRequestKey = (Option<chrono::NaiveDateTime>, Vec<(String, i64)>);
+
+/// Key a request by what determines its answer, so the sync loop can tell a
+/// round that advanced from one that repeated.
+fn sync_request_key(args: &RequestSyncChunkArgs) -> SyncRequestKey {
+    (
+        args.since,
+        args.offsets
+            .iter()
+            .map(|o| (o.name.clone(), o.offset))
+            .collect(),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // ManagedStorage -- wraps a single WalletStorageProvider with cached state
 // ---------------------------------------------------------------------------
@@ -1613,6 +1633,7 @@ impl WalletStorageManager {
 
         let mut i = 0usize;
         let mut no_progress = 0usize;
+        let mut prev_request_key: Option<SyncRequestKey> = None;
         loop {
             // Re-query sync state on every iteration — processSyncChunk updates it.
             let (ss, _) = writer
@@ -1628,6 +1649,12 @@ impl WalletStorageManager {
                 &self.identity_key,
                 &writer_settings.storage_identity_key,
             )?;
+
+            // The stall signal is the REQUEST, not the row counts — see the
+            // no-progress guard below for why the counts alone are wrong.
+            let request_key = sync_request_key(&args);
+            let request_advanced = prev_request_key.as_ref() != Some(&request_key);
+            prev_request_key = Some(request_key);
 
             let chunk = reader.get_sync_chunk(&args).await?;
             let r = writer.process_sync_chunk(&args, &chunk).await?;
@@ -1649,11 +1676,20 @@ impl WalletStorageManager {
                 break;
             }
 
-            // NO-PROGRESS GUARD. A chunk that inserts nothing, updates nothing
-            // and does not report `done` cannot become `done` by being asked
-            // again — the request is a pure function of the persisted sync
-            // state, so an identical request returns an identical answer,
-            // forever.
+            // NO-PROGRESS GUARD. A request that is a pure function of the
+            // persisted sync state cannot become `done` by being sent again:
+            // an identical request returns an identical answer, forever.
+            //
+            // The test is whether the REQUEST repeated, NOT whether rows
+            // changed. `inserts == 0 && updates == 0` is a legitimate,
+            // progressing round: `process_sync_chunk` counts every row it
+            // RECEIVES (`count += 1` runs before the insert/update/skip
+            // decision), and those counts become the next request's offsets.
+            // A backup that is already current skips every row for chunk
+            // after chunk while marching through the table — and because
+            // `WalletBuilder::build()` propagates this error (`setup.rs`),
+            // erroring on it fails the wallet to boot on healthy data,
+            // precisely during a disaster-recovery drill.
             //
             // This is not hypothetical, and it is a CROSS-VERSION hazard
             // introduced by tightening the done-rule: a consumer that requires
@@ -1666,7 +1702,7 @@ impl WalletStorageManager {
             // Erroring is the right direction: a stalled sync is a real
             // condition an operator must be told about, and the message names
             // the likely cause so nobody has to rediscover it.
-            if r.inserts == 0 && r.updates == 0 {
+            if r.inserts == 0 && r.updates == 0 && !request_advanced {
                 no_progress += 1;
                 if no_progress >= MAX_NO_PROGRESS_CHUNKS {
                     return Err(WalletError::InvalidOperation(format!(
@@ -1731,6 +1767,7 @@ impl WalletStorageManager {
 
         let mut i = 0usize;
         let mut no_progress = 0usize;
+        let mut prev_request_key: Option<SyncRequestKey> = None;
         loop {
             let (ss, _) = writer
                 .find_or_insert_sync_state_auth(
@@ -1745,6 +1782,12 @@ impl WalletStorageManager {
                 &self.identity_key,
                 &writer_settings.storage_identity_key,
             )?;
+
+            // The stall signal is the REQUEST, not the row counts — see the
+            // no-progress guard below for why the counts alone are wrong.
+            let request_key = sync_request_key(&args);
+            let request_advanced = prev_request_key.as_ref() != Some(&request_key);
+            prev_request_key = Some(request_key);
 
             let mut chunk = reader.get_sync_chunk(&args).await?;
 
@@ -1775,11 +1818,20 @@ impl WalletStorageManager {
                 break;
             }
 
-            // NO-PROGRESS GUARD. A chunk that inserts nothing, updates nothing
-            // and does not report `done` cannot become `done` by being asked
-            // again — the request is a pure function of the persisted sync
-            // state, so an identical request returns an identical answer,
-            // forever.
+            // NO-PROGRESS GUARD. A request that is a pure function of the
+            // persisted sync state cannot become `done` by being sent again:
+            // an identical request returns an identical answer, forever.
+            //
+            // The test is whether the REQUEST repeated, NOT whether rows
+            // changed. `inserts == 0 && updates == 0` is a legitimate,
+            // progressing round: `process_sync_chunk` counts every row it
+            // RECEIVES (`count += 1` runs before the insert/update/skip
+            // decision), and those counts become the next request's offsets.
+            // A backup that is already current skips every row for chunk
+            // after chunk while marching through the table — and because
+            // `WalletBuilder::build()` propagates this error (`setup.rs`),
+            // erroring on it fails the wallet to boot on healthy data,
+            // precisely during a disaster-recovery drill.
             //
             // This is not hypothetical, and it is a CROSS-VERSION hazard
             // introduced by tightening the done-rule: a consumer that requires
@@ -1792,7 +1844,7 @@ impl WalletStorageManager {
             // Erroring is the right direction: a stalled sync is a real
             // condition an operator must be told about, and the message names
             // the likely cause so nobody has to rediscover it.
-            if r.inserts == 0 && r.updates == 0 {
+            if r.inserts == 0 && r.updates == 0 && !request_advanced {
                 no_progress += 1;
                 if no_progress >= MAX_NO_PROGRESS_CHUNKS {
                     return Err(WalletError::InvalidOperation(format!(
