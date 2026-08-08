@@ -37,6 +37,19 @@ pub async fn create_sqlite_pools(config: &StorageConfig) -> WalletResult<(Sqlite
     let base_opts = SqliteConnectOptions::from_str(&config.url)?
         .journal_mode(SqliteJournalMode::Wal)
         .synchronous(synchronous)
+        // SQLite ignores declared foreign keys unless this is ON, PER
+        // CONNECTION — the schema has declared them throughout and they were
+        // decorative. Set here with the other pragmas so every connection a
+        // pool ever opens, including replacements for recycled ones, enforces
+        // them; setting it after connect would protect only the first.
+        //
+        // The referential integrity of a restored wallet was resting entirely
+        // on the BRC-38 validator's hand-maintained relationship checks. That
+        // list is correct today, but it is the same fail-open shape as any
+        // other hand-maintained list: an added table with a new reference is
+        // unguarded until someone remembers to extend it. The database should
+        // be the one enforcing this.
+        .foreign_keys(true)
         .busy_timeout(std::time::Duration::from_secs(30))
         .create_if_missing(true);
 

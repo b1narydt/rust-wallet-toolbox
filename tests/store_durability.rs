@@ -641,6 +641,71 @@ mod store_durability {
         );
     }
 
+    /// Declared foreign keys must actually be ENFORCED, on every connection.
+    ///
+    /// SQLite ignores `REFERENCES` clauses unless `PRAGMA foreign_keys` is ON,
+    /// and it is OFF by default and scoped PER CONNECTION. The schema declares
+    /// foreign keys throughout; before this was set they were decorative, and
+    /// the referential integrity of a restored wallet rested entirely on the
+    /// BRC-38 validator's hand-maintained relationship checks.
+    ///
+    /// Asserted on a replacement connection too, for the same reason
+    /// `synchronous_pragma_applies_to_every_writer_connection` does: a pragma
+    /// applied post-connect configures only the connection that served it.
+    #[tokio::test]
+    async fn foreign_keys_are_enforced_on_every_connection() {
+        let (storage, _dir) = file_storage("fk").await;
+
+        let on: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
+            .fetch_one(&storage.write_pool)
+            .await
+            .expect("read foreign_keys on the writer");
+        assert_eq!(on, 1, "the writer must enforce foreign keys");
+
+        // The reader pool is optional; when present it must agree — a read
+        // that sees unenforced constraints would report rows the writer would
+        // have refused.
+        if let Some(read_pool) = storage.read_pool.as_ref() {
+            let on: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
+                .fetch_one(read_pool)
+                .await
+                .expect("read foreign_keys on the reader");
+            assert_eq!(on, 1, "the reader must enforce foreign keys too");
+        }
+
+        // Force a replacement writer connection and re-check.
+        let conn = storage
+            .write_pool
+            .acquire()
+            .await
+            .expect("acquire writer connection");
+        drop(conn.detach());
+
+        let fresh: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
+            .fetch_one(&storage.write_pool)
+            .await
+            .expect("read foreign_keys on replacement connection");
+        assert_eq!(
+            fresh, 1,
+            "a replacement connection must also enforce foreign keys"
+        );
+
+        // And prove it BITES, rather than merely reporting as on: an output
+        // referencing a transaction that does not exist must be refused.
+        let violated = sqlx::query(
+            "INSERT INTO outputs (userId, transactionId, spendable, change, vout, satoshis, \
+             providedBy, purpose, type, created_at, updated_at) \
+             VALUES (1, 999999, 0, 0, 0, 0, 'you', '', 'custom', datetime('now'), datetime('now'))",
+        )
+        .execute(&storage.write_pool)
+        .await;
+        assert!(
+            violated.is_err(),
+            "an output pointing at a non-existent transaction must be REFUSED; if this inserts, \
+             the pragma is reporting on while the constraint is not enforced"
+        );
+    }
+
     /// The chaintracks header store must run in WAL mode with a busy
     /// timeout — its pool holds multiple connections that can all write, so
     /// rollback-journal mode made concurrent header traffic fail with
