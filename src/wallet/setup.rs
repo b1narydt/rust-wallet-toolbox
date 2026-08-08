@@ -550,8 +550,22 @@ impl WalletBuilder {
         // `set_active` or `add_wallet_storage_provider`, which is a backup
         // that exists but holds nothing. Subsequent boots are incremental —
         // the sync engine resumes from the persisted sync_states row.
+        //
+        // A backup that cannot be reached is a degraded wallet, not a broken
+        // one: the ACTIVE store holds the funds, and refusing to boot because
+        // a REPLICA is down makes redundancy a liability — the one configured
+        // store that is still healthy becomes unusable. TS does not replicate
+        // at boot at all. So this warns loudly and hands the wallet out; the
+        // next `update_backups` retries, and the error names the backup.
         if has_backups {
-            storage.update_backups(None).await?;
+            if let Err(e) = storage.update_backups(None).await {
+                tracing::warn!(
+                    "boot replication to a configured backup failed: {e}. The wallet is USABLE \
+                     — the active store is authoritative and holds the funds — but it is running \
+                     UNREPLICATED, so a loss of the active store now loses everything since the \
+                     last successful sync. Fix the backup and call update_backups."
+                );
+            }
         }
 
         // Determine services
