@@ -278,13 +278,53 @@ fn count_decoded_rows(d: &DecodedBrc38) -> i64 {
 }
 
 /// Merge into a live target through the sync machinery (TS `mergeBRC38`).
+/// Merge runs in ONE transaction, like restore.
+///
+/// It previously did not: every write passed `None` for the transaction token
+/// and autocommitted, so a failure part-way left the target PARTIALLY MERGED —
+/// no rollback, no marker, and no `Brc38ImportResult`, so the caller could not
+/// learn how far it got. That is the dangerous shape, because unlike restore
+/// (which refuses a non-empty target) merge runs against a store that already
+/// holds data, so there was nothing to distinguish a half-merged wallet from a
+/// correctly merged one.
+///
+/// The ordering made it worse: the id-map was persisted AFTER the rows it
+/// describes, so a crash between them left a map that `normalize_sync_map`
+/// would later read as empty — silently re-inserting rows it should have
+/// matched.
 async fn merge_brc38<S: StorageProvider>(
     storage: &S,
     decoded: &DecodedBrc38,
     target_settings: &Settings,
 ) -> WalletResult<Brc38ImportResult> {
+    let trx = storage.begin_transaction().await?;
+    match merge_brc38_in_trx(storage, decoded, target_settings, &trx).await {
+        Ok(result) => {
+            storage.commit_transaction(trx).await?;
+            Ok(result)
+        }
+        Err(e) => {
+            // The rollback's own failure must not mask the reason we are
+            // rolling back — that error is what the operator needs.
+            if let Err(rollback_err) = storage.rollback_transaction(trx).await {
+                tracing::error!(
+                    "BRC-38 merge failed and its rollback ALSO failed: {rollback_err}. The target \
+                     may be partially merged; inspect it before retrying."
+                );
+            }
+            Err(e)
+        }
+    }
+}
+
+async fn merge_brc38_in_trx<S: StorageProvider>(
+    storage: &S,
+    decoded: &DecodedBrc38,
+    target_settings: &Settings,
+    trx: &TrxToken,
+) -> WalletResult<Brc38ImportResult> {
     let (target_user, _) = storage
-        .find_or_insert_user(&decoded.user.identity_key, None)
+        .find_or_insert_user(&decoded.user.identity_key, Some(trx))
         .await?;
 
     // Find or create the sync state row tracking imports from the source
@@ -294,6 +334,7 @@ async fn merge_brc38<S: StorageProvider>(
         target_user.user_id,
         &decoded.source_storage.storage_identity_key,
         &decoded.source_storage.storage_name,
+        Some(trx),
     )
     .await?;
 
@@ -325,7 +366,7 @@ async fn merge_brc38<S: StorageProvider>(
         storage as &dyn StorageProvider,
         chunk,
         &mut import_map,
-        None,
+        Some(trx),
     )
     .await?;
 
@@ -341,7 +382,7 @@ async fn merge_brc38<S: StorageProvider>(
                 sync_map: Some(sync_map_to_ts_json(&import_map)),
                 ..Default::default()
             },
-            None,
+            Some(trx),
         )
         .await?;
 
@@ -351,6 +392,7 @@ async fn merge_brc38<S: StorageProvider>(
         target_user.user_id,
         &import_map,
         &decoded.source_storage,
+        Some(trx),
     )
     .await?;
 
@@ -368,6 +410,7 @@ async fn find_or_insert_sync_state<S: StorageProvider + ?Sized>(
     user_id: i64,
     storage_identity_key: &str,
     storage_name: &str,
+    trx: Option<&TrxToken>,
 ) -> WalletResult<SyncState> {
     let existing = storage
         .find_sync_states(
@@ -380,7 +423,7 @@ async fn find_or_insert_sync_state<S: StorageProvider + ?Sized>(
                 },
                 ..Default::default()
             },
-            None,
+            trx,
         )
         .await?;
     if existing.len() > 1 {
@@ -410,7 +453,7 @@ async fn find_or_insert_sync_state<S: StorageProvider + ?Sized>(
         error_local: None,
         error_other: None,
     };
-    state.sync_state_id = storage.insert_sync_state(&state, None).await?;
+    state.sync_state_id = storage.insert_sync_state(&state, trx).await?;
     Ok(state)
 }
 
@@ -423,6 +466,7 @@ async fn merge_imported_sync_states<S: StorageProvider + ?Sized>(
     user_id: i64,
     import_map: &SyncMap,
     source_storage: &Settings,
+    trx: Option<&TrxToken>,
 ) -> WalletResult<(i64, i64)> {
     let mut inserts = 0;
     let mut updates = 0;
@@ -446,7 +490,7 @@ async fn merge_imported_sync_states<S: StorageProvider + ?Sized>(
                     },
                     ..Default::default()
                 },
-                None,
+                trx,
             )
             .await?;
         if existing.len() > 1 {
@@ -457,7 +501,7 @@ async fn merge_imported_sync_states<S: StorageProvider + ?Sized>(
         match existing.into_iter().next() {
             None => {
                 row.sync_state_id = 0;
-                storage.insert_sync_state(&row, None).await?;
+                storage.insert_sync_state(&row, trx).await?;
                 inserts += 1;
             }
             Some(existing) => {
@@ -480,7 +524,7 @@ async fn merge_imported_sync_states<S: StorageProvider + ?Sized>(
                             when: row.when,
                             ..Default::default()
                         },
-                        None,
+                        trx,
                     )
                     .await?;
                 updates += 1;
