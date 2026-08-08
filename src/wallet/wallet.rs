@@ -1759,7 +1759,13 @@ impl ContextualWallet for Wallet {
         let (is_no_send, is_delayed, is_send_with) = match raw_options {
             Some(opts) => (
                 opts.no_send.0,
-                opts.accept_delayed_broadcast.0.map(|abd| !abd),
+                // isDelayed IS acceptDelayedBroadcast (TS signAction parity).
+                // This was negated until the funded conformance recording
+                // caught it: an explicit acceptDelayedBroadcast=true caused
+                // an immediate inline broadcast, and =false suppressed the
+                // broadcast entirely — exactly inverted. The createAction
+                // path above always mapped it straight.
+                opts.accept_delayed_broadcast.0,
                 if opts.send_with.is_empty() {
                     None
                 } else {

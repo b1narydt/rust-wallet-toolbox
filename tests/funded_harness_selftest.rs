@@ -269,3 +269,86 @@ async fn sign_vector_round_trip_is_deterministic() {
     .expect("run b");
     assert_eq!(a.outcome, b.outcome, "same seed must reproduce byte-identically");
 }
+
+#[tokio::test]
+async fn delayed_send_vector_must_not_broadcast() {
+    let (payment, roots) = fabricate_funding();
+    let args = serde_json::json!({
+        "description": "delayed send action",
+        "outputs": [{
+            "lockingScript": "76a914a3dbcdd15d94b7fec6f80879369cf57ffda0eeca88ac",
+            "satoshis": 1000,
+            "outputDescription": "out0"
+        }],
+        "labels": ["selftest"],
+        "options": {"noSend": false, "acceptDelayedBroadcast": true}
+    });
+    let a = run_create_vector(services(&roots), ROOT_1, "seed-delayed", std::slice::from_ref(&payment), &args)
+        .await
+        .expect("run");
+    assert_eq!(a.outcome.status, "success", "{:?}", a.outcome.message);
+    assert!(a.outcome.no_send_change.is_empty());
+}
+
+/// Pins the signAction isDelayed mapping: an explicit
+/// options.acceptDelayedBroadcast=true is a DELAYED send — the tripwire
+/// services prove no inline broadcast happens. Before the fix this mapping
+/// was negated and this test panicked on WalletServices::post_beef.
+#[tokio::test]
+async fn sign_accept_delayed_true_does_not_broadcast_inline() {
+    let (payment, roots) = fabricate_funding();
+    let caller = PrivateKey::from_hex(CALLER_KEY).expect("caller key");
+    let precursor = serde_json::json!({
+        "description": "selftest signAction delayed precursor",
+        "inputBEEF": funded_common::from_hex(&payment.beef),
+        "inputs": [{
+            "outpoint": format!("{}.1", payment.txid),
+            "inputDescription": "selftest caller input",
+            "unlockingScriptLength": 108
+        }],
+        "outputs": [{
+            "lockingScript": to_hex(&p2pkh_lock(&caller)),
+            "satoshis": 100,
+            "outputDescription": "selftest output"
+        }],
+        "labels": ["selftest"],
+        "options": {"signAndProcess": false}
+    });
+
+    let (signable_tx, signable_ref_bytes) = {
+        let _entropy_guard = funded_common::ENTROPY_SESSION.lock().await;
+        let setup = funded_common::build_vector_wallet(ROOT_1, services(&roots))
+            .await
+            .expect("wallet");
+        funded_common::internalize_funding(&setup, &payment)
+            .await
+            .expect("funding");
+        bsv_wallet_toolbox::utility::conformance_entropy::set_conformance_entropy("delayed-sign");
+        let args: bsv::wallet::interfaces::CreateActionArgs =
+            serde_json::from_value(precursor.clone()).expect("precursor args");
+        let created = setup
+            .wallet
+            .create_action(args, None)
+            .await
+            .expect("precursor create");
+        bsv_wallet_toolbox::utility::conformance_entropy::clear_conformance_entropy();
+        let signable = created.signable_transaction.expect("signable");
+        (signable.tx, signable.reference)
+    };
+    let unlock = caller_unlock_script(&signable_tx, 0, 300, &caller);
+
+    use base64::Engine as _;
+    let sign_args = serde_json::json!({
+        "reference": base64::engine::general_purpose::STANDARD.encode(&signable_ref_bytes),
+        "spends": {"0": {"unlockingScript": to_hex(&unlock)}},
+        "options": {"acceptDelayedBroadcast": true}
+    });
+
+    let r = run_sign_vector(
+        services(&roots), ROOT_1, "delayed-sign", std::slice::from_ref(&payment),
+        std::slice::from_ref(&precursor), &sign_args,
+    )
+    .await
+    .expect("run");
+    assert_eq!(r.outcome.status, "success", "{:?}", r.outcome.message);
+}
