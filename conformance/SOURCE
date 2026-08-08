@@ -1,0 +1,9 @@
+# Upstream conformance vector pin.
+# Vectors are byte-identical copies of the corpus maintained in
+# bsv-blockchain/ts-stack under conformance/vectors/ (vendored via
+# go-wallet-toolbox/conformance at the same pin).
+upstream_repo=bsv-blockchain/ts-stack
+upstream_sha=1920a9c1b34010ff7ede34e424f0fca19b2ed3e6
+upstream_ref=1920a9c1b34010ff7ede34e424f0fca19b2ed3e6
+fetched_at=2026-05-14
+vendored_at=2026-08-08
