@@ -69,7 +69,8 @@ mod sync_tests {
                 to_storage_identity_key: "storage-b".to_string(),
                 user_identity_key: "02abc111".to_string(),
                 sync_map: &sync_map,
-                max_items_per_entity: 1000,
+                max_items: 1000,
+                max_rough_size: 10_000_000,
                 offsets: Default::default(),
             },
             None,
@@ -163,7 +164,8 @@ mod sync_tests {
                 to_storage_identity_key: "storage-b".to_string(),
                 user_identity_key: "02abc222".to_string(),
                 sync_map: &sync_map,
-                max_items_per_entity: 1000,
+                max_items: 1000,
+                max_rough_size: 10_000_000,
                 offsets: Default::default(),
             },
             None,
@@ -221,7 +223,8 @@ mod sync_tests {
                 to_storage_identity_key: "storage-b".to_string(),
                 user_identity_key: "02abc333".to_string(),
                 sync_map: &sync_map,
-                max_items_per_entity: 1000,
+                max_items: 1000,
+                max_rough_size: 10_000_000,
                 offsets: Default::default(),
             },
             None,
@@ -910,7 +913,8 @@ mod sync_tests {
             to_storage_identity_key: "storage-b".to_string(),
             user_identity_key: "02abc999".to_string(),
             sync_map: &empty_map,
-            max_items_per_entity: 1000,
+            max_items: 1000,
+                max_rough_size: 10_000_000,
             offsets: Default::default(),
         };
 
@@ -1185,6 +1189,341 @@ mod sync_tests {
         assert_eq!(
             labels[0].updated_at, t3,
             "the merged row must carry the source timestamp"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Defect: the dependent-entity filter dropped cross-round children forever
+    // -----------------------------------------------------------------------
+
+    fn chunk_done(c: &SyncChunk) -> bool {
+        c.proven_txs.as_ref().is_some_and(|v| v.is_empty())
+            && c.output_baskets.as_ref().is_some_and(|v| v.is_empty())
+            && c.transactions.as_ref().is_some_and(|v| v.is_empty())
+            && c.outputs.as_ref().is_some_and(|v| v.is_empty())
+            && c.tx_labels.as_ref().is_some_and(|v| v.is_empty())
+            && c.tx_label_maps.as_ref().is_some_and(|v| v.is_empty())
+            && c.output_tags.as_ref().is_some_and(|v| v.is_empty())
+            && c.output_tag_maps.as_ref().is_some_and(|v| v.is_empty())
+            && c.certificates.as_ref().is_some_and(|v| v.is_empty())
+            && c.certificate_fields.as_ref().is_some_and(|v| v.is_empty())
+            && c.commissions.as_ref().is_some_and(|v| v.is_empty())
+            && c.proven_tx_reqs.as_ref().is_some_and(|v| v.is_empty())
+    }
+
+    fn offsets_from(map: &SyncMap) -> bsv_wallet_toolbox::storage::sync::get_sync_chunk::SyncChunkOffsets {
+        bsv_wallet_toolbox::storage::sync::get_sync_chunk::SyncChunkOffsets {
+            proven_tx: map.proven_tx.count,
+            output_basket: map.output_basket.count,
+            output_tag: map.output_tag.count,
+            tx_label: map.tx_label.count,
+            transaction: map.transaction.count,
+            output: map.output.count,
+            tx_label_map: map.tx_label_map.count,
+            output_tag_map: map.output_tag_map.count,
+            certificate: map.certificate.count,
+            certificate_field: map.certificate_field.count,
+            commission: map.commission.count,
+            proven_tx_req: map.proven_tx_req.count,
+        }
+    }
+
+    fn mk_tx(user_id: i64, when: NaiveDateTime, i: usize) -> Transaction {
+        Transaction {
+            created_at: when,
+            updated_at: when,
+            transaction_id: 0,
+            user_id,
+            proven_tx_id: None,
+            status: TransactionStatus::Completed,
+            reference: format!("ref-{i:03}"),
+            is_outgoing: true,
+            satoshis: 1000,
+            description: "chunker test".to_string(),
+            version: Some(1),
+            lock_time: Some(0),
+            txid: Some(format!("txid-{i:03}")),
+            input_beef: None,
+            raw_tx: None,
+        }
+    }
+
+    /// A new child row whose parent was synced in an EARLIER round must ride
+    /// the chunk and resolve through the consumer's persisted id-map. The old
+    /// producer filtered out any dependent row whose parent was not in the
+    /// same chunk — on an incremental round the month-old parent is never
+    /// re-sent, so a new label on an old transaction was dropped on every
+    /// round while `when` advanced past it: silent, permanent loss.
+    #[tokio::test]
+    async fn cross_round_child_of_old_parent_survives() {
+        let source = setup_storage().await.unwrap();
+        let target = setup_storage().await.unwrap();
+        let user_id = insert_test_user(&source, "02crossround").await;
+
+        let t1 = dt("2024-01-15 10:00:00");
+        let t2 = dt("2024-02-01 00:00:00");
+        let t3 = dt("2024-02-15 09:00:00");
+
+        // Round-1 state: a transaction, two labels, one map.
+        let tx_id = source.insert_transaction(&mk_tx(user_id, t1, 0), None).await.unwrap();
+        let mk_label = |label: &str| TxLabel {
+            created_at: t1,
+            updated_at: t1,
+            tx_label_id: 0,
+            user_id,
+            label: label.to_string(),
+            is_deleted: false,
+        };
+        let label1_id = source.insert_tx_label(&mk_label("cr-label-1"), None).await.unwrap();
+        let label2_id = source.insert_tx_label(&mk_label("cr-label-2"), None).await.unwrap();
+        source
+            .insert_tx_label_map(
+                &TxLabelMap {
+                    created_at: t1,
+                    updated_at: t1,
+                    tx_label_id: label1_id,
+                    transaction_id: tx_id,
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        fn chunk_args(producer_map: &SyncMap) -> GetSyncChunkArgs<'_> {
+            GetSyncChunkArgs {
+                from_storage_identity_key: "storage-a".to_string(),
+                to_storage_identity_key: "storage-b".to_string(),
+                user_identity_key: "02crossround".to_string(),
+                sync_map: producer_map,
+                max_items: 1000,
+                max_rough_size: 10_000_000,
+                offsets: Default::default(),
+            }
+        }
+
+        // Round 1: full window, everything replicates. The consumer's sync_map
+        // (id-map included) persists across rounds, as the trait-level
+        // process_sync_chunk persists it in the sync_states row.
+        let producer_map = SyncMap::new();
+        let chunk1 = get_sync_chunk(&source, chunk_args(&producer_map), None)
+            .await
+            .unwrap();
+        let mut consumer_map = SyncMap::new();
+        process_sync_chunk(&target, chunk1, &mut consumer_map, None)
+            .await
+            .unwrap();
+
+        // Between rounds: a NEW map labels the month-old transaction with the
+        // month-old second label. Neither parent will be in the next window.
+        source
+            .insert_tx_label_map(
+                &TxLabelMap {
+                    created_at: t3,
+                    updated_at: t3,
+                    tx_label_id: label2_id,
+                    transaction_id: tx_id,
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Round 2: incremental window starting after t1.
+        let mut producer_map = SyncMap::new();
+        for esm in producer_map.entity_maps_mut() {
+            esm.max_updated_at = Some(t2);
+        }
+        let chunk2 = get_sync_chunk(&source, chunk_args(&producer_map), None)
+            .await
+            .unwrap();
+
+        let maps = chunk2
+            .tx_label_maps
+            .as_ref()
+            .expect("txLabelMaps must be present in round 2");
+        assert_eq!(
+            maps.len(),
+            1,
+            "the new map on an old parent must ride the chunk even though its \
+             parents are not in the window — the producer must not filter it"
+        );
+        assert!(
+            chunk2.transactions.as_ref().is_some_and(|v| v.is_empty()),
+            "the old parent transaction is not in the incremental window"
+        );
+
+        process_sync_chunk(&target, chunk2, &mut consumer_map, None)
+            .await
+            .unwrap();
+
+        let target_maps = target
+            .find_tx_label_maps(&FindTxLabelMapsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(
+            target_maps.len(),
+            2,
+            "the backup must hold both maps after the incremental round"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // The chunker exhausts parents before children within a round
+    // -----------------------------------------------------------------------
+
+    /// TS's chunker spends ONE global budget across the 12 entities in
+    /// dependency order, fully exhausting each entity for the window before
+    /// the next emits a row. That is what makes the consumer's fail-closed
+    /// FK remap safe on initial syncs of wallets larger than one chunk:
+    /// children referencing late-page parents only ever appear after every
+    /// parent in the window has been sent.
+    #[tokio::test]
+    async fn parents_exhaust_before_children_within_a_round() {
+        let source = setup_storage().await.unwrap();
+        let target = setup_storage().await.unwrap();
+        let user_id = insert_test_user(&source, "02exhaust").await;
+
+        let t1 = dt("2024-01-15 10:00:00");
+
+        // 30 transactions; a label; maps on the LAST five transactions, so
+        // every map references a parent beyond the first chunk's budget.
+        let mut tx_ids = Vec::new();
+        for i in 0..30 {
+            tx_ids.push(source.insert_transaction(&mk_tx(user_id, t1, i), None).await.unwrap());
+        }
+        let label_id = source
+            .insert_tx_label(
+                &TxLabel {
+                    created_at: t1,
+                    updated_at: t1,
+                    tx_label_id: 0,
+                    user_id,
+                    label: "late".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        for tx_id in &tx_ids[25..30] {
+            source
+                .insert_tx_label_map(
+                    &TxLabelMap {
+                        created_at: t1,
+                        updated_at: t1,
+                        tx_label_id: label_id,
+                        transaction_id: *tx_id,
+                        is_deleted: false,
+                    },
+                    None,
+                )
+                .await
+                .unwrap();
+        }
+
+        let producer_map = SyncMap::new();
+        let mut consumer_map = SyncMap::new();
+        let mut first = true;
+        for round in 0..40 {
+            assert!(round < 39, "sync loop failed to converge");
+            let chunk = get_sync_chunk(
+                &source,
+                GetSyncChunkArgs {
+                    from_storage_identity_key: "storage-a".to_string(),
+                    to_storage_identity_key: "storage-b".to_string(),
+                    user_identity_key: "02exhaust".to_string(),
+                    sync_map: &producer_map,
+                    max_items: 10,
+                    max_rough_size: 10_000_000,
+                    offsets: offsets_from(&consumer_map),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+            if first {
+                // The global budget (10) is spent on the label and the first
+                // nine transactions; the child entities must be ABSENT, not
+                // paged in parallel with their parents.
+                assert_eq!(
+                    chunk.transactions.as_ref().map(|v| v.len()),
+                    Some(9),
+                    "chunk 1 spends the remaining budget on transactions"
+                );
+                assert!(
+                    chunk.tx_label_maps.is_none(),
+                    "child rows must not appear before their parents are exhausted"
+                );
+                assert!(chunk.outputs.is_none());
+                first = false;
+            }
+
+            let done = chunk_done(&chunk);
+            process_sync_chunk(&target, chunk, &mut consumer_map, None)
+                .await
+                .expect("every child's parent must already be mapped");
+            if done {
+                break;
+            }
+        }
+
+        let target_txs = target
+            .find_transactions(&FindTransactionsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(target_txs.len(), 30);
+        let target_maps = target
+            .find_tx_label_maps(&FindTxLabelMapsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(
+            target_maps.len(),
+            5,
+            "maps referencing late-page parents must all replicate"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // maxRoughSize bounds a chunk
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn rough_size_budget_bounds_a_chunk() {
+        let source = setup_storage().await.unwrap();
+        let user_id = insert_test_user(&source, "02rough").await;
+        let t1 = dt("2024-01-15 10:00:00");
+        for i in 0..5 {
+            source.insert_transaction(&mk_tx(user_id, t1, i), None).await.unwrap();
+        }
+
+        let producer_map = SyncMap::new();
+        let chunk = get_sync_chunk(
+            &source,
+            GetSyncChunkArgs {
+                from_storage_identity_key: "storage-a".to_string(),
+                to_storage_identity_key: "storage-b".to_string(),
+                user_identity_key: "02rough".to_string(),
+                sync_map: &producer_map,
+                max_items: 1000,
+                max_rough_size: 1,
+                offsets: Default::default(),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            chunk.transactions.as_ref().map(|v| v.len()),
+            Some(1),
+            "the first row exhausts a 1-byte rough budget; the chunk stops there"
+        );
+        assert!(
+            chunk.outputs.is_none(),
+            "entities after the budget stop must be absent"
         );
     }
 }

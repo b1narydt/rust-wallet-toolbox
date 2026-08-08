@@ -1,12 +1,22 @@
 //! getSyncChunk implementation -- extracts changed entities since last sync.
 //!
-//! Queries each entity type from storage filtered by the max_updated_at
-//! timestamp in the SyncMap, collecting up to max_items_per_entity items.
-//! This implements the incremental sync protocol's "pull" side.
+//! Ports the TS chunker (`getSyncChunk.ts`) faithfully: ONE global item
+//! budget (`maxItems`) and one rough byte budget (`maxRoughSize`) are spent
+//! across the 12 entity types in dependency order, and each entity is
+//! exhausted for the current window before the next entity emits a single
+//! row. That ordering is load-bearing: it guarantees that within a sync
+//! round every parent row (transaction, label, tag, certificate) has been
+//! sent before any child row (map, field, commission) that references it,
+//! so the consumer's foreign-key remap always finds the parent — either in
+//! this round's id-map or, for parents updated in an earlier round, in the
+//! persisted syncMap.
+//!
+//! An entity's array is present (possibly empty) once the chunker has
+//! queried it, and absent when the budget ran out before reaching it. The
+//! consumer reads absence as "no attempt" and only declares the round done
+//! when all 12 arrays are present AND empty (BRC-40).
 
-use std::collections::HashSet;
-
-use crate::error::WalletResult;
+use crate::error::{WalletError, WalletResult};
 use crate::storage::find_args::*;
 use crate::storage::sync::sync_map::{SyncChunk, SyncMap};
 use crate::storage::traits::provider::StorageProvider;
@@ -43,23 +53,29 @@ pub struct GetSyncChunkArgs<'a> {
     pub user_identity_key: String,
     /// Current sync state with per-entity max_updated_at timestamps.
     pub sync_map: &'a SyncMap,
-    /// Maximum number of items to return per entity type. Defaults to 1000.
-    pub max_items_per_entity: i64,
+    /// Global item budget for the whole chunk (TS `maxItems`). This is NOT
+    /// per-entity: the chunker spends it across all 12 entity types in
+    /// dependency order.
+    pub max_items: i64,
+    /// Rough byte budget for the whole chunk, measured as summed JSON length
+    /// of the items (TS `maxRoughSize`).
+    pub max_rough_size: i64,
     /// Per-entity row offsets for pagination within a sync window.
     pub offsets: SyncChunkOffsets,
 }
 
 /// Get the next incremental sync chunk of entities that changed since the last sync.
 ///
-/// For each entity type, queries storage using the sync_map's max_updated_at
-/// as the `since` filter, limited to max_items_per_entity results.
+/// Entities are visited in the fixed TS dependency order (provenTx,
+/// outputBasket, outputTag, txLabel, transaction, output, txLabelMap,
+/// outputTagMap, certificate, certificateField, commission, provenTxReq),
+/// each exhausted for the window before the next starts, until the shared
+/// budgets run out.
 pub async fn get_sync_chunk(
     storage: &dyn StorageProvider,
     args: GetSyncChunkArgs<'_>,
     trx: Option<&TrxToken>,
 ) -> WalletResult<SyncChunk> {
-    let max = args.max_items_per_entity;
-
     // Look up the user to get their user_id
     let user = storage
         .find_user_by_identity_key(&args.user_identity_key, trx)
@@ -107,287 +123,270 @@ pub async fn get_sync_chunk(
         None => None,
     };
 
-    let paged = |limit: i64, offset: i64| Some(Paged { limit, offset });
+    let mut item_count = args.max_items;
+    let mut rough_size = args.max_rough_size;
+    let mut done = false;
 
-    // ProvenTx
-    let proven_txs = {
-        let items = storage
-            .get_proven_txs_for_user(
-                &FindForUserSincePagedArgs {
-                    user_id,
-                    since: args.sync_map.proven_tx.max_updated_at,
-                    paged: paged(max, args.offsets.proven_tx),
-                },
-                trx,
-            )
-            .await?;
-        Some(items)
-    };
+    let mut proven_txs = None;
+    let mut output_baskets = None;
+    let mut output_tags = None;
+    let mut tx_labels = None;
+    let mut transactions = None;
+    let mut outputs = None;
+    let mut tx_label_maps = None;
+    let mut output_tag_maps = None;
+    let mut certificates = None;
+    let mut certificate_fields = None;
+    let mut commissions = None;
+    let mut proven_tx_reqs = None;
 
-    // OutputBasket
-    let output_baskets = {
-        let items = storage
-            .find_output_baskets(
+    // One entity's contribution to the chunk (TS `addItems`): page through the
+    // window at this entity's offset until it is exhausted or a budget runs
+    // out. The target array becomes present (even if empty) as soon as the
+    // entity has been queried once; entities never reached stay absent.
+    macro_rules! chunk_entity {
+        ($target:ident, $offset:expr, $divider:literal, $fetch:expr) => {
+            if !done {
+                let mut offset = $offset;
+                loop {
+                    // TS: Math.min(itemCount, Math.max(10, maxItems / maxDivider))
+                    let limit = item_count.min((args.max_items / $divider).max(10));
+                    if limit <= 0 {
+                        break;
+                    }
+                    let items = ($fetch)(limit, offset).await?;
+                    if $target.is_none() {
+                        $target = Some(Vec::new());
+                    }
+                    if items.is_empty() {
+                        break;
+                    }
+                    let dest = $target.as_mut().expect("initialized above");
+                    for item in items {
+                        offset += 1;
+                        rough_size -= serde_json::to_string(&item)
+                            .map_err(|e| {
+                                WalletError::Internal(format!(
+                                    "getSyncChunk: failed to size entity row: {e}"
+                                ))
+                            })?
+                            .len() as i64;
+                        dest.push(item);
+                        item_count -= 1;
+                        if item_count <= 0 || rough_size < 0 {
+                            done = true;
+                            break;
+                        }
+                    }
+                    if done {
+                        break;
+                    }
+                }
+            }
+        };
+    }
+
+    chunk_entity!(proven_txs, args.offsets.proven_tx, 100, |limit, offset| async move {
+        storage.get_proven_txs_for_user(
+            &FindForUserSincePagedArgs {
+                user_id,
+                since: args.sync_map.proven_tx.max_updated_at,
+                paged: Some(Paged { limit, offset }),
+            },
+            trx,
+        ).await
+    });
+
+    chunk_entity!(
+        output_baskets,
+        args.offsets.output_basket,
+        1,
+        |limit, offset| async move {
+            storage.find_output_baskets(
                 &FindOutputBasketsArgs {
                     partial: OutputBasketPartial {
                         user_id: Some(user_id),
                         ..Default::default()
                     },
                     since: args.sync_map.output_basket.max_updated_at,
-                    paged: paged(max, args.offsets.output_basket),
+                    paged: Some(Paged { limit, offset }),
                 },
                 trx,
-            )
-            .await?;
-        Some(items)
-    };
+            ).await
+        }
+    );
 
-    // OutputTag
-    let output_tags = {
-        let items = storage
-            .find_output_tags(
-                &FindOutputTagsArgs {
-                    partial: OutputTagPartial {
-                        user_id: Some(user_id),
-                        ..Default::default()
-                    },
-                    since: args.sync_map.output_tag.max_updated_at,
-                    paged: paged(max, args.offsets.output_tag),
+    chunk_entity!(output_tags, args.offsets.output_tag, 1, |limit, offset| async move {
+        storage.find_output_tags(
+            &FindOutputTagsArgs {
+                partial: OutputTagPartial {
+                    user_id: Some(user_id),
+                    ..Default::default()
                 },
-                trx,
-            )
-            .await?;
-        Some(items)
-    };
+                since: args.sync_map.output_tag.max_updated_at,
+                paged: Some(Paged { limit, offset }),
+            },
+            trx,
+        ).await
+    });
 
-    // TxLabel
-    let tx_labels = {
-        let items = storage
-            .find_tx_labels(
-                &FindTxLabelsArgs {
-                    partial: TxLabelPartial {
-                        user_id: Some(user_id),
-                        ..Default::default()
-                    },
-                    since: args.sync_map.tx_label.max_updated_at,
-                    paged: paged(max, args.offsets.tx_label),
+    chunk_entity!(tx_labels, args.offsets.tx_label, 1, |limit, offset| async move {
+        storage.find_tx_labels(
+            &FindTxLabelsArgs {
+                partial: TxLabelPartial {
+                    user_id: Some(user_id),
+                    ..Default::default()
                 },
-                trx,
-            )
-            .await?;
-        Some(items)
-    };
+                since: args.sync_map.tx_label.max_updated_at,
+                paged: Some(Paged { limit, offset }),
+            },
+            trx,
+        ).await
+    });
 
-    // Transaction
-    let transactions = {
-        let items = storage
-            .find_transactions(
+    chunk_entity!(
+        transactions,
+        args.offsets.transaction,
+        25,
+        |limit, offset| async move {
+            storage.find_transactions(
                 &FindTransactionsArgs {
                     partial: TransactionPartial {
                         user_id: Some(user_id),
                         ..Default::default()
                     },
                     since: args.sync_map.transaction.max_updated_at,
-                    paged: paged(max, args.offsets.transaction),
+                    paged: Some(Paged { limit, offset }),
                     ..Default::default()
                 },
                 trx,
-            )
-            .await?;
-        Some(items)
-    };
+            ).await
+        }
+    );
 
-    // Output
-    let outputs = {
-        let items = storage
-            .find_outputs(
-                &FindOutputsArgs {
-                    partial: OutputPartial {
-                        user_id: Some(user_id),
-                        ..Default::default()
-                    },
-                    since: args.sync_map.output.max_updated_at,
-                    paged: paged(max, args.offsets.output),
+    chunk_entity!(outputs, args.offsets.output, 25, |limit, offset| async move {
+        storage.find_outputs(
+            &FindOutputsArgs {
+                partial: OutputPartial {
+                    user_id: Some(user_id),
                     ..Default::default()
                 },
-                trx,
-            )
-            .await?;
-        Some(items)
-    };
+                since: args.sync_map.output.max_updated_at,
+                paged: Some(Paged { limit, offset }),
+                ..Default::default()
+            },
+            trx,
+        ).await
+    });
 
-    // TxLabelMap
-    let tx_label_maps = {
-        let items = storage
-            .get_tx_label_maps_for_user(
+    chunk_entity!(
+        tx_label_maps,
+        args.offsets.tx_label_map,
+        1,
+        |limit, offset| async move {
+            storage.get_tx_label_maps_for_user(
                 &FindForUserSincePagedArgs {
                     user_id,
                     since: args.sync_map.tx_label_map.max_updated_at,
-                    paged: paged(max, args.offsets.tx_label_map),
+                    paged: Some(Paged { limit, offset }),
                 },
                 trx,
-            )
-            .await?;
-        Some(items)
-    };
+            ).await
+        }
+    );
 
-    // OutputTagMap
-    let output_tag_maps = {
-        let items = storage
-            .get_output_tag_maps_for_user(
+    chunk_entity!(
+        output_tag_maps,
+        args.offsets.output_tag_map,
+        1,
+        |limit, offset| async move {
+            storage.get_output_tag_maps_for_user(
                 &FindForUserSincePagedArgs {
                     user_id,
                     since: args.sync_map.output_tag_map.max_updated_at,
-                    paged: paged(max, args.offsets.output_tag_map),
+                    paged: Some(Paged { limit, offset }),
                 },
                 trx,
-            )
-            .await?;
-        Some(items)
-    };
+            ).await
+        }
+    );
 
-    // Certificate
-    let certificates = {
-        let items = storage
-            .find_certificates(
+    chunk_entity!(
+        certificates,
+        args.offsets.certificate,
+        25,
+        |limit, offset| async move {
+            storage.find_certificates(
                 &FindCertificatesArgs {
                     partial: CertificatePartial {
                         user_id: Some(user_id),
                         ..Default::default()
                     },
                     since: args.sync_map.certificate.max_updated_at,
-                    paged: paged(max, args.offsets.certificate),
+                    paged: Some(Paged { limit, offset }),
                 },
                 trx,
-            )
-            .await?;
-        Some(items)
-    };
+            ).await
+        }
+    );
 
-    // CertificateField
-    let certificate_fields = {
-        let items = storage
-            .find_certificate_fields(
+    chunk_entity!(
+        certificate_fields,
+        args.offsets.certificate_field,
+        25,
+        |limit, offset| async move {
+            storage.find_certificate_fields(
                 &FindCertificateFieldsArgs {
                     partial: CertificateFieldPartial {
                         user_id: Some(user_id),
                         ..Default::default()
                     },
                     since: args.sync_map.certificate_field.max_updated_at,
-                    paged: paged(max, args.offsets.certificate_field),
+                    paged: Some(Paged { limit, offset }),
                 },
                 trx,
-            )
-            .await?;
-        Some(items)
-    };
+            ).await
+        }
+    );
 
-    // Commission
-    let commissions = {
-        let items = storage
-            .find_commissions(
-                &FindCommissionsArgs {
-                    partial: CommissionPartial {
-                        user_id: Some(user_id),
-                        ..Default::default()
-                    },
-                    since: args.sync_map.commission.max_updated_at,
-                    paged: paged(max, args.offsets.commission),
+    chunk_entity!(commissions, args.offsets.commission, 25, |limit, offset| async move {
+        storage.find_commissions(
+            &FindCommissionsArgs {
+                partial: CommissionPartial {
+                    user_id: Some(user_id),
+                    ..Default::default()
                 },
-                trx,
-            )
-            .await?;
-        Some(items)
-    };
+                since: args.sync_map.commission.max_updated_at,
+                paged: Some(Paged { limit, offset }),
+            },
+            trx,
+        ).await
+    });
 
-    // ProvenTxReq
-    let proven_tx_reqs = {
-        let items = storage
-            .get_proven_tx_reqs_for_user(
+    chunk_entity!(
+        proven_tx_reqs,
+        args.offsets.proven_tx_req,
+        100,
+        |limit, offset| async move {
+            storage.get_proven_tx_reqs_for_user(
                 &FindForUserSincePagedArgs {
                     user_id,
                     since: args.sync_map.proven_tx_req.max_updated_at,
-                    paged: paged(max, args.offsets.proven_tx_req),
+                    paged: Some(Paged { limit, offset }),
                 },
                 trx,
-            )
-            .await?;
-        Some(items)
-    };
+            ).await
+        }
+    );
 
-    // -----------------------------------------------------------------------
-    // Filter dependent entities so they only reference parent IDs in this chunk.
-    // When max_items_per_entity limits a parent entity list, dependent entities
-    // that reference parents outside this chunk would cause undefined ID lookups
-    // during processSyncChunk on the receiver.
-    // -----------------------------------------------------------------------
-
-    let output_ids: HashSet<i64> = outputs
-        .as_ref()
-        .map(|v| v.iter().map(|o| o.output_id).collect())
-        .unwrap_or_default();
-    let transaction_ids: HashSet<i64> = transactions
-        .as_ref()
-        .map(|v| v.iter().map(|t| t.transaction_id).collect())
-        .unwrap_or_default();
-    let tx_label_ids: HashSet<i64> = tx_labels
-        .as_ref()
-        .map(|v| v.iter().map(|t| t.tx_label_id).collect())
-        .unwrap_or_default();
-    let output_tag_ids: HashSet<i64> = output_tags
-        .as_ref()
-        .map(|v| v.iter().map(|t| t.output_tag_id).collect())
-        .unwrap_or_default();
-    let certificate_ids: HashSet<i64> = certificates
-        .as_ref()
-        .map(|v| v.iter().map(|c| c.certificate_id).collect())
-        .unwrap_or_default();
-    let proven_tx_ids: HashSet<i64> = proven_txs
-        .as_ref()
-        .map(|v| v.iter().map(|p| p.proven_tx_id).collect())
-        .unwrap_or_default();
-
-    // Filter outputTagMaps: must reference outputs AND outputTags in this chunk
-    let output_tag_maps = output_tag_maps.map(|v| {
-        v.into_iter()
-            .filter(|m| {
-                output_ids.contains(&m.output_id) && output_tag_ids.contains(&m.output_tag_id)
-            })
-            .collect::<Vec<_>>()
-    });
-
-    // Filter txLabelMaps: must reference transactions AND txLabels in this chunk
-    let tx_label_maps = tx_label_maps.map(|v| {
-        v.into_iter()
-            .filter(|m| {
-                transaction_ids.contains(&m.transaction_id) && tx_label_ids.contains(&m.tx_label_id)
-            })
-            .collect::<Vec<_>>()
-    });
-
-    // Filter certificateFields: must reference certificates in this chunk
-    let certificate_fields = certificate_fields.map(|v| {
-        v.into_iter()
-            .filter(|f| certificate_ids.contains(&f.certificate_id))
-            .collect::<Vec<_>>()
-    });
-
-    // Filter commissions: must reference transactions in this chunk
-    let commissions = commissions.map(|v| {
-        v.into_iter()
-            .filter(|c| transaction_ids.contains(&c.transaction_id))
-            .collect::<Vec<_>>()
-    });
-
-    // Filter provenTxReqs: must reference provenTxs in this chunk (if they have one)
-    let proven_tx_reqs = proven_tx_reqs.map(|v| {
-        v.into_iter()
-            .filter(|r| match r.proven_tx_id {
-                Some(id) => proven_tx_ids.contains(&id),
-                None => true, // no FK dependency, always include
-            })
-            .collect::<Vec<_>>()
-    });
+    // No dependent-entity filtering. The previous implementation dropped
+    // child rows (maps, certificate fields, commissions) whose parent was not
+    // in the SAME chunk — but on an incremental round a parent updated long
+    // ago is never re-sent, so a new child of an old parent was dropped on
+    // every round while offsets advanced past it: silent permanent loss. TS
+    // has no such filter; cross-round parents resolve through the consumer's
+    // persisted syncMap id-map, and a genuinely unknown parent fails the
+    // remap loudly instead of losing the row.
 
     Ok(SyncChunk {
         from_storage_identity_key: args.from_storage_identity_key,

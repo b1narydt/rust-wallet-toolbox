@@ -1072,7 +1072,8 @@ impl<T: StorageProvider> WalletStorageProvider for T {
             to_storage_identity_key: args.to_storage_identity_key.clone(),
             user_identity_key: args.identity_key.clone(),
             sync_map: &sync_map,
-            max_items_per_entity: args.max_items,
+            max_items: args.max_items,
+            max_rough_size: args.max_rough_size,
             offsets,
         };
         crate::storage::sync::get_sync_chunk::get_sync_chunk(self, internal_args, None).await
