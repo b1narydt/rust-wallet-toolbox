@@ -23,6 +23,7 @@ identically for every cloner.
 |---|---|
 | `vectors/wallet/brc100/getpublickey.json` (201) | `tests/conformance_getpublickey.rs` — BRC-42/43 key derivation |
 | `vectors/sync/brc40-user-state.json` (24) | `tests/conformance_brc40.rs` — BRC-40 sync semantics |
+| `vectors/wallet/brc100/createaction-funded.json` + `signaction-funded.json` | `tests/conformance_brc100_funded.rs` — byte-for-byte offline replay of vectors **recorded** against a real faucet-funded wallet on mainnet (see below) |
 
 Each runner asserts the exact number of vectors loaded and executed, names the
 vector `id` in every failure, and runs error vectors as first-class assertions
@@ -31,10 +32,43 @@ reference that we deliberately do not paper over are pinned in an explicit
 per-runner ledger keyed by vector `id` — the test fails if a divergence
 appears, disappears, or changes shape, so the ledger cannot drift silently.
 
-Not yet wired (vendored for future runners): `createaction.json`,
-`listoutputs.json`, `listactions.json`, `internalizeaction.json`,
-`provecertificate.json`, `relinquishoutput.json`, `signaction.json`,
-`getnetwork.json`, `wallet/storage/adapter-conformance.json`.
+Not yet wired (vendored for future runners): `listoutputs.json`,
+`listactions.json`, `internalizeaction.json`, `provecertificate.json`,
+`relinquishoutput.json`, `getnetwork.json`,
+`wallet/storage/adapter-conformance.json`.
+
+## The funded createAction/signAction corpus
+
+The vendored upstream `createaction.json` (90) and `signaction.json` (8) carry
+**fabricated** expected values — every `createaction` expected.tx is a
+zero-input transaction no wallet can produce (nothing spent, no fee), and the
+signaction vectors reference in-flight actions that never existed. Upstream's
+own metadata says so (`skip_reason: "Requires funded wallet…"`); the TS
+dispatcher demotes all 98 to intended-skip and the Go toolbox has no runner at
+all. They stay vendored, unmodified, as provenance.
+
+`createaction-funded.json` and `signaction-funded.json` replace fiction with
+recordings: a real wallet, funded by the PeerPay faucet on mainnet, replayed
+every vector's args, and the files pin what actually happened — real txids,
+real signed bytes, real fees, real errors. Each vector carries its funding as
+AtomicBEEF internalize fixtures plus the pinned merkle roots those BEEFs prove
+against, so `tests/conformance_brc100_funded.rs` rebuilds the wallet from
+nothing and must reproduce every recorded byte with zero network access (the
+harness services panic on any outbound call). Entropy is seeded per vector
+(`utility::conformance_entropy`); ECDSA nonces are RFC 6979.
+
+`funded-ledger.json` records every mainnet action of the recording run:
+faucet requests per burner identity, every broadcast, and which vectors were
+broadcast-verified on the network. Recorder: `tests/record_funded_vectors.rs`
+(`#[ignore]`, gated on `BSV_FUNDED_RECORD=1`, spends real satoshis).
+
+Known upstream corpus defects, pinned as recorded vectors (`corpus-defect`
+tag): every upstream vector claims the reserved basket `default` on an action
+output (BRC-100 reserves it; a conforming wallet rejects it), and upstream
+places `noSend`/`acceptDelayedBroadcast` at args top level where every
+implementation's parser silently drops them (BRC-100 defines them inside
+`options`). `expected.noSendTxid` is a field no implementation's
+`CreateActionResult` has; the recorded files do not carry it.
 
 ## Refreshing
 

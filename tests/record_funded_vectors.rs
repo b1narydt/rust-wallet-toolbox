@@ -492,6 +492,30 @@ async fn send_brc29<W: WalletInterface>(
         .lock(sender_root, &receiver_pub)
         .map_err(|e| format!("brc29 lock: {e}"))?;
 
+    // A transfer whose derivation is lost strands the sats: the receiver can
+    // only derive the spending key from (sender, prefix, suffix). Persist the
+    // derivation BEFORE broadcasting, and the full fixture (with BEEF) right
+    // after, so no crash window can orphan a broadcast payment.
+    let pending_log = work_dir().join("pending-transfers.jsonl");
+    let log_line = |v: &serde_json::Value| {
+        use std::io::Write as _;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&pending_log)
+            .expect("open pending-transfers.jsonl");
+        writeln!(f, "{v}").expect("append pending transfer");
+    };
+    log_line(&serde_json::json!({
+        "stage": "pre-broadcast",
+        "description": description,
+        "sender_identity_key": sender_identity,
+        "receiver_identity_key": receiver_identity,
+        "derivation_prefix": prefix,
+        "derivation_suffix": suffix,
+        "amount": amount,
+    }));
+
     let n_extra = extra_outputs.len();
     let mut outputs = extra_outputs;
     outputs.push(CreateActionOutput {
@@ -528,21 +552,29 @@ async fn send_brc29<W: WalletInterface>(
     let txid = result.txid.clone().ok_or("transfer returned no txid")?;
     let beef_bytes = result.tx.clone().ok_or("transfer returned no tx")?;
 
+    let fixture = FundingPayment {
+        beef: to_hex(&beef_bytes),
+        output_index: n_extra as u32,
+        derivation_prefix: prefix,
+        derivation_suffix: suffix,
+        sender_identity_key: sender_identity.to_string(),
+        satoshis: amount,
+        txid: txid.clone(),
+        description: description.to_string(),
+    };
+    log_line(&serde_json::json!({
+        "stage": "broadcast",
+        "fixture": serde_json::to_value(&fixture).expect("fixture json"),
+    }));
+
     if !verify_on_network(services, &txid).await {
-        return Err(format!("transfer {txid} not visible on the network"));
+        return Err(format!(
+            "transfer {txid} not visible on the network (fixture saved in pending-transfers.jsonl)"
+        ));
     }
 
     Ok((
-        FundingPayment {
-            beef: to_hex(&beef_bytes),
-            output_index: n_extra as u32,
-            derivation_prefix: prefix,
-            derivation_suffix: suffix,
-            sender_identity_key: sender_identity.to_string(),
-            satoshis: amount,
-            txid,
-            description: description.to_string(),
-        },
+        fixture,
         result
             .send_with_results
             .iter()
@@ -582,7 +614,7 @@ async fn send_max_brc29<W: WalletInterface>(
         .await
         {
             Ok((p, _)) => return Ok(p),
-            Err(e) if e.contains("nsufficient") => {
+            Err(e) if e.to_uppercase().contains("INSUFFICIENT") => {
                 last_err = e;
                 amount = amount.saturating_sub(5);
             }
@@ -649,6 +681,33 @@ fn transform_create_args(upstream: &serde_json::Value) -> (serde_json::Value, Ve
     (args, notes)
 }
 
+/// The corpus has 30 vectors with noSend=false AND acceptDelayedBroadcast=
+/// false — faithful normalization makes them broadcast inline, and 30 real
+/// broadcasts from one funding state are mutually double-spending (and far
+/// over budget). All but a designated representative are recorded as delayed
+/// sends; the representative (vector 62) records the true inline-broadcast
+/// behavior against the real network.
+fn force_delayed_if_immediate(args: &mut serde_json::Value, notes: &mut Vec<String>) {
+    let Some(options) = args.get_mut("options").and_then(|o| o.as_object_mut()) else {
+        return;
+    };
+    let no_send = options.get("noSend").and_then(|v| v.as_bool()).unwrap_or(false);
+    let adb = options
+        .get("acceptDelayedBroadcast")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    if !no_send && !adb {
+        options.insert(
+            "acceptDelayedBroadcast".to_string(),
+            serde_json::Value::Bool(true),
+        );
+        notes.push(
+            "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8"
+                .to_string(),
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Upstream corpus loading
 // ---------------------------------------------------------------------------
@@ -700,6 +759,22 @@ async fn record_create_vector(
     notes: Vec<String>,
     recorded_id: String,
 ) {
+    record_create_vector_inner(state, upstream, funding_set, args, notes, recorded_id, None).await;
+}
+
+/// `broadcast_via`: real services for a vector whose recorded run performs a
+/// real inline broadcast (noSend=false, acceptDelayedBroadcast=false); the
+/// network's response is captured into `expected.postBeefResponse` so offline
+/// replay can serve it back instead of the tripwire.
+async fn record_create_vector_inner(
+    state: &mut State,
+    upstream: &UpstreamVector,
+    funding_set: &str,
+    args: serde_json::Value,
+    notes: Vec<String>,
+    recorded_id: String,
+    broadcast_via: Option<Arc<dyn WalletServices>>,
+) {
     if state.create_vectors.contains_key(&recorded_id) {
         return;
     }
@@ -710,7 +785,20 @@ async fn record_create_vector(
         .expect("upstream vector has root_key");
     let seed = recorded_id.clone();
     let funding = state.funding_sets[funding_set].payments.clone();
-    let run = run_create_vector(fixture_services(state), &root_key, &seed, &funding, &args)
+
+    let (services, recording): (Arc<dyn WalletServices>, Option<Arc<RecordingServices>>) =
+        match &broadcast_via {
+            Some(real) => {
+                let rec = Arc::new(RecordingServices {
+                    inner: real.clone(),
+                    captured: std::sync::Mutex::new(vec![]),
+                });
+                (rec.clone(), Some(rec))
+            }
+            None => (fixture_services(state), None),
+        };
+
+    let run = run_create_vector(services, &root_key, &seed, &funding, &args)
         .await
         .unwrap_or_else(|e| panic!("{recorded_id}: recording run failed: {e}"));
 
@@ -718,6 +806,42 @@ async fn record_create_vector(
         "recorded {recorded_id}: {} txid={:?}",
         run.outcome.status, run.outcome.txid
     );
+
+    let mut expected = serde_json::to_value(&run.outcome).expect("outcome serialize");
+    let mut broadcast = BroadcastRecord {
+        sent: false,
+        txid: None,
+        accepted_by: None,
+    };
+    if let Some(rec) = recording {
+        assert_eq!(run.outcome.status, "success", "{recorded_id}: inline-broadcast vector failed");
+        let captured = rec.captured.lock().expect("captured").clone();
+        let accepted = captured
+            .iter()
+            .find(|r| r.status == "success")
+            .unwrap_or_else(|| panic!("{recorded_id}: inline broadcast rejected: {captured:?}"));
+        let txid = run.outcome.txid.clone().expect("txid");
+        let real = broadcast_via.expect("real services");
+        assert!(
+            verify_on_network(&real, &txid).await,
+            "{recorded_id}: {txid} not visible on network"
+        );
+        broadcast = BroadcastRecord {
+            sent: true,
+            txid: Some(txid.clone()),
+            accepted_by: Some(accepted.name.clone()),
+        };
+        expected["postBeefResponse"] =
+            serde_json::to_value(&captured).expect("postBeefResponse serialize");
+        state.broadcasts.push(BroadcastEntry {
+            txid,
+            purpose: format!("{recorded_id} inline broadcast (acceptDelayedBroadcast=false)"),
+            from_identity: root_key.clone(),
+            sats_out: 0,
+            accepted_by: accepted.name.clone(),
+            verified_on_network: true,
+        });
+    }
 
     let vector = FundedVector {
         id: recorded_id.clone(),
@@ -729,12 +853,8 @@ async fn record_create_vector(
             setup: vec![],
             args,
         },
-        expected: serde_json::to_value(&run.outcome).expect("outcome serialize"),
-        broadcast: BroadcastRecord {
-            sent: false,
-            txid: None,
-            accepted_by: None,
-        },
+        expected,
+        broadcast,
         notes,
         upstream: Some(serde_json::json!({
             "id": upstream.id,
@@ -1007,6 +1127,19 @@ fn nosend_precursor_args(chained_no_send_change: Vec<String>) -> CreateActionArg
     }
 }
 
+
+/// SignActionOptions with every field in the wire-absent state, so serialized
+/// args carry only what the vector explicitly sets (absent means "inherit
+/// from createAction" in BRC-100).
+fn sign_options_none() -> SignActionOptions {
+    SignActionOptions {
+        accept_delayed_broadcast: BooleanDefaultTrue::none(),
+        return_txid_only: BooleanDefaultFalse::none(),
+        no_send: BooleanDefaultFalse::none(),
+        send_with: vec![],
+    }
+}
+
 struct SignVectorPlan {
     upstream_index: usize,
     /// Setup createAction args, in order.
@@ -1082,7 +1215,7 @@ async fn record_sign_vectors(state: &mut State, real: &Arc<dyn WalletServices>) 
                 sign_options: Some(SignActionOptions {
                     no_send: BooleanDefaultFalse(Some(true)),
                     accept_delayed_broadcast: BooleanDefaultTrue(Some(true)),
-                    ..Default::default()
+                    ..sign_options_none()
                 }),
                 verbatim_args: None,
                 notes: vec![
@@ -1099,7 +1232,7 @@ async fn record_sign_vectors(state: &mut State, real: &Arc<dyn WalletServices>) 
                 caller_inputs: vec![(0, sig.caller_sats)],
                 sign_options: Some(SignActionOptions {
                     return_txid_only: BooleanDefaultFalse(Some(true)),
-                    ..Default::default()
+                    ..sign_options_none()
                 }),
                 verbatim_args: None,
                 notes: vec![],
@@ -1117,7 +1250,12 @@ async fn record_sign_vectors(state: &mut State, real: &Arc<dyn WalletServices>) 
                 verbatim_args: None,
                 notes: vec![
                     "upstream sendWith txids were placeholders; replaced with the txids of two \
-                     real noSend precursor actions in the same wallet"
+                     real noSend precursor actions in the same wallet (the second funded \
+                     entirely by the first's change via options.noSendChange)"
+                        .to_string(),
+                    "the signable precursor is a delayed send, not noSend: both the TS \
+                     reference and this implementation treat isNoSend && isSendWith as an \
+                     internal error"
                         .to_string(),
                 ],
                 broadcasts: false,
@@ -1152,7 +1290,7 @@ async fn record_sign_vectors(state: &mut State, real: &Arc<dyn WalletServices>) 
                 caller_inputs: vec![(0, sig.caller_sats)],
                 sign_options: Some(SignActionOptions {
                     accept_delayed_broadcast: BooleanDefaultTrue(Some(false)),
-                    ..Default::default()
+                    ..sign_options_none()
                 }),
                 verbatim_args: None,
                 notes: vec![
@@ -1262,13 +1400,13 @@ async fn record_one_sign_vector(
             .expect("noSend precursor 2");
         let ns2_txid = ns2.txid.clone().expect("ns2 txid");
 
+        // The signable action is NOT noSend: it is the delayed send that
+        // carries the batch (TS: isNoSend && isSendWith is an internal error
+        // in both implementations — sendWith members are the noSend actions,
+        // the signing action rides normally). Its caller input covers the
+        // output + fee, so it needs no wallet change at all.
         let sig = state.sig_tx.clone().expect("sig fixture");
-        let signable_args = sign_precursor_args(
-            &sig,
-            &[&sig.caller_outpoint_a],
-            true,
-            ns2.no_send_change.clone(),
-        );
+        let signable_args = sign_precursor_args(&sig, &[&sig.caller_outpoint_a], false, vec![]);
         let signable = setup_wallet
             .wallet
             .create_action(signable_args.clone(), None)
@@ -1339,7 +1477,7 @@ async fn record_one_sign_vector(
     if !send_with_txids.is_empty() {
         sign_options = Some(SignActionOptions {
             send_with: send_with_txids.clone(),
-            ..Default::default()
+            ..sign_options_none()
         });
     }
 
@@ -1558,10 +1696,27 @@ async fn record_funded_vectors() {
     let id2_pub = id2.to_public_key().to_der_hex();
     let id3_pub = id3.to_public_key().to_der_hex();
 
-    // Phase 2: sweep faucet grants into wallet(root1) = S1
-    if !state.funding_sets.contains_key("S1") {
-        let mut payments = Vec::new();
+    // Phase 2: sweep faucet grants into wallet(root1) = S1.
+    // Incremental: each completed sweep persists before the next starts, so a
+    // resume skips identities already swept instead of finding them empty.
+    let s1_complete = state
+        .funding_sets
+        .get("S1")
+        .map(|s| s.payments.len() == state.identities.len())
+        .unwrap_or(false);
+    if !s1_complete {
+        state
+            .funding_sets
+            .entry("S1".to_string())
+            .or_insert_with(|| FundingSet { payments: vec![] });
         for ident in state.identities.clone() {
+            let already = state.funding_sets["S1"]
+                .payments
+                .iter()
+                .any(|p| p.sender_identity_key == ident.identity_key);
+            if already {
+                continue;
+            }
             let key = PrivateKey::from_hex(&ident.private_key).expect("key");
             let db = db_dir().join(format!("faucet-{}.db", ident.name));
             let setup = WalletBuilder::new()
@@ -1597,11 +1752,14 @@ async fn record_funded_vectors() {
                 accepted_by: "inline create_action broadcast".to_string(),
                 verified_on_network: true,
             });
-            payments.push(p);
+            state
+                .funding_sets
+                .get_mut("S1")
+                .expect("S1 present")
+                .payments
+                .push(p);
             save_state(&state);
         }
-        state.funding_sets.insert("S1".to_string(), FundingSet { payments });
-        save_state(&state);
     }
     pin_roots_for_set(&mut state, &real, "S1").await;
 
@@ -1609,7 +1767,8 @@ async fn record_funded_vectors() {
     let upstream_create = load_upstream("createaction.json");
     for uv in upstream_create.vectors.iter().take(30) {
         let n: usize = uv.id.rsplit('.').next().unwrap().parse().unwrap();
-        let (args, notes) = transform_create_args(&uv.input.args);
+        let (mut args, mut notes) = transform_create_args(&uv.input.args);
+        force_delayed_if_immediate(&mut args, &mut notes);
         record_create_vector(
             &mut state,
             uv,
@@ -1653,7 +1812,8 @@ async fn record_funded_vectors() {
 
     for uv in upstream_create.vectors.iter().skip(30).take(30) {
         let n: usize = uv.id.rsplit('.').next().unwrap().parse().unwrap();
-        let (args, notes) = transform_create_args(&uv.input.args);
+        let (mut args, mut notes) = transform_create_args(&uv.input.args);
+        force_delayed_if_immediate(&mut args, &mut notes);
         record_create_vector(
             &mut state,
             uv,
@@ -1697,7 +1857,8 @@ async fn record_funded_vectors() {
     // from S3B (61's change) and broadcasts; the rest record from S3.
     let uv61 = upstream_create.vectors.iter().find(|v| v.id.ends_with(".61")).expect("61");
     {
-        let (args, notes) = transform_create_args(&uv61.input.args);
+        let (mut args, mut notes) = transform_create_args(&uv61.input.args);
+        force_delayed_if_immediate(&mut args, &mut notes);
         record_create_vector(&mut state, uv61, "S3", args, notes,
             "wallet.brc100.createaction-funded.61".to_string()).await;
     }
@@ -1737,28 +1898,28 @@ async fn record_funded_vectors() {
 
     let uv62 = upstream_create.vectors.iter().find(|v| v.id.ends_with(".62")).expect("62");
     {
+        // Vector 62 keeps its upstream acceptDelayedBroadcast=false and runs
+        // against real services: the recorded run IS the inline broadcast,
+        // spending 61's on-chain change (funding set S3B).
         let (args, mut notes) = transform_create_args(&uv62.input.args);
         notes.push(
-            "funded by vector 61's broadcast change (funding set S3B): part of the real \
-             on-chain broadcast chain"
+            "the immediate-broadcast representative: recorded with its upstream \
+             acceptDelayedBroadcast=false intact, really broadcast inline during the recorded \
+             run (expected.postBeefResponse carries the network's answer for offline replay), \
+             funded by vector 61's broadcast change (set S3B)"
                 .to_string(),
         );
-        record_create_vector(&mut state, uv62, "S3B", args, notes,
-            "wallet.brc100.createaction-funded.62".to_string()).await;
+        record_create_vector_inner(&mut state, uv62, "S3B", args, notes,
+            "wallet.brc100.createaction-funded.62".to_string(), Some(real.clone())).await;
     }
-    broadcast_recorded_vector(
-        &mut state, &real,
-        "wallet.brc100.createaction-funded.62",
-        "broadcast chain link 2 (vector 62, spends 61's change)", &id3_pub, 2100,
-    )
-    .await;
 
     for uv in upstream_create.vectors.iter().skip(60) {
         let n: usize = uv.id.rsplit('.').next().unwrap().parse().unwrap();
         if n == 61 || n == 62 {
             continue;
         }
-        let (args, notes) = transform_create_args(&uv.input.args);
+        let (mut args, mut notes) = transform_create_args(&uv.input.args);
+        force_delayed_if_immediate(&mut args, &mut notes);
         record_create_vector(
             &mut state,
             uv,
@@ -1836,7 +1997,7 @@ async fn record_funded_vectors() {
                     result = Some(p);
                     break;
                 }
-                Err(e) if e.contains("nsufficient") => amount = amount.saturating_sub(5),
+                Err(e) if e.to_uppercase().contains("INSUFFICIENT") => amount = amount.saturating_sub(5),
                 Err(e) => panic!("signAction fixture tx failed: {e}"),
             }
         }

@@ -1,0 +1,145 @@
+{
+  "broadcasts": [
+    {
+      "accepted_by": "inline create_action broadcast",
+      "from_identity": "028f80b349fd330a55301949ebf6b9aeff1f121752ded317c3fe502b82aac5d1be",
+      "purpose": "sweep A -> root1",
+      "sats_out": 973,
+      "txid": "39c475da2ad9a2bc13182e48a9ae400312c2e9139803402e9093d9dcf90373f3",
+      "verified_on_network": true
+    },
+    {
+      "accepted_by": "inline create_action broadcast",
+      "from_identity": "03b5ed9da65e239c391093e31a5ed754f28ae3535a18851c45a2a1bbbfe0a84f72",
+      "purpose": "sweep B -> root1",
+      "sats_out": 973,
+      "txid": "43dd01b5b3b1e1f7f22ec588838c84b172fd2c85908e83c76b647c8047c1aab4",
+      "verified_on_network": true
+    },
+    {
+      "accepted_by": "inline create_action broadcast",
+      "from_identity": "02e54d812d096f2a8d223a72df186bf75caec5f0c2704c0b3088c9b8fff4385261",
+      "purpose": "sweep C -> root1",
+      "sats_out": 973,
+      "txid": "a41711863f73dd866b6b87df57320d1dc7ba705c08f3daba9ec37b1281f4c29d",
+      "verified_on_network": true
+    },
+    {
+      "accepted_by": "inline create_action broadcast",
+      "from_identity": "03a8e52648f4a12ab9e24e7815bf2ccfab6aa8c2328915cbd11113e02ca8f02e06",
+      "purpose": "sweep D -> root1",
+      "sats_out": 973,
+      "txid": "6580300adf9168922517f132f9c145cf7604a27a63dc50270361f39f73c84c9a",
+      "verified_on_network": true
+    },
+    {
+      "accepted_by": "inline create_action broadcast",
+      "from_identity": "036d5743f96cbe33de0528c3eacc60eb91a7d82834c1edf7cb104879cd0aeefe86",
+      "purpose": "sweep E -> root1",
+      "sats_out": 973,
+      "txid": "298c56a54f7baca59503282277829cbf1c72ef4c9c39794c0cd2bad6afcacbd9",
+      "verified_on_network": true
+    },
+    {
+      "accepted_by": "inline create_action broadcast",
+      "from_identity": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "purpose": "sweep root1 -> root2",
+      "sats_out": 4778,
+      "txid": "52470bd1aaa79d319a71079a429fd819591ee1cefdd3927b2ff067cbc1683ecd",
+      "verified_on_network": true
+    },
+    {
+      "accepted_by": "inline create_action broadcast",
+      "from_identity": "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "purpose": "sweep root2 -> root3",
+      "sats_out": 4751,
+      "txid": "f45b2152712a6e50a171ed49773d63944d8ffcb9a9276b7c122180f73616e607",
+      "verified_on_network": true
+    },
+    {
+      "accepted_by": "Bitails",
+      "from_identity": "02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+      "purpose": "broadcast chain link 1 (vector 61)",
+      "sats_out": 1000,
+      "txid": "932bf5666a83fb789427748b11fe7979f29e6aa5f44c3ea9536c4451a18e8f34",
+      "verified_on_network": true
+    },
+    {
+      "accepted_by": "Bitails",
+      "from_identity": "0000000000000000000000000000000000000000000000000000000000000003",
+      "purpose": "wallet.brc100.createaction-funded.62 inline broadcast (acceptDelayedBroadcast=false)",
+      "sats_out": 2100,
+      "txid": "11e9cc85d58907be84dda8138f3ae07f8d5391143a32104ec1a54cd1b6d47d97",
+      "verified_on_network": true
+    },
+    {
+      "accepted_by": "inline create_action broadcast",
+      "from_identity": "02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+      "purpose": "signAction fixture tx (2 caller P2PKH outputs + wallet funding)",
+      "sats_out": 1570,
+      "txid": "65b8e2904af7d6cae01a0922b092ca90a4e7a61ee9257de90100770a62d71679",
+      "verified_on_network": true
+    },
+    {
+      "accepted_by": "Bitails",
+      "from_identity": "root-1 signAction wallet",
+      "purpose": "wallet.brc100.signaction-funded.8 inline broadcast",
+      "sats_out": 100,
+      "txid": "727242c2d62c55808024c41e84ede0f7c485d26d68e98d8c578b6f237f2ccdb4",
+      "verified_on_network": true
+    }
+  ],
+  "description": "Funding and broadcast ledger for the funded BRC-100 conformance vectors. Every mainnet action of the recording run, machine-readable.",
+  "faucet": {
+    "host": "https://message.b1nary.cloud",
+    "identity": "021cf797ea5fd23b13ccff69d595a09f194e7f35ba4e2f1957e488e2365091eb37",
+    "sats_per_identity": 1000
+  },
+  "identities": [
+    {
+      "faucet_requested_at_ms": 1786174884027,
+      "faucet_sats": 1000,
+      "faucet_txid": "e4054eee8773556b7819f10297e07379221072398aa6e4b3f68b58a540caaec9",
+      "identity_key": "028f80b349fd330a55301949ebf6b9aeff1f121752ded317c3fe502b82aac5d1be",
+      "name": "A",
+      "note": "burner identity, fully swept; key published deliberately for reproducibility",
+      "private_key": "bad586259aa9e92df83d2599d9dbfe0ad4608a68a1892c846ea17c1c595b245f"
+    },
+    {
+      "faucet_requested_at_ms": 1786174901957,
+      "faucet_sats": 1000,
+      "faucet_txid": "25bd2ba488ac0461c4b1c72d7bb6c8380574f3699f05ac67434c77239045b921",
+      "identity_key": "03b5ed9da65e239c391093e31a5ed754f28ae3535a18851c45a2a1bbbfe0a84f72",
+      "name": "B",
+      "note": "burner identity, fully swept; key published deliberately for reproducibility",
+      "private_key": "84785cb28db7f718e2e23491826c3dbc75871fd2951fb5733bc4dd399bc24d6d"
+    },
+    {
+      "faucet_requested_at_ms": 1786174918764,
+      "faucet_sats": 1000,
+      "faucet_txid": "705ad46043c21b87a26cdc9a0154eca67495d4392295704c08c06b007219db92",
+      "identity_key": "02e54d812d096f2a8d223a72df186bf75caec5f0c2704c0b3088c9b8fff4385261",
+      "name": "C",
+      "note": "burner identity, fully swept; key published deliberately for reproducibility",
+      "private_key": "51104243f8d6b546791ac72af9f49dbfa07f23e2a4db4d9f46187e47d4342e61"
+    },
+    {
+      "faucet_requested_at_ms": 1786174935504,
+      "faucet_sats": 1000,
+      "faucet_txid": "ed1f104249caa55ad31f49d41dbff3e53bd23546cc69eba14874b500e9d5e43d",
+      "identity_key": "03a8e52648f4a12ab9e24e7815bf2ccfab6aa8c2328915cbd11113e02ca8f02e06",
+      "name": "D",
+      "note": "burner identity, fully swept; key published deliberately for reproducibility",
+      "private_key": "dd1b9c83e409260896afa2f569abb67f23b1750078114095c38e72e2b2bda3ce"
+    },
+    {
+      "faucet_requested_at_ms": 1786175024094,
+      "faucet_sats": 1000,
+      "faucet_txid": "e484e5d449fd4d30770e28ec692056d99a4af7a0f6d1a3f4cf08fa2a8923dab3",
+      "identity_key": "036d5743f96cbe33de0528c3eacc60eb91a7d82834c1edf7cb104879cd0aeefe86",
+      "name": "E",
+      "note": "burner identity, fully swept; key published deliberately for reproducibility",
+      "private_key": "4b05d48e38e848ee4f1fe604a3bdce287a2235cb8c2a8287a0a2ffac26c4b377"
+    }
+  ]
+}
