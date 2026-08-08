@@ -173,6 +173,16 @@ struct ManagedStorage {
     user: tokio::sync::Mutex<Option<User>>,
 }
 
+/// How many consecutive no-op chunks a sync tolerates before declaring the
+/// peer stalled.
+///
+/// Two, not one: a single chunk can legitimately change nothing when the
+/// previous chunk exactly consumed the remaining rows, so tripping on the
+/// first would fail a healthy sync at a page boundary. Two consecutive
+/// no-ops cannot be that — the request is a pure function of persisted sync
+/// state, so an identical request returns an identical answer forever.
+const MAX_NO_PROGRESS_CHUNKS: usize = 2;
+
 impl ManagedStorage {
     fn new(storage: Arc<dyn WalletStorageProvider>) -> Self {
         let is_sp = storage.is_storage_provider();
@@ -1602,6 +1612,7 @@ impl WalletStorageManager {
         let mut log = String::new();
 
         let mut i = 0usize;
+        let mut no_progress = 0usize;
         loop {
             // Re-query sync state on every iteration — processSyncChunk updates it.
             let (ss, _) = writer
@@ -1636,6 +1647,39 @@ impl WalletStorageManager {
 
             if r.done {
                 break;
+            }
+
+            // NO-PROGRESS GUARD. A chunk that inserts nothing, updates nothing
+            // and does not report `done` cannot become `done` by being asked
+            // again — the request is a pure function of the persisted sync
+            // state, so an identical request returns an identical answer,
+            // forever.
+            //
+            // This is not hypothetical, and it is a CROSS-VERSION hazard
+            // introduced by tightening the done-rule: a consumer that requires
+            // all twelve entity arrays PRESENT and empty (per BRC-40) talking
+            // to a producer that still collapses empty to `None` never sees a
+            // terminating chunk. That pairing is exactly this crate at 0.5.1
+            // against itself at 0.5.0, and an unbounded loop would hang the
+            // caller with no error rather than failing.
+            //
+            // Erroring is the right direction: a stalled sync is a real
+            // condition an operator must be told about, and the message names
+            // the likely cause so nobody has to rediscover it.
+            if r.inserts == 0 && r.updates == 0 {
+                no_progress += 1;
+                if no_progress >= MAX_NO_PROGRESS_CHUNKS {
+                    return Err(WalletError::InvalidOperation(format!(
+                        "sync from '{}' stalled: {MAX_NO_PROGRESS_CHUNKS} consecutive chunks \
+                         changed nothing and none reported done. The peer is most likely an \
+                         older build whose producer omits empty entity arrays instead of \
+                         sending them empty (pre-BRC-40 done-rule); upgrade it, or the sync \
+                         state for this pair is inconsistent.",
+                        reader_settings.storage_identity_key
+                    )));
+                }
+            } else {
+                no_progress = 0;
             }
             i += 1;
         }
@@ -1686,6 +1730,7 @@ impl WalletStorageManager {
         };
 
         let mut i = 0usize;
+        let mut no_progress = 0usize;
         loop {
             let (ss, _) = writer
                 .find_or_insert_sync_state_auth(
@@ -1729,6 +1774,39 @@ impl WalletStorageManager {
             if r.done {
                 break;
             }
+
+            // NO-PROGRESS GUARD. A chunk that inserts nothing, updates nothing
+            // and does not report `done` cannot become `done` by being asked
+            // again — the request is a pure function of the persisted sync
+            // state, so an identical request returns an identical answer,
+            // forever.
+            //
+            // This is not hypothetical, and it is a CROSS-VERSION hazard
+            // introduced by tightening the done-rule: a consumer that requires
+            // all twelve entity arrays PRESENT and empty (per BRC-40) talking
+            // to a producer that still collapses empty to `None` never sees a
+            // terminating chunk. That pairing is exactly this crate at 0.5.1
+            // against itself at 0.5.0, and an unbounded loop would hang the
+            // caller with no error rather than failing.
+            //
+            // Erroring is the right direction: a stalled sync is a real
+            // condition an operator must be told about, and the message names
+            // the likely cause so nobody has to rediscover it.
+            if r.inserts == 0 && r.updates == 0 {
+                no_progress += 1;
+                if no_progress >= MAX_NO_PROGRESS_CHUNKS {
+                    return Err(WalletError::InvalidOperation(format!(
+                        "sync from '{}' stalled: {MAX_NO_PROGRESS_CHUNKS} consecutive chunks \
+                         changed nothing and none reported done. The peer is most likely an \
+                         older build whose producer omits empty entity arrays instead of \
+                         sending them empty (pre-BRC-40 done-rule); upgrade it, or the sync \
+                         state for this pair is inconsistent.",
+                        reader_settings.storage_identity_key
+                    )));
+                }
+            } else {
+                no_progress = 0;
+            }
             i += 1;
         }
 
@@ -1738,8 +1816,14 @@ impl WalletStorageManager {
     /// Sync all backup stores from the active store.
     ///
     /// Acquires sync-level locks, iterates `backup_indices`, and calls
-    /// `sync_to_writer(backup, active, ...)` for each backup. Per-backup errors
-    /// are logged as warnings and do not block other backups.
+    /// `sync_to_writer(backup, active, ...)` for each backup.
+    ///
+    /// **A per-backup failure PROPAGATES and aborts the remaining backups**,
+    /// matching TS (`WalletStorageManager.updateBackups` awaits bare inside the
+    /// loop with no catch) and Go. This previously swallowed such errors and
+    /// returned `Ok` — and because every production caller passes
+    /// `prog_log: None`, a total replication failure was indistinguishable
+    /// from a backup that was already in sync.
     ///
     /// Returns `(total_inserts, total_updates, accumulated_log)`.
     pub async fn update_backups(

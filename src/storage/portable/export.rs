@@ -328,47 +328,76 @@ fn backfill_offloaded_scripts(
         raw_by_txid.insert(p.txid.as_str(), p.raw_tx.as_slice());
     }
 
-    for o in outputs
-        .iter_mut()
-        .filter(|o| o.locking_script.is_none() && o.script_offset.is_some())
-    {
+    for o in outputs.iter_mut() {
+        // TS's SKIP CONDITIONS, reproduced exactly
+        // (`StorageProvider.validateOutputScript`, StorageProvider.ts:927):
+        //
+        //   if (o.scriptLength == null || o.scriptLength === 0 ||
+        //       o.scriptOffset == null || o.scriptOffset === 0 ||
+        //       o.txid == null || o.txid === '') return
+        //
+        // `scriptOffset === 0` MEANS NOT OFFLOADED, and getting that wrong is
+        // silent corruption rather than a missing field: slicing at 0 yields
+        // the transaction's version bytes, which are in range, so no bounds
+        // check can catch it — a plausible-looking locking script written into
+        // a backup. An earlier revision of this function filtered on
+        // `script_offset.is_some()` and did exactly that.
+        let (Some(length), Some(offset), Some(txid)) =
+            (o.script_length, o.script_offset, o.txid.as_deref())
+        else {
+            continue;
+        };
+        if length == 0 || offset == 0 || txid.is_empty() {
+            continue;
+        }
+        // TS: `if (o.lockingScript?.length === o.scriptLength) return`. Note
+        // this is a LENGTH check, not a presence check — a script of the wrong
+        // length is refilled, not trusted.
+        if o.locking_script.as_ref().map(|s| s.len() as i64) == Some(length) {
+            continue;
+        }
+
         let describe = format!(
-            "output {} (transaction {}, txid {:?}, scriptOffset {:?}, scriptLength {:?})",
-            o.output_id, o.transaction_id, o.txid, o.script_offset, o.script_length
+            "output {} (transaction {}, txid {txid}, scriptOffset {offset}, scriptLength {length})",
+            o.output_id, o.transaction_id
         );
-        let txid = o.txid.as_deref().ok_or_else(|| {
-            WalletError::InvalidOperation(format!(
-                "cannot restore the offloaded lockingScript for {describe}: the row carries no \
-                 txid, so there is no transaction to read it back from"
-            ))
-        })?;
-        let raw = raw_by_txid.get(txid).copied().ok_or_else(|| {
-            WalletError::InvalidOperation(format!(
-                "cannot restore the offloaded lockingScript for {describe}: neither the \
-                 transaction nor a proven transaction in this export carries its rawTx. Exporting \
-                 would silently drop the script."
-            ))
-        })?;
-        // `try_from`, not `as`: a negative or oversized offset must fail loudly
-        // rather than wrap into a valid-looking slice of the wrong bytes.
-        let start = usize::try_from(o.script_offset.unwrap_or(-1)).map_err(|_| {
-            WalletError::InvalidOperation(format!("{describe}: scriptOffset is not a valid index"))
-        })?;
-        let len = usize::try_from(o.script_length.unwrap_or(-1)).map_err(|_| {
-            WalletError::InvalidOperation(format!("{describe}: scriptLength is not a valid length"))
-        })?;
-        let end = start.checked_add(len).ok_or_else(|| {
-            WalletError::InvalidOperation(format!(
-                "{describe}: scriptOffset + scriptLength overflows"
-            ))
-        })?;
-        let script = raw.get(start..end).ok_or_else(|| {
-            WalletError::InvalidOperation(format!(
-                "{describe}: the script slice lies outside the {} byte rawTx — the offset is stale \
-                 or the rawTx belongs to a different transaction",
+
+        // FAIL OPEN, as TS does — `if (script == null) return` leaves the row
+        // as it was. Aborting the whole export instead would be a worse trade
+        // than the bug: `maxOutputScript` defaults to 100 bytes so offloading
+        // is routine, the affected output is often an OP_RETURN that was never
+        // spendable, and refusing means the operator gets NO backup rather
+        // than one missing a script. Warned rather than silent, because this
+        // is the one case where a row leaves without its script.
+        let Some(raw) = raw_by_txid.get(txid).copied() else {
+            tracing::warn!(
+                "BRC-38 export: {describe} has an offloaded lockingScript and neither its \
+                 transaction nor a proven transaction in this export carries the rawTx to restore \
+                 it from. The row is exported WITHOUT its script and that output will not be \
+                 spendable from this backup."
+            );
+            continue;
+        };
+
+        // `try_from`/`checked_add`, never `as`: a stale or hostile offset must
+        // not wrap into a valid-looking slice of the wrong bytes.
+        let Ok(start) = usize::try_from(offset) else {
+            tracing::warn!("BRC-38 export: {describe} has a scriptOffset that is not a valid index; exported without its script");
+            continue;
+        };
+        let Ok(len) = usize::try_from(length) else {
+            tracing::warn!("BRC-38 export: {describe} has a scriptLength that is not a valid length; exported without its script");
+            continue;
+        };
+        let Some(script) = start.checked_add(len).and_then(|end| raw.get(start..end)) else {
+            tracing::warn!(
+                "BRC-38 export: {describe} names a script slice outside the {} byte rawTx — the \
+                 offset is stale or the rawTx belongs to a different transaction. Exported \
+                 without its script.",
                 raw.len()
-            ))
-        })?;
+            );
+            continue;
+        };
         o.locking_script = Some(script.to_vec());
     }
     Ok(())
@@ -504,32 +533,87 @@ mod backfill_tests {
         );
     }
 
-    /// When the bytes are genuinely unavailable we FAIL rather than emit a row
-    /// without its script. Silent omission is the defect this exists to prevent.
+    /// When the bytes are genuinely unavailable the row is exported WITHOUT
+    /// its script, matching TS's `if (script == null) return`.
+    ///
+    /// An earlier revision aborted the whole export here. That was the worse
+    /// trade: `maxOutputScript` defaults to 100 bytes so offloading is
+    /// routine, the affected output is frequently an OP_RETURN that was never
+    /// spendable, and refusing means the operator gets NO backup rather than
+    /// one missing a script. The warning is the compensating control.
     #[test]
-    fn an_unrecoverable_script_fails_loudly_rather_than_exporting_without_it() {
+    fn an_unrecoverable_script_leaves_the_row_without_one_rather_than_aborting() {
         let txid = "cc".repeat(32);
         let mut outputs = vec![output(&txid, None, 12, 35)];
 
-        let err = backfill_offloaded_scripts(&mut outputs, &[], &[])
-            .expect_err("no rawTx anywhere — must not silently succeed");
-        assert!(err.to_string().contains("rawTx"), "{err}");
+        backfill_offloaded_scripts(&mut outputs, &[], &[])
+            .expect("an unrecoverable script must not abort the export");
         assert!(
             outputs[0].locking_script.is_none(),
-            "a failed backfill must not half-write the row"
+            "the row is exported as-is; it must not gain a fabricated script"
         );
     }
 
     /// A stale offset must not slice the wrong bytes into a locking script.
     #[test]
-    fn an_out_of_range_slice_is_refused() {
+    fn an_out_of_range_slice_is_skipped_not_fabricated() {
         let txid = "dd".repeat(32);
-        let mut outputs = vec![output(&txid, None, 12, 99)];
         let tx = transaction(&txid, Some(vec![0x11; 20]));
+        let mut outputs = vec![output(&txid, None, 12, 99)];
 
-        let err = backfill_offloaded_scripts(&mut outputs, &[tx], &[])
-            .expect_err("the slice runs past the end of rawTx");
-        assert!(err.to_string().contains("outside"), "{err}");
+        backfill_offloaded_scripts(&mut outputs, &[tx], &[]).unwrap();
+        assert!(
+            outputs[0].locking_script.is_none(),
+            "an out-of-range slice must leave the row alone, never fabricate a script"
+        );
+    }
+
+    /// **`scriptOffset == 0` MEANS NOT OFFLOADED.** The regression test for a
+    /// defect this function itself introduced.
+    ///
+    /// TS skips explicitly on `o.scriptOffset === 0` (StorageProvider.ts:927).
+    /// An earlier revision filtered on `script_offset.is_some()`, so `Some(0)`
+    /// passed and it sliced `raw[0..len]` — the transaction's VERSION field —
+    /// and wrote it into the backup as a locking script. In range, so the
+    /// bounds check could not catch it: a silent corruption strictly worse
+    /// than the silent omission it replaced.
+    #[test]
+    fn a_zero_script_offset_is_not_treated_as_offloaded() {
+        let txid = "ff".repeat(32);
+        // A rawTx whose first bytes are the version field, not a script.
+        let tx = transaction(&txid, Some(vec![0x01, 0x00, 0x00, 0x00, 0xde, 0xad]));
+        let mut outputs = vec![output(&txid, None, 0, 4)];
+
+        backfill_offloaded_scripts(&mut outputs, &[tx], &[]).unwrap();
+
+        assert!(
+            outputs[0].locking_script.is_none(),
+            "scriptOffset 0 means the script was never offloaded; slicing at 0 would write the \
+             transaction version into the backup as a locking script"
+        );
+    }
+
+    /// A script already present at the RIGHT length is left alone; TS's guard
+    /// is a length comparison, not a presence check.
+    #[test]
+    fn a_script_of_the_wrong_length_is_refilled() {
+        let script = op_return_script();
+        let txid = "77".repeat(32);
+        let tx = transaction(&txid, Some(raw_tx_containing(&script, 12)));
+        // Present but truncated — TS refills this rather than trusting it.
+        let mut outputs = vec![output(
+            &txid,
+            Some(vec![0x00, 0x6a]),
+            12,
+            script.len() as i64,
+        )];
+
+        backfill_offloaded_scripts(&mut outputs, &[tx], &[]).unwrap();
+
+        assert_eq!(
+            outputs[0].locking_script.as_deref(),
+            Some(script.as_slice())
+        );
     }
 
     /// Rows that already carry their script are untouched — the backfill must

@@ -64,8 +64,21 @@ const BRC39_NONCE_LENGTH: usize = 32;
 /// defaults are 7 iterations over 128 MiB — with headroom for a deliberately
 /// hardened export, while refusing anything that could not be a real backup.
 /// A legitimate file has never needed more.
-const BRC39_MAX_IMPORT_MEMORY_KIB: u32 = 4 * 1024 * 1024; // 4 GiB
-const BRC39_MAX_IMPORT_ITERATIONS: u32 = 64;
+const BRC39_MAX_KDF_MEMORY_KIB: u32 = 4 * 1024 * 1024; // 4 GiB
+/// The iteration ceiling is far looser than the memory one ON PURPOSE.
+///
+/// Memory is the dangerous axis: `argon2` allocates the whole cost up front
+/// and an allocation failure ABORTS the process. Iterations only burn CPU —
+/// bounded, interruptible, and recoverable — so the bound exists to stop a
+/// pathological burn, not to prevent a crash.
+///
+/// It must also stay well clear of anything a reference implementation can
+/// emit. TS puts NO upper bound on either parameter (`validateKdfParams`,
+/// index.ts:987-991, checks only `> 0`), so every ceiling we add is a
+/// potential interop wall: a file TS wrote and we refuse to open. 64 was far
+/// too tight — TS's own default is 7, but a caller hardening an export via
+/// `BRC39Options` could reasonably pick 100 or 1000.
+const BRC39_MAX_KDF_ITERATIONS: u32 = 4096;
 
 /// Argon2id cost overrides for BRC-39 encryption (TS `BRC39Options`).
 /// Values weaker than the canonical defaults are rejected on export.
@@ -313,17 +326,21 @@ fn validate_kdf_params(
     // slow decrypt — `argon2` allocates one 1 KiB block per unit up front, and
     // an allocation failure aborts the process instead of returning an error we
     // could map. There is no recovering from it downstream.
-    if memory_kib > BRC39_MAX_IMPORT_MEMORY_KIB {
+    //
+    // This runs on BOTH directions, which is deliberate: on import the header
+    // is untrusted, and on export producing a file no implementation will
+    // agree to open is not useful either.
+    if memory_kib > BRC39_MAX_KDF_MEMORY_KIB {
         return Err(WalletError::BadRequest(format!(
-            "BRC-39 Argon2id memoryKiB {memory_kib} exceeds the {BRC39_MAX_IMPORT_MEMORY_KIB} \
+            "BRC-39 Argon2id memoryKiB {memory_kib} exceeds the {BRC39_MAX_KDF_MEMORY_KIB} \
              ceiling — refusing to allocate {} GiB for an unauthenticated file header",
             memory_kib / (1024 * 1024)
         )));
     }
-    if iterations > BRC39_MAX_IMPORT_ITERATIONS {
+    if iterations > BRC39_MAX_KDF_ITERATIONS {
         return Err(WalletError::BadRequest(format!(
             "BRC-39 Argon2id iterations {iterations} exceeds the \
-             {BRC39_MAX_IMPORT_ITERATIONS} ceiling"
+             {BRC39_MAX_KDF_ITERATIONS} ceiling"
         )));
     }
     if parallelism == 0 {
