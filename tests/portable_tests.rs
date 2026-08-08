@@ -401,6 +401,231 @@ async fn merge_ts_export_remaps_ids_and_sync_maps() {
     );
 }
 
+/// A corrupt stored sync map must fail the merge, not be silently replaced
+/// with an empty map: the stored id-map is the record of which source rows
+/// already landed under which target ids, and overwriting it would make the
+/// next round re-insert rows it should have matched.
+#[tokio::test]
+async fn merge_fails_loudly_on_corrupt_stored_sync_map() {
+    let document = parse_brc38_json(&fixture_string("brc38-ts-export.json")).unwrap();
+    let original: Value =
+        serde_json::from_str(&fixture_string("brc38-ts-export.json")).unwrap();
+    let target = empty_storage().await;
+
+    let now = chrono::Utc::now().naive_utc();
+    let user_id = target
+        .insert_user(
+            &bsv_wallet_toolbox::tables::User {
+                created_at: now,
+                updated_at: now,
+                user_id: 0,
+                identity_key: fixture_identity_key(),
+                active_storage: "elsewhere".to_string(),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    let source_key = original["sourceStorage"]["storageIdentityKey"]
+        .as_str()
+        .unwrap();
+    let source_name = original["sourceStorage"]["storageName"].as_str().unwrap();
+    target
+        .insert_sync_state(
+            &bsv_wallet_toolbox::tables::SyncState {
+                created_at: now,
+                updated_at: now,
+                sync_state_id: 0,
+                user_id,
+                storage_identity_key: source_key.to_string(),
+                storage_name: source_name.to_string(),
+                status: bsv_wallet_toolbox::status::SyncStatus::Unknown,
+                init: false,
+                ref_num: "corrupt-map-ref".to_string(),
+                sync_map: "not-json{{{".to_string(),
+                when: None,
+                satoshis: None,
+                error_local: None,
+                error_other: None,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+    let err = import_brc38(
+        &target,
+        &document,
+        &Brc38ImportOptions {
+            mode: ImportMode::Merge,
+        },
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("corrupt syncMap JSON"), "{err}");
+
+    // The failure aborted before any overwrite: the stored (corrupt) map is
+    // intact for inspection and nothing was merged.
+    let states = target
+        .find_sync_states(
+            &FindSyncStatesArgs {
+                partial: SyncStatePartial {
+                    user_id: Some(user_id),
+                    storage_identity_key: Some(source_key.to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(states.len(), 1);
+    assert_eq!(states[0].sync_map, "not-json{{{");
+    assert_eq!(
+        target
+            .count_transactions(&Default::default(), None)
+            .await
+            .unwrap(),
+        0,
+        "nothing may merge once the sync state is known corrupt"
+    );
+}
+
+/// After a merge import, the import-tracking sync state's `when` must equal
+/// the latest updated_at merged (TS EntitySyncState.processSyncChunk
+/// done-handling). `when` is the `since` a later sync round resumes from;
+/// left unset, the next round would re-scan from the beginning of time.
+#[tokio::test]
+async fn merge_sets_import_sync_state_when_to_latest_merged_updated_at() {
+    let json = fixture_string("brc38-ts-export.json");
+    let original: Value = serde_json::from_str(&json).unwrap();
+    let document = parse_brc38_json(&json).unwrap();
+    let target = empty_storage().await;
+
+    let result = import_brc38(
+        &target,
+        &document,
+        &Brc38ImportOptions {
+            mode: ImportMode::Merge,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Expected: max updated_at over the 12 chunk entity tables (user and
+    // syncStates do not travel through the entity sync maps).
+    let mut expected: Option<chrono::NaiveDateTime> = None;
+    for table in [
+        "provenTxs",
+        "provenTxReqs",
+        "outputBaskets",
+        "transactions",
+        "commissions",
+        "outputs",
+        "outputTags",
+        "outputTagMaps",
+        "txLabels",
+        "txLabelMaps",
+        "certificates",
+        "certificateFields",
+    ] {
+        for row in original["tables"][table].as_array().unwrap() {
+            let at = chrono::NaiveDateTime::parse_from_str(
+                row["updated_at"].as_str().unwrap().trim_end_matches('Z'),
+                "%Y-%m-%dT%H:%M:%S%.f",
+            )
+            .unwrap();
+            expected = Some(expected.map_or(at, |cur| cur.max(at)));
+        }
+    }
+    let expected = expected.expect("fixture has entity rows");
+
+    let import_state = target
+        .find_sync_states(
+            &FindSyncStatesArgs {
+                partial: SyncStatePartial {
+                    user_id: Some(result.user_id),
+                    storage_identity_key: Some(
+                        original["sourceStorage"]["storageIdentityKey"]
+                            .as_str()
+                            .unwrap()
+                            .to_string(),
+                    ),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(import_state.len(), 1);
+    assert_eq!(
+        import_state[0].when,
+        Some(expected),
+        "when must record the latest updated_at this import transferred"
+    );
+}
+
+/// A restore that fails mid-way must roll back completely and surface the
+/// original insert error — the target must be left exactly as found
+/// (restorable), never partially written.
+#[tokio::test]
+async fn restore_failure_rolls_back_and_surfaces_the_original_error() {
+    // Two provenTxs with distinct ids but the same txid pass BRC-38
+    // validation (which checks id uniqueness only) and then violate the
+    // proven_txs.txid UNIQUE constraint mid-transaction.
+    let mut doc = minimal_document();
+    // minimal_document carries only what the validators need; decoding into
+    // table structs additionally needs the full settings row.
+    doc["sourceStorage"]["dbtype"] = Value::String("SQLite".to_string());
+    doc["sourceStorage"]["maxOutputScript"] = Value::from(1024);
+    let proven = |id: i64| {
+        serde_json::json!({
+            "created_at": "2026-01-02T03:04:05.006Z",
+            "updated_at": "2026-01-02T03:04:05.006Z",
+            "provenTxId": id,
+            "txid": "duplicate-txid",
+            "height": 1,
+            "index": 0,
+            "merklePath": "AA==",
+            "rawTx": "AA==",
+            "blockHash": "block-hash",
+            "merkleRoot": "merkle-root"
+        })
+    };
+    doc["tables"]["provenTxs"] = serde_json::json!([proven(1), proven(2)]);
+    let poisoned = parse_brc38_json(&doc.to_string()).unwrap();
+    let target = empty_storage().await;
+    let options = Brc38ImportOptions {
+        mode: ImportMode::Restore,
+    };
+
+    let err = import_brc38(&target, &poisoned, &options)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("UNIQUE") || err.contains("unique"),
+        "the original constraint violation must surface: {err}"
+    );
+
+    // Rollback left the target fully empty...
+    assert_eq!(target.count_users(&Default::default(), None).await.unwrap(), 0);
+    assert_eq!(
+        target
+            .count_proven_txs(&Default::default(), None)
+            .await
+            .unwrap(),
+        0
+    );
+    // ...and healthy: a valid restore into the same target still succeeds.
+    let good = parse_brc38_json(&fixture_string("brc38-ts-export.json")).unwrap();
+    import_brc38(&target, &good, &options).await.unwrap();
+}
+
 // ---------------------------------------------------------------------------
 // Validator rejections (mirroring the TS test suite)
 // ---------------------------------------------------------------------------

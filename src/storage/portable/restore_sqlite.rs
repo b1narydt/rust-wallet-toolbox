@@ -44,6 +44,11 @@ macro_rules! exec {
 impl PortableStorage for SqliteStorage {
     async fn restore_brc38_rows(&self, decoded: &DecodedBrc38, trx: &TrxToken) -> WalletResult<()> {
         let u = &decoded.user;
+        // activeStorage is preserved verbatim (TS restoreBRC38 does the same):
+        // the exact-copy contract keeps re-export byte-identical, and the
+        // storage manager only enables a store whose storageIdentityKey
+        // matches user.activeStorage — after restoring into a different
+        // store, `set_active` is the step that migrates the pointer.
         exec!(
             trx,
             "INSERT INTO users (created_at, updated_at, userId, identityKey, activeStorage) \

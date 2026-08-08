@@ -203,10 +203,7 @@ async fn restore_brc38<S: PortableStorage>(
     let trx = storage.begin_transaction().await?;
     match storage.restore_brc38_rows(decoded, &trx).await {
         Ok(()) => storage.commit_transaction(trx).await?,
-        Err(e) => {
-            let _ = storage.rollback_transaction(trx).await;
-            return Err(e);
-        }
+        Err(e) => return Err(fail_with_rollback(storage, trx, "restore", e).await),
     }
     Ok(Brc38ImportResult {
         mode: ImportMode::Restore,
@@ -303,17 +300,26 @@ async fn merge_brc38<S: StorageProvider>(
             storage.commit_transaction(trx).await?;
             Ok(result)
         }
-        Err(e) => {
-            // The rollback's own failure must not mask the reason we are
-            // rolling back — that error is what the operator needs.
-            if let Err(rollback_err) = storage.rollback_transaction(trx).await {
-                tracing::error!(
-                    "BRC-38 merge failed and its rollback ALSO failed: {rollback_err}. The target \
-                     may be partially merged; inspect it before retrying."
-                );
-            }
-            Err(e)
-        }
+        Err(e) => Err(fail_with_rollback(storage, trx, "merge", e).await),
+    }
+}
+
+/// Roll back `trx` after `cause` failed the import, keeping `cause` as the
+/// primary error. If the rollback itself also fails, the target's state is
+/// unknown, so both errors surface in the returned error — the rollback
+/// failure must neither be dropped nor mask the reason for rolling back.
+async fn fail_with_rollback<S: StorageProvider + ?Sized>(
+    storage: &S,
+    trx: TrxToken,
+    context: &str,
+    cause: WalletError,
+) -> WalletError {
+    match storage.rollback_transaction(trx).await {
+        Ok(()) => cause,
+        Err(rollback_err) => WalletError::Internal(format!(
+            "BRC-38 {context} failed: {cause}; rollback ALSO failed: {rollback_err} — the \
+             target may be partially written; inspect it before retrying"
+        )),
     }
 }
 
@@ -359,9 +365,10 @@ async fn merge_brc38_in_trx<S: StorageProvider>(
         proven_tx_reqs: Some(decoded.proven_tx_reqs.clone()),
     };
 
-    let mut import_map = normalize_sync_map(
-        &serde_json::from_str::<Value>(&import_state.sync_map).unwrap_or(Value::Null),
-    );
+    let mut import_map = normalize_sync_map(&parse_sync_map_json(
+        &import_state.sync_map,
+        "the import-tracking sync state",
+    )?);
     let chunk_result = process_sync_chunk(
         storage as &dyn StorageProvider,
         chunk,
@@ -370,16 +377,26 @@ async fn merge_brc38_in_trx<S: StorageProvider>(
     )
     .await?;
 
-    // Persist the updated id-maps with counts reset, as TS does once a sync
-    // round completes (EntitySyncState.processSyncChunk done-handling).
+    // Persist the updated id-maps with counts reset and `when` advanced to
+    // the latest updated_at merged, as TS does once a sync round completes
+    // (EntitySyncState.processSyncChunk done-handling: `this.when =
+    // maxUpdated_at` over the entity maps). `when` is the `since` a later
+    // sync round resumes from, so it must reflect what this import already
+    // transferred.
     for esm in import_map.entity_maps_mut() {
         esm.count = 0;
     }
+    let when = import_map
+        .entity_maps()
+        .iter()
+        .filter_map(|esm| esm.max_updated_at)
+        .max();
     storage
         .update_sync_state(
             import_state.sync_state_id,
             &SyncStatePartial {
                 sync_map: Some(sync_map_to_ts_json(&import_map)),
+                when,
                 ..Default::default()
             },
             Some(trx),
@@ -472,7 +489,7 @@ async fn merge_imported_sync_states<S: StorageProvider + ?Sized>(
     let mut updates = 0;
     for source in sync_states {
         let remapped = remap_sync_map(
-            &serde_json::from_str::<Value>(&source.sync_map).unwrap_or(Value::Null),
+            &parse_sync_map_json(&source.sync_map, "an imported syncStates row")?,
             import_map,
         );
         let mut row = source.clone();
@@ -557,6 +574,20 @@ fn remap_sync_map(source: &Value, import_map: &SyncMap) -> SyncMap {
         }
     }
     copy
+}
+
+/// Parse a stored sync map JSON string, failing the import on corruption.
+///
+/// TS calls bare `JSON.parse` at both call sites, so unparseable JSON aborts
+/// the import there too. Shape leniency stays in `normalize_sync_map`; only
+/// JSON that does not parse at all is fatal. Both call sites run inside the
+/// merge transaction, so failing rolls back cleanly — whereas substituting an
+/// empty map would overwrite the stored id-map and erase the record of what
+/// was already synced, silently duplicating rows on the next round.
+fn parse_sync_map_json(json: &str, context: &str) -> WalletResult<Value> {
+    serde_json::from_str::<Value>(json).map_err(|e| {
+        WalletError::Internal(format!("BRC-38 merge: corrupt syncMap JSON in {context}: {e}"))
+    })
 }
 
 /// Lenient sync map parsing (TS `normalizeSyncMap`): start from a fresh map
@@ -660,4 +691,73 @@ fn sync_map_to_ts_json(map: &SyncMap) -> String {
     );
     out.insert("commission".to_string(), entity(&map.commission));
     serde_json::to_string(&Value::Object(out)).expect("sync map serialization is infallible")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_sync_map_json_accepts_valid_json() {
+        assert!(parse_sync_map_json("{}", "test").is_ok());
+        // Wrong shape is tolerated here; normalize_sync_map handles leniency.
+        assert!(parse_sync_map_json("null", "test").is_ok());
+        assert!(parse_sync_map_json("[1,2]", "test").is_ok());
+    }
+
+    #[test]
+    fn parse_sync_map_json_fails_on_corrupt_json() {
+        let err = parse_sync_map_json("not-json{{{", "the import-tracking sync state")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("corrupt syncMap JSON"), "{err}");
+        assert!(err.contains("the import-tracking sync state"), "{err}");
+    }
+
+    #[cfg(feature = "sqlite")]
+    mod rollback {
+        use crate::storage::sqlx_impl::{SqliteStorage, SqliteTrxInner};
+        use crate::storage::traits::reader_writer::StorageReaderWriter;
+        use crate::storage::StorageConfig;
+        use crate::types::Chain;
+
+        use super::*;
+
+        async fn storage() -> SqliteStorage {
+            let config = StorageConfig {
+                url: "sqlite::memory:".to_string(),
+                ..Default::default()
+            };
+            SqliteStorage::new_sqlite(config, Chain::Test).await.unwrap()
+        }
+
+        #[tokio::test]
+        async fn fail_with_rollback_keeps_cause_when_rollback_succeeds() {
+            let storage = storage().await;
+            let trx = storage.begin_transaction().await.unwrap();
+            let cause = WalletError::BadRequest("original failure".to_string());
+            let err = fail_with_rollback(&storage, trx, "restore", cause).await;
+            assert!(
+                matches!(&err, WalletError::BadRequest(m) if m == "original failure"),
+                "cause must pass through unchanged: {err}"
+            );
+        }
+
+        #[tokio::test]
+        async fn fail_with_rollback_surfaces_both_errors_when_rollback_fails() {
+            let storage = storage().await;
+            // A token whose transaction is already consumed makes
+            // rollback_transaction fail deterministically.
+            let consumed: SqliteTrxInner =
+                std::sync::Arc::new(tokio::sync::Mutex::new(None));
+            let trx = TrxToken::new(consumed);
+            let cause = WalletError::BadRequest("original failure".to_string());
+            let err = fail_with_rollback(&storage, trx, "restore", cause)
+                .await
+                .to_string();
+            assert!(err.contains("original failure"), "{err}");
+            assert!(err.contains("rollback ALSO failed"), "{err}");
+            assert!(err.contains("Transaction already consumed"), "{err}");
+        }
+    }
 }
