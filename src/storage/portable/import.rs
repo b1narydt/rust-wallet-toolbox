@@ -359,9 +359,10 @@ async fn merge_brc38_in_trx<S: StorageProvider>(
         proven_tx_reqs: Some(decoded.proven_tx_reqs.clone()),
     };
 
-    let mut import_map = normalize_sync_map(
-        &serde_json::from_str::<Value>(&import_state.sync_map).unwrap_or(Value::Null),
-    );
+    let mut import_map = normalize_sync_map(&parse_sync_map_json(
+        &import_state.sync_map,
+        "the import-tracking sync state",
+    )?);
     let chunk_result = process_sync_chunk(
         storage as &dyn StorageProvider,
         chunk,
@@ -472,7 +473,7 @@ async fn merge_imported_sync_states<S: StorageProvider + ?Sized>(
     let mut updates = 0;
     for source in sync_states {
         let remapped = remap_sync_map(
-            &serde_json::from_str::<Value>(&source.sync_map).unwrap_or(Value::Null),
+            &parse_sync_map_json(&source.sync_map, "an imported syncStates row")?,
             import_map,
         );
         let mut row = source.clone();
@@ -557,6 +558,20 @@ fn remap_sync_map(source: &Value, import_map: &SyncMap) -> SyncMap {
         }
     }
     copy
+}
+
+/// Parse a stored sync map JSON string, failing the import on corruption.
+///
+/// TS calls bare `JSON.parse` at both call sites, so unparseable JSON aborts
+/// the import there too. Shape leniency stays in `normalize_sync_map`; only
+/// JSON that does not parse at all is fatal. Both call sites run inside the
+/// merge transaction, so failing rolls back cleanly — whereas substituting an
+/// empty map would overwrite the stored id-map and erase the record of what
+/// was already synced, silently duplicating rows on the next round.
+fn parse_sync_map_json(json: &str, context: &str) -> WalletResult<Value> {
+    serde_json::from_str::<Value>(json).map_err(|e| {
+        WalletError::Internal(format!("BRC-38 merge: corrupt syncMap JSON in {context}: {e}"))
+    })
 }
 
 /// Lenient sync map parsing (TS `normalizeSyncMap`): start from a fresh map
@@ -660,4 +675,26 @@ fn sync_map_to_ts_json(map: &SyncMap) -> String {
     );
     out.insert("commission".to_string(), entity(&map.commission));
     serde_json::to_string(&Value::Object(out)).expect("sync map serialization is infallible")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_sync_map_json_accepts_valid_json() {
+        assert!(parse_sync_map_json("{}", "test").is_ok());
+        // Wrong shape is tolerated here; normalize_sync_map handles leniency.
+        assert!(parse_sync_map_json("null", "test").is_ok());
+        assert!(parse_sync_map_json("[1,2]", "test").is_ok());
+    }
+
+    #[test]
+    fn parse_sync_map_json_fails_on_corrupt_json() {
+        let err = parse_sync_map_json("not-json{{{", "the import-tracking sync state")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("corrupt syncMap JSON"), "{err}");
+        assert!(err.contains("the import-tracking sync state"), "{err}");
+    }
 }

@@ -401,6 +401,98 @@ async fn merge_ts_export_remaps_ids_and_sync_maps() {
     );
 }
 
+/// A corrupt stored sync map must fail the merge, not be silently replaced
+/// with an empty map: the stored id-map is the record of which source rows
+/// already landed under which target ids, and overwriting it would make the
+/// next round re-insert rows it should have matched.
+#[tokio::test]
+async fn merge_fails_loudly_on_corrupt_stored_sync_map() {
+    let document = parse_brc38_json(&fixture_string("brc38-ts-export.json")).unwrap();
+    let original: Value =
+        serde_json::from_str(&fixture_string("brc38-ts-export.json")).unwrap();
+    let target = empty_storage().await;
+
+    let now = chrono::Utc::now().naive_utc();
+    let user_id = target
+        .insert_user(
+            &bsv_wallet_toolbox::tables::User {
+                created_at: now,
+                updated_at: now,
+                user_id: 0,
+                identity_key: fixture_identity_key(),
+                active_storage: "elsewhere".to_string(),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    let source_key = original["sourceStorage"]["storageIdentityKey"]
+        .as_str()
+        .unwrap();
+    let source_name = original["sourceStorage"]["storageName"].as_str().unwrap();
+    target
+        .insert_sync_state(
+            &bsv_wallet_toolbox::tables::SyncState {
+                created_at: now,
+                updated_at: now,
+                sync_state_id: 0,
+                user_id,
+                storage_identity_key: source_key.to_string(),
+                storage_name: source_name.to_string(),
+                status: bsv_wallet_toolbox::status::SyncStatus::Unknown,
+                init: false,
+                ref_num: "corrupt-map-ref".to_string(),
+                sync_map: "not-json{{{".to_string(),
+                when: None,
+                satoshis: None,
+                error_local: None,
+                error_other: None,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+    let err = import_brc38(
+        &target,
+        &document,
+        &Brc38ImportOptions {
+            mode: ImportMode::Merge,
+        },
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("corrupt syncMap JSON"), "{err}");
+
+    // The failure aborted before any overwrite: the stored (corrupt) map is
+    // intact for inspection and nothing was merged.
+    let states = target
+        .find_sync_states(
+            &FindSyncStatesArgs {
+                partial: SyncStatePartial {
+                    user_id: Some(user_id),
+                    storage_identity_key: Some(source_key.to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(states.len(), 1);
+    assert_eq!(states[0].sync_map, "not-json{{{");
+    assert_eq!(
+        target
+            .count_transactions(&Default::default(), None)
+            .await
+            .unwrap(),
+        0,
+        "nothing may merge once the sync state is known corrupt"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Validator rejections (mirroring the TS test suite)
 // ---------------------------------------------------------------------------
