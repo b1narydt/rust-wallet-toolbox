@@ -45,19 +45,33 @@ fn config_requires_protocol_check(config: &PermissionsManagerConfig, usage_type:
 // Admin protocol/basket detection
 // ---------------------------------------------------------------------------
 
+// Each predicate below decides whether a NON-admin originator is refused
+// outright, so anything these three fail to recognize is reachable by a
+// third-party app. They mirror `WalletPermissionsManager.isAdminProtocol` /
+// `isAdminLabel` / `isAdminBasket` exactly; TS matches on the bare prefix
+// `admin`, and a trailing space here narrowed that to `admin <word>`, letting
+// names like "administrative" through.
+
 /// Check if a protocol is admin-reserved.
 fn is_admin_protocol(protocol: &str) -> bool {
-    protocol.starts_with("admin ")
+    protocol.starts_with("admin")
 }
 
 /// Check if a basket name is admin-reserved.
+///
+/// `default` is the wallet's own change basket. The wallet reaches it as the
+/// admin originator, which is cleared before this is consulted; an app asking
+/// for it by name is asking to enumerate the user's change, so BRC-100
+/// reserves it.
 fn is_admin_basket(basket: &str) -> bool {
-    basket.starts_with("admin ")
+    basket == "default" || basket.starts_with("admin")
 }
 
 /// Check if a label is admin-reserved.
+///
+/// `p ` is the namespace for labels whose use requires a permission module.
 fn is_admin_label(label: &str) -> bool {
-    label.starts_with("admin ")
+    label.starts_with("admin") || label.starts_with("p ")
 }
 
 // ---------------------------------------------------------------------------
@@ -682,5 +696,32 @@ mod tests {
     fn test_is_admin_label() {
         assert!(is_admin_label("admin something"));
         assert!(!is_admin_label("my-label"));
+    }
+
+    /// The wallet's change basket is admin-reserved. Nothing else refuses it:
+    /// argument validation cannot, because it never sees the originator, and
+    /// the wallet's own reads of `default` are legitimate. If this predicate
+    /// misses it, any app that asks can enumerate the user's change outputs.
+    #[test]
+    fn the_default_change_basket_is_admin_reserved() {
+        assert!(is_admin_basket("default"));
+    }
+
+    /// TS matches the bare prefix `admin`, so a name only has to START with it
+    /// — requiring `admin ` narrows the reservation to `admin <word>` and lets
+    /// the rest through.
+    #[test]
+    fn admin_reservation_matches_the_bare_prefix_not_admin_space() {
+        assert!(is_admin_basket("administrative"));
+        assert!(is_admin_label("adminfoo"));
+        assert!(is_admin_protocol("adminfoo"));
+    }
+
+    /// `p ` is reserved for labels gated behind a permission module. The
+    /// trailing space is the reservation: `payments` is an ordinary label.
+    #[test]
+    fn the_p_namespace_is_reserved_for_labels_but_ordinary_p_names_are_not() {
+        assert!(is_admin_label("p thing"));
+        assert!(!is_admin_label("payments"));
     }
 }
