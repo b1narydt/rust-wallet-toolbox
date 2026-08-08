@@ -352,3 +352,53 @@ async fn sign_accept_delayed_true_does_not_broadcast_inline() {
     .expect("run");
     assert_eq!(r.outcome.status, "success", "{:?}", r.outcome.message);
 }
+
+/// Pins BRC-100 noSend chaining: a second noSend action funded solely by the
+/// first one's change, admitted via options.noSendChange, in a wallet whose
+/// only basket UTXO is already consumed. Before the fix the storage layer
+/// ignored options.noSendChange entirely and this failed with
+/// WERR_INSUFFICIENT_FUNDS.
+#[tokio::test]
+async fn nosend_chaining_via_no_send_change() {
+    let (payment, roots) = fabricate_funding();
+    let _entropy_guard = funded_common::ENTROPY_SESSION.lock().await;
+    let setup = funded_common::build_vector_wallet(ROOT_1, services(&roots))
+        .await
+        .expect("wallet");
+    funded_common::internalize_funding(&setup, &payment)
+        .await
+        .expect("funding");
+    bsv_wallet_toolbox::utility::conformance_entropy::set_conformance_entropy("nosend-chain");
+
+    let out = serde_json::json!([{
+        "lockingScript": "76a914a3dbcdd15d94b7fec6f80879369cf57ffda0eeca88ac",
+        "satoshis": 100,
+        "outputDescription": "chain out"
+    }]);
+    let ns1_args: bsv::wallet::interfaces::CreateActionArgs = serde_json::from_value(
+        serde_json::json!({
+            "description": "chain link 1",
+            "outputs": out,
+            "options": {"noSend": true}
+        }),
+    )
+    .expect("args");
+    let ns1 = setup.wallet.create_action(ns1_args, None).await.expect("ns1");
+    assert!(!ns1.no_send_change.is_empty());
+
+    let ns2_args: bsv::wallet::interfaces::CreateActionArgs = serde_json::from_value(
+        serde_json::json!({
+            "description": "chain link 2",
+            "outputs": out,
+            "options": {"noSend": true, "noSendChange": ns1.no_send_change}
+        }),
+    )
+    .expect("args");
+    let ns2 = setup
+        .wallet
+        .create_action(ns2_args, None)
+        .await
+        .expect("ns2 must fund from ns1's chained change");
+    assert!(ns2.txid.is_some());
+    bsv_wallet_toolbox::utility::conformance_entropy::clear_conformance_entropy();
+}
