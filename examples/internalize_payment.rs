@@ -182,8 +182,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 outputs: vec![InternalizeOutput::WalletPayment {
                     output_index: 0,
                     payment: Payment {
-                        derivation_prefix: derivation_prefix.into_bytes(),
-                        derivation_suffix: derivation_suffix.into_bytes(),
+                        // Payment carries the RAW derivation bytes; storage
+                        // re-encodes them to the base64 string the signer
+                        // derives with. The lock above was built with the
+                        // base64 strings, so decode here — passing
+                        // `.into_bytes()` of the string double-encodes and
+                        // internalize rejects the script as unspendable.
+                        derivation_prefix: base64::engine::general_purpose::STANDARD
+                            .decode(&derivation_prefix)?,
+                        derivation_suffix: base64::engine::general_purpose::STANDARD
+                            .decode(&derivation_suffix)?,
                         sender_identity_key: sender_setup.wallet.identity_key.clone(),
                     },
                 }],

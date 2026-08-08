@@ -30,11 +30,25 @@ pub struct AvailableChange {
 /// Sorts by satoshis ascending, then output_id ascending (prefer smaller).
 pub struct ChangeStorage {
     change: Vec<AvailableChange>,
+    /// Caller-supplied noSendChange outputs. Allocated before any basket
+    /// change, last-first, ignoring target/exact — mirroring the TS
+    /// `allocateChangeInput` fast path ("noSendChange gets allocated
+    /// first...just allocate in order", createAction.ts).
+    no_send_change: Vec<AvailableChange>,
 }
 
 impl ChangeStorage {
     /// Create a new ChangeStorage from available change UTXOs.
     pub fn new(available: Vec<AvailableChange>) -> Self {
+        Self::with_no_send_change(vec![], available)
+    }
+
+    /// Create a ChangeStorage that allocates the given noSendChange outputs
+    /// before touching basket change.
+    pub fn with_no_send_change(
+        no_send_change: Vec<AvailableChange>,
+        available: Vec<AvailableChange>,
+    ) -> Self {
         let mut change: Vec<AvailableChange> = available
             .into_iter()
             .map(|c| AvailableChange {
@@ -48,16 +62,36 @@ impl ChangeStorage {
                 .cmp(&b.satoshis)
                 .then(a.output_id.cmp(&b.output_id))
         });
-        Self { change }
+        let no_send_change = no_send_change
+            .into_iter()
+            .map(|c| AvailableChange {
+                output_id: c.output_id,
+                satoshis: c.satoshis,
+                spendable: true,
+            })
+            .collect();
+        Self {
+            change,
+            no_send_change,
+        }
     }
 
-    /// Allocate a change input. Tries exact match first, then smallest >= target,
-    /// then largest available (fallback).
+    /// Allocate a change input. noSendChange first (last-first, unconditional),
+    /// then exact match, then smallest >= target, then largest available.
     pub fn allocate(
         &mut self,
         target_satoshis: u64,
         exact_satoshis: Option<u64>,
     ) -> Option<AllocatedChangeInputRef> {
+        // noSendChange priority: TS pops from the end of the caller's list.
+        if let Some(idx) = self.no_send_change.iter().rposition(|c| c.spendable) {
+            self.no_send_change[idx].spendable = false;
+            return Some(AllocatedChangeInputRef {
+                output_id: self.no_send_change[idx].output_id,
+                satoshis: self.no_send_change[idx].satoshis,
+            });
+        }
+
         // Try exact match first
         if let Some(exact) = exact_satoshis {
             if let Some(idx) = self
@@ -102,6 +136,14 @@ impl ChangeStorage {
 
     /// Release a previously allocated change input back to the pool.
     pub fn release(&mut self, output_id: i64) {
+        if let Some(c) = self
+            .no_send_change
+            .iter_mut()
+            .find(|c| c.output_id == output_id)
+        {
+            c.spendable = true;
+            return;
+        }
         if let Some(c) = self.change.iter_mut().find(|c| c.output_id == output_id) {
             c.spendable = true;
         }
@@ -234,10 +276,22 @@ pub fn generate_change_sdk(
     args: &GenerateChangeSdkArgs,
     available_change: &[AvailableChange],
 ) -> WalletResult<GenerateChangeSdkResult> {
+    generate_change_sdk_with_no_send(args, &[], available_change)
+}
+
+/// generate_change_sdk with caller-supplied noSendChange outputs that take
+/// allocation priority over basket change (BRC-100 `options.noSendChange`,
+/// the noSend batch-chaining mechanism).
+pub fn generate_change_sdk_with_no_send(
+    args: &GenerateChangeSdkArgs,
+    no_send_change: &[AvailableChange],
+    available_change: &[AvailableChange],
+) -> WalletResult<GenerateChangeSdkResult> {
     let has_max_possible_output = validate_params(args)?;
 
     let sats_per_kb = args.fee_model.value;
-    let mut storage = ChangeStorage::new(available_change.to_vec());
+    let mut storage =
+        ChangeStorage::with_no_send_change(no_send_change.to_vec(), available_change.to_vec());
 
     let mut allocated_change_inputs: Vec<AllocatedChangeInputRef> = Vec::new();
     let mut change_outputs: Vec<ChangeOutput> = Vec::new();

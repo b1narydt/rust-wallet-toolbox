@@ -61,3 +61,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 dotenvy = "0.15"
+# Faucet funding for the funded conformance recorder (tests/record_funded_vectors.rs)
+# only — dev-dependency so the toolbox gains no runtime dependency.
+bsv-messagebox-client = "0.1.6"

@@ -1759,11 +1759,12 @@ impl ContextualWallet for Wallet {
         let (is_no_send, is_delayed, is_send_with) = match raw_options {
             Some(opts) => (
                 opts.no_send.0,
-                // acceptDelayedBroadcast IS the delayed flag (TS
-                // validateSignActionArgs: isDelayed =
-                // options.acceptDelayedBroadcast). It was inverted here,
-                // which made an explicit acceptDelayedBroadcast=false skip
-                // the broadcast and an explicit true broadcast immediately.
+                // `isDelayed` IS `acceptDelayedBroadcast` (TS
+                // `validateSignActionArgs`). It was negated here until the
+                // funded conformance recording caught it: an explicit
+                // `acceptDelayedBroadcast=true` broadcast immediately and
+                // `=false` suppressed the broadcast — exactly inverted. The
+                // createAction path above always mapped it straight.
                 opts.accept_delayed_broadcast.0,
                 if opts.send_with.is_empty() {
                     None

@@ -20,7 +20,7 @@ use crate::storage::find_args::{
     FindOutputBasketsArgs, FindOutputsArgs, FindTransactionsArgs, OutputBasketPartial,
     OutputPartial, TransactionPartial,
 };
-use crate::storage::methods::generate_change::{generate_change_sdk, AvailableChange};
+use crate::storage::methods::generate_change::{generate_change_sdk_with_no_send, AvailableChange};
 use crate::storage::traits::provider::StorageProvider;
 use crate::storage::traits::reader_writer::StorageReaderWriter;
 use crate::storage::{verify_one, TrxToken};
@@ -52,11 +52,14 @@ fn default_fee_model() -> StorageFeeModel {
 }
 
 /// Generate a random base64 string of the given byte count.
+///
+/// Routed through `conformance_entropy::fill_random` so the funded
+/// conformance recorder/replayer can pin the reference and change-derivation
+/// entropy; with no seed set (production) this is the thread RNG.
 fn random_bytes_base64(count: usize) -> String {
     use base64::Engine;
-    use rand::RngCore;
     let mut bytes = vec![0u8; count];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    crate::utility::conformance_entropy::fill_random(&mut bytes);
     base64::engine::general_purpose::STANDARD.encode(&bytes)
 }
 
@@ -472,6 +475,64 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         })
         .collect();
 
+    // --- Validate caller-supplied noSendChange (BRC-100 noSend chaining) ---
+    // These are change outputs of earlier noSend actions in the same batch:
+    // their parent transactions sit in `nosend` status, so the availability
+    // query above excludes them, and the caller naming them in
+    // options.noSendChange is what re-admits them — allocated before any
+    // basket change. Ported from TS validateNoSendChange (createAction.ts).
+    let no_send_change_in: Vec<Output> = if args.is_no_send {
+        let mut rows: Vec<Output> = Vec::new();
+        for op in &args.options.no_send_change {
+            let found = storage
+                .find_outputs(
+                    &FindOutputsArgs {
+                        partial: OutputPartial {
+                            user_id: Some(user_id),
+                            txid: Some(op.txid.clone()),
+                            vout: Some(op.vout as i32),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    trx_opt,
+                )
+                .await?;
+            let invalid = || WalletError::InvalidParameter {
+                parameter: "noSendChange outpoint".to_string(),
+                must_be: "valid".to_string(),
+            };
+            let output = crate::storage::verify_one_or_none(found)?.ok_or_else(invalid)?;
+            if output.provided_by != StorageProvidedBy::Storage
+                || output.purpose != "change"
+                || !output.spendable
+                || output.spent_by.is_some()
+                || output.satoshis <= 0
+                || output.basket_id != Some(change_basket.basket_id)
+            {
+                return Err(invalid());
+            }
+            if rows.iter().any(|o| o.output_id == output.output_id) {
+                return Err(WalletError::InvalidParameter {
+                    parameter: "noSendChange outpoint".to_string(),
+                    must_be: "unique. Duplicates are not allowed.".to_string(),
+                });
+            }
+            rows.push(output);
+        }
+        rows
+    } else {
+        vec![]
+    };
+    let no_send_change_available: Vec<AvailableChange> = no_send_change_in
+        .iter()
+        .map(|o| AvailableChange {
+            output_id: o.output_id,
+            satoshis: o.satoshis as u64,
+            spendable: true,
+        })
+        .collect();
+
     // --- Generate change ---
     let fee_model = default_fee_model();
     let target_net_count =
@@ -491,7 +552,8 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         target_net_count: Some(target_net_count),
     };
 
-    let change_result = generate_change_sdk(&change_args, &available_change)?;
+    let change_result =
+        generate_change_sdk_with_no_send(&change_args, &no_send_change_available, &available_change)?;
 
     // --- Allocate change inputs in storage ---
     // Mark allocated change UTXOs as spent
@@ -506,9 +568,11 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             .update_output(alloc.output_id, &update, trx_opt)
             .await?;
 
-        // Find the output record for input building
+        // Find the output record for input building (basket change or a
+        // caller-named noSendChange output)
         if let Some(output) = available_change_outputs
             .iter()
+            .chain(no_send_change_in.iter())
             .find(|o| o.output_id == alloc.output_id)
         {
             allocated_outputs.push(output.clone());
