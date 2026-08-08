@@ -1,0 +1,13 @@
+{
+  "$schema": "../../../schema/vector.schema.json",
+  "id": "wallet.brc100.createaction-funded",
+  "name": "BRC-100 createaction (funded, recorded)",
+  "brc": ["BRC-100"],
+  "version": "0.0.0",
+  "reference_impl": "placeholder",
+  "parity_class": "required",
+  "recording": {"status": "placeholder"},
+  "funding_sets": {},
+  "merkle_roots": {},
+  "vectors": []
+}

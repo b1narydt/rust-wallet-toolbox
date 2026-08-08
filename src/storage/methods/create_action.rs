@@ -52,11 +52,14 @@ fn default_fee_model() -> StorageFeeModel {
 }
 
 /// Generate a random base64 string of the given byte count.
+///
+/// Routed through `conformance_entropy::fill_random` so the funded
+/// conformance recorder/replayer can pin the reference and change-derivation
+/// entropy; with no seed set (production) this is the thread RNG.
 fn random_bytes_base64(count: usize) -> String {
     use base64::Engine;
-    use rand::RngCore;
     let mut bytes = vec![0u8; count];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    crate::utility::conformance_entropy::fill_random(&mut bytes);
     base64::engine::general_purpose::STANDARD.encode(&bytes)
 }
 

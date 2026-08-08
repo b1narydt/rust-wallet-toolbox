@@ -3,6 +3,8 @@
 //! Contains BRC-29 script template, transaction size estimation,
 //! and commission key offset derivation.
 
+/// Deterministic entropy override for conformance vector recording/replay.
+pub mod conformance_entropy;
 /// Commission key offset derivation via EC point math.
 pub mod offset_key;
 /// BRC-29 authenticated P2PKH script template using Type-42 derivation.
