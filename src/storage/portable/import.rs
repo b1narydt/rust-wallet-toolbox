@@ -371,16 +371,26 @@ async fn merge_brc38_in_trx<S: StorageProvider>(
     )
     .await?;
 
-    // Persist the updated id-maps with counts reset, as TS does once a sync
-    // round completes (EntitySyncState.processSyncChunk done-handling).
+    // Persist the updated id-maps with counts reset and `when` advanced to
+    // the latest updated_at merged, as TS does once a sync round completes
+    // (EntitySyncState.processSyncChunk done-handling: `this.when =
+    // maxUpdated_at` over the entity maps). `when` is the `since` a later
+    // sync round resumes from, so it must reflect what this import already
+    // transferred.
     for esm in import_map.entity_maps_mut() {
         esm.count = 0;
     }
+    let when = import_map
+        .entity_maps()
+        .iter()
+        .filter_map(|esm| esm.max_updated_at)
+        .max();
     storage
         .update_sync_state(
             import_state.sync_state_id,
             &SyncStatePartial {
                 sync_map: Some(sync_map_to_ts_json(&import_map)),
+                when,
                 ..Default::default()
             },
             Some(trx),

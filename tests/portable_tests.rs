@@ -493,6 +493,82 @@ async fn merge_fails_loudly_on_corrupt_stored_sync_map() {
     );
 }
 
+/// After a merge import, the import-tracking sync state's `when` must equal
+/// the latest updated_at merged (TS EntitySyncState.processSyncChunk
+/// done-handling). `when` is the `since` a later sync round resumes from;
+/// left unset, the next round would re-scan from the beginning of time.
+#[tokio::test]
+async fn merge_sets_import_sync_state_when_to_latest_merged_updated_at() {
+    let json = fixture_string("brc38-ts-export.json");
+    let original: Value = serde_json::from_str(&json).unwrap();
+    let document = parse_brc38_json(&json).unwrap();
+    let target = empty_storage().await;
+
+    let result = import_brc38(
+        &target,
+        &document,
+        &Brc38ImportOptions {
+            mode: ImportMode::Merge,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Expected: max updated_at over the 12 chunk entity tables (user and
+    // syncStates do not travel through the entity sync maps).
+    let mut expected: Option<chrono::NaiveDateTime> = None;
+    for table in [
+        "provenTxs",
+        "provenTxReqs",
+        "outputBaskets",
+        "transactions",
+        "commissions",
+        "outputs",
+        "outputTags",
+        "outputTagMaps",
+        "txLabels",
+        "txLabelMaps",
+        "certificates",
+        "certificateFields",
+    ] {
+        for row in original["tables"][table].as_array().unwrap() {
+            let at = chrono::NaiveDateTime::parse_from_str(
+                row["updated_at"].as_str().unwrap().trim_end_matches('Z'),
+                "%Y-%m-%dT%H:%M:%S%.f",
+            )
+            .unwrap();
+            expected = Some(expected.map_or(at, |cur| cur.max(at)));
+        }
+    }
+    let expected = expected.expect("fixture has entity rows");
+
+    let import_state = target
+        .find_sync_states(
+            &FindSyncStatesArgs {
+                partial: SyncStatePartial {
+                    user_id: Some(result.user_id),
+                    storage_identity_key: Some(
+                        original["sourceStorage"]["storageIdentityKey"]
+                            .as_str()
+                            .unwrap()
+                            .to_string(),
+                    ),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(import_state.len(), 1);
+    assert_eq!(
+        import_state[0].when,
+        Some(expected),
+        "when must record the latest updated_at this import transferred"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Validator rejections (mirroring the TS test suite)
 // ---------------------------------------------------------------------------
