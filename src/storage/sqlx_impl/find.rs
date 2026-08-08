@@ -16,7 +16,7 @@ mod sqlite_impl {
 
     use crate::error::{WalletError, WalletResult};
     use crate::storage::find_args::*;
-    use crate::storage::sqlx_impl::dialect::WhereBuilder;
+    use crate::storage::sqlx_impl::dialect::{Dialect, WhereBuilder};
     use crate::storage::sqlx_impl::StorageSqlx;
     use crate::storage::traits::reader::StorageReader;
     use crate::storage::TrxToken;
@@ -159,7 +159,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["userId"], paged));
         }
         (sql, binds)
     }
@@ -215,7 +215,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["certificateId"], paged));
         }
         (sql, binds)
     }
@@ -253,7 +253,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["certificateId", "fieldName"], paged));
         }
         (sql, binds)
     }
@@ -293,7 +293,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["commissionId"], paged));
         }
         (sql, binds)
     }
@@ -317,7 +317,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["id"], paged));
         }
         (sql, binds)
     }
@@ -349,7 +349,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["basketId"], paged));
         }
         (sql, binds)
     }
@@ -377,7 +377,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["outputId", "outputTagId"], paged));
         }
         (sql, binds)
     }
@@ -409,7 +409,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["outputTagId"], paged));
         }
         (sql, binds)
     }
@@ -496,7 +496,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["outputId"], paged));
         }
         (sql, binds)
     }
@@ -528,7 +528,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["provenTxId"], paged));
         }
         (sql, binds)
     }
@@ -576,7 +576,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["provenTxReqId"], paged));
         }
         (sql, binds)
     }
@@ -604,7 +604,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["storageIdentityKey"], paged));
         }
         (sql, binds)
     }
@@ -644,7 +644,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["syncStateId"], paged));
         }
         (sql, binds)
     }
@@ -696,7 +696,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["transactionId"], paged));
         }
         (sql, binds)
     }
@@ -724,7 +724,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["transactionId", "txLabelId"], paged));
         }
         (sql, binds)
     }
@@ -756,7 +756,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["txLabelId"], paged));
         }
         (sql, binds)
     }
@@ -779,7 +779,7 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_limit_offset(paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["userId"], paged));
         }
         (sql, binds)
     }
@@ -1133,7 +1133,7 @@ mod sqlite_impl {
                 ));
             }
             if let Some(paged) = &args.paged {
-                sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["pt.provenTxId"], paged));
             }
             query_rows(self, &sql, binds, trx).await
         }
@@ -1157,7 +1157,7 @@ mod sqlite_impl {
                 ));
             }
             if let Some(paged) = &args.paged {
-                sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["ptr.provenTxReqId"], paged));
             }
             query_rows(self, &sql, binds, trx).await
         }
@@ -1181,7 +1181,7 @@ mod sqlite_impl {
                 ));
             }
             if let Some(paged) = &args.paged {
-                sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["tlm.transactionId", "tlm.txLabelId"], paged));
             }
             query_rows(self, &sql, binds, trx).await
         }
@@ -1205,7 +1205,7 @@ mod sqlite_impl {
                 ));
             }
             if let Some(paged) = &args.paged {
-                sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["otm.outputId", "otm.outputTagId"], paged));
             }
             query_rows(self, &sql, binds, trx).await
         }
@@ -1380,7 +1380,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["userId"], paged));
                 }
                 (sql, binds)
             }
@@ -1434,7 +1434,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["certificateId"], paged));
                 }
                 (sql, binds)
             }
@@ -1470,7 +1470,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["certificateId", "fieldName"], paged));
                 }
                 (sql, binds)
             }
@@ -1508,7 +1508,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["commissionId"], paged));
                 }
                 (sql, binds)
             }
@@ -1530,7 +1530,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["id"], paged));
                 }
                 (sql, binds)
             }
@@ -1560,7 +1560,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["basketId"], paged));
                 }
                 (sql, binds)
             }
@@ -1586,7 +1586,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["outputId", "outputTagId"], paged));
                 }
                 (sql, binds)
             }
@@ -1616,7 +1616,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["outputTagId"], paged));
                 }
                 (sql, binds)
             }
@@ -1701,7 +1701,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["outputId"], paged));
                 }
                 (sql, binds)
             }
@@ -1731,7 +1731,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["provenTxId"], paged));
                 }
                 (sql, binds)
             }
@@ -1777,7 +1777,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["provenTxReqId"], paged));
                 }
                 (sql, binds)
             }
@@ -1803,7 +1803,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["storageIdentityKey"], paged));
                 }
                 (sql, binds)
             }
@@ -1841,7 +1841,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["syncStateId"], paged));
                 }
                 (sql, binds)
             }
@@ -1891,7 +1891,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["transactionId"], paged));
                 }
                 (sql, binds)
             }
@@ -1917,7 +1917,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["transactionId", "txLabelId"], paged));
                 }
                 (sql, binds)
             }
@@ -1947,7 +1947,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["txLabelId"], paged));
                 }
                 (sql, binds)
             }
@@ -2319,7 +2319,7 @@ macro_rules! impl_storage_reader_find {
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
                     if let Some(paged) = &args.paged {
-                        sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                        sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["pt.provenTxId"], paged));
                     }
                     query_rows(self, &sql, binds, trx).await
                 }
@@ -2341,7 +2341,7 @@ macro_rules! impl_storage_reader_find {
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
                     if let Some(paged) = &args.paged {
-                        sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                        sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["ptr.provenTxReqId"], paged));
                     }
                     query_rows(self, &sql, binds, trx).await
                 }
@@ -2363,7 +2363,7 @@ macro_rules! impl_storage_reader_find {
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
                     if let Some(paged) = &args.paged {
-                        sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                        sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["tlm.transactionId", "tlm.txLabelId"], paged));
                     }
                     query_rows(self, &sql, binds, trx).await
                 }
@@ -2385,13 +2385,231 @@ macro_rules! impl_storage_reader_find {
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
                     if let Some(paged) = &args.paged {
-                        sql.push_str(&WhereBuilder::build_limit_offset(paged));
+                        sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["otm.outputId", "otm.outputTagId"], paged));
                     }
                     query_rows(self, &sql, binds, trx).await
                 }
             }
         }
     };
+}
+
+#[cfg(all(test, feature = "sqlite"))]
+mod paged_order_tests {
+    //! Offset pagination is only correct over a stable enumeration order. An
+    //! unordered SELECT's order is plan-dependent, and the sync protocol pages
+    //! with LIMIT/OFFSET across separate statements -- if the order shifts
+    //! between pages (ANALYZE, a schema change, a concurrent writer), rows are
+    //! silently skipped or repeated, and skipped rows fall outside the sync
+    //! window forever once `when` advances.
+    //!
+    //! SQLite's `reverse_unordered_selects` pragma reverses every SELECT that
+    //! lacks an ORDER BY -- its documented purpose is to expose exactly this
+    //! class of bug. Flipping it between pages simulates a plan shift
+    //! mid-round; with `ORDER BY <primary key>` on the paged queries the flip
+    //! must have no effect.
+
+    use std::collections::BTreeSet;
+
+    use chrono::NaiveDateTime;
+
+    use crate::storage::find_args::*;
+    use crate::storage::sqlx_impl::SqliteStorage;
+    use crate::storage::traits::provider::StorageProvider;
+    use crate::storage::traits::reader::StorageReader;
+    use crate::storage::traits::reader_writer::StorageReaderWriter;
+    use crate::storage::{StorageConfig, TrxToken};
+    use crate::status::TransactionStatus;
+    use crate::tables::{Transaction, TxLabel, TxLabelMap, User};
+    use crate::types::Chain;
+
+    fn dt(s: &str) -> NaiveDateTime {
+        NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap()
+    }
+
+    async fn setup() -> (SqliteStorage, i64) {
+        let config = StorageConfig {
+            url: "sqlite::memory:".to_string(),
+            ..Default::default()
+        };
+        let storage = SqliteStorage::new_sqlite(config, Chain::Test)
+            .await
+            .unwrap();
+        storage.migrate_database().await.unwrap();
+        storage.make_available().await.unwrap();
+        let now = dt("2024-01-15 10:00:00");
+        let user_id = storage
+            .insert_user(
+                &User {
+                    created_at: now,
+                    updated_at: now,
+                    user_id: 0,
+                    identity_key: "02paged".to_string(),
+                    active_storage: "default".to_string(),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        (storage, user_id)
+    }
+
+    /// Flip `reverse_unordered_selects` on the transaction's connection -- the
+    /// same connection the paged queries below run on.
+    async fn set_reverse(trx: &TrxToken, on: bool) {
+        let inner = SqliteStorage::extract_sqlite_trx(trx).unwrap();
+        let mut guard = inner.lock().await;
+        let tx = guard.as_mut().unwrap();
+        let sql = if on {
+            "PRAGMA reverse_unordered_selects=ON"
+        } else {
+            "PRAGMA reverse_unordered_selects=OFF"
+        };
+        sqlx::query(sql).execute(&mut **tx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn paged_find_survives_enumeration_order_flip() {
+        let (storage, user_id) = setup().await;
+        let now = dt("2024-01-15 10:00:00");
+        for i in 0..6 {
+            storage
+                .insert_tx_label(
+                    &TxLabel {
+                        created_at: now,
+                        updated_at: now,
+                        tx_label_id: 0,
+                        user_id,
+                        label: format!("label-{i}"),
+                        is_deleted: false,
+                    },
+                    None,
+                )
+                .await
+                .unwrap();
+        }
+
+        let trx = storage.begin_sqlite_transaction().await.unwrap();
+        let mut seen: Vec<i64> = Vec::new();
+        for (page, reversed) in [(0, true), (1, false)] {
+            set_reverse(&trx, reversed).await;
+            let rows = storage
+                .find_tx_labels(
+                    &FindTxLabelsArgs {
+                        partial: TxLabelPartial {
+                            user_id: Some(user_id),
+                            ..Default::default()
+                        },
+                        paged: Some(Paged {
+                            limit: 3,
+                            offset: page * 3,
+                        }),
+                        ..Default::default()
+                    },
+                    Some(&trx),
+                )
+                .await
+                .unwrap();
+            seen.extend(rows.iter().map(|l| l.tx_label_id));
+        }
+
+        let distinct: BTreeSet<i64> = seen.iter().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            6,
+            "pagination skipped or repeated rows when the unordered enumeration \
+             flipped between pages: saw ids {seen:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn paged_distinct_join_survives_enumeration_order_flip() {
+        let (storage, user_id) = setup().await;
+        let now = dt("2024-01-15 10:00:00");
+        // Six labels, one map each: the join's outer scan over tx_labels is
+        // what the pragma reverses, so the map enumeration order flips with it.
+        for i in 0..6 {
+            let label_id = storage
+                .insert_tx_label(
+                    &TxLabel {
+                        created_at: now,
+                        updated_at: now,
+                        tx_label_id: 0,
+                        user_id,
+                        label: format!("label-{i}"),
+                        is_deleted: false,
+                    },
+                    None,
+                )
+                .await
+                .unwrap();
+            let tx_id = storage
+                .insert_transaction(
+                    &Transaction {
+                        created_at: now,
+                        updated_at: now,
+                        transaction_id: 0,
+                        user_id,
+                        proven_tx_id: None,
+                        status: TransactionStatus::Completed,
+                        reference: format!("ref-{i}"),
+                        is_outgoing: true,
+                        satoshis: 1000,
+                        description: "paged order test".to_string(),
+                        version: Some(1),
+                        lock_time: Some(0),
+                        txid: Some(format!("txid-{i}")),
+                        input_beef: None,
+                        raw_tx: None,
+                    },
+                    None,
+                )
+                .await
+                .unwrap();
+            storage
+                .insert_tx_label_map(
+                    &TxLabelMap {
+                        created_at: now,
+                        updated_at: now,
+                        tx_label_id: label_id,
+                        transaction_id: tx_id,
+                        is_deleted: false,
+                    },
+                    None,
+                )
+                .await
+                .unwrap();
+        }
+
+        let trx = storage.begin_sqlite_transaction().await.unwrap();
+        let mut seen: Vec<i64> = Vec::new();
+        for (page, reversed) in [(0, true), (1, false)] {
+            set_reverse(&trx, reversed).await;
+            let rows = storage
+                .get_tx_label_maps_for_user(
+                    &FindForUserSincePagedArgs {
+                        user_id,
+                        since: None,
+                        paged: Some(Paged {
+                            limit: 3,
+                            offset: page * 3,
+                        }),
+                    },
+                    Some(&trx),
+                )
+                .await
+                .unwrap();
+            seen.extend(rows.iter().map(|m| m.transaction_id));
+        }
+
+        let distinct: BTreeSet<i64> = seen.iter().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            6,
+            "DISTINCT+JOIN pagination skipped or repeated rows when the \
+             unordered enumeration flipped between pages: saw ids {seen:?}"
+        );
+    }
 }
 
 impl_storage_reader_find! {

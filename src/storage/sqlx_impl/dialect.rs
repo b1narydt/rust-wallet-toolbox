@@ -222,19 +222,34 @@ impl WhereBuilder {
         }
     }
 
-    /// Build ORDER BY clause. Note: column should be pre-quoted if needed,
-    /// or use `dialect.quote_column()`.
-    pub fn build_order_by(column: &str, desc: bool) -> String {
-        if desc {
-            format!(" ORDER BY {column} DESC")
-        } else {
-            format!(" ORDER BY {column} ASC")
-        }
-    }
-
-    /// Build LIMIT/OFFSET clause from Paged.
-    pub fn build_limit_offset(paged: &Paged) -> String {
-        format!(" LIMIT {} OFFSET {}", paged.limit, paged.offset)
+    /// Build " ORDER BY <cols> LIMIT n OFFSET m" for a paged query.
+    ///
+    /// Offset pagination is only stable over a total order: SQL leaves the
+    /// enumeration order of an unordered SELECT plan-dependent, so paging
+    /// without ORDER BY can skip or repeat rows between chunks. Every paged
+    /// query must therefore name a unique key here. Columns may be qualified
+    /// with a table alias ("pt.provenTxId"); each dot segment is quoted for
+    /// the dialect.
+    pub fn build_ordered_page(dialect: Dialect, order_cols: &[&str], paged: &Paged) -> String {
+        debug_assert!(
+            !order_cols.is_empty(),
+            "paged queries must order by a unique key"
+        );
+        let cols: Vec<String> = order_cols
+            .iter()
+            .map(|c| {
+                c.split('.')
+                    .map(|seg| dialect.quote_column(seg))
+                    .collect::<Vec<_>>()
+                    .join(".")
+            })
+            .collect();
+        format!(
+            " ORDER BY {} LIMIT {} OFFSET {}",
+            cols.join(", "),
+            paged.limit,
+            paged.offset
+        )
     }
 }
 
@@ -280,6 +295,50 @@ mod tests {
         let mut wb = WhereBuilder::new(Dialect::Postgres);
         wb.add_in("id", 3);
         assert_eq!(wb.build_where(), " WHERE \"id\" IN ($1, $2, $3)");
+    }
+
+    #[test]
+    fn ordered_page_sqlite_single_key() {
+        let paged = Paged {
+            limit: 3,
+            offset: 6,
+        };
+        assert_eq!(
+            WhereBuilder::build_ordered_page(Dialect::Sqlite, &["outputId"], &paged),
+            " ORDER BY `outputId` LIMIT 3 OFFSET 6"
+        );
+    }
+
+    #[test]
+    fn ordered_page_postgres_composite_key() {
+        let paged = Paged {
+            limit: 10,
+            offset: 0,
+        };
+        assert_eq!(
+            WhereBuilder::build_ordered_page(
+                Dialect::Postgres,
+                &["transactionId", "txLabelId"],
+                &paged
+            ),
+            " ORDER BY \"transactionId\", \"txLabelId\" LIMIT 10 OFFSET 0"
+        );
+    }
+
+    #[test]
+    fn ordered_page_quotes_alias_segments() {
+        let paged = Paged {
+            limit: 5,
+            offset: 15,
+        };
+        assert_eq!(
+            WhereBuilder::build_ordered_page(Dialect::Sqlite, &["pt.provenTxId"], &paged),
+            " ORDER BY `pt`.`provenTxId` LIMIT 5 OFFSET 15"
+        );
+        assert_eq!(
+            WhereBuilder::build_ordered_page(Dialect::Postgres, &["pt.provenTxId"], &paged),
+            " ORDER BY \"pt\".\"provenTxId\" LIMIT 5 OFFSET 15"
+        );
     }
 
     #[test]
