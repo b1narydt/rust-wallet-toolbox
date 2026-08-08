@@ -569,6 +569,63 @@ async fn merge_sets_import_sync_state_when_to_latest_merged_updated_at() {
     );
 }
 
+/// A restore that fails mid-way must roll back completely and surface the
+/// original insert error — the target must be left exactly as found
+/// (restorable), never partially written.
+#[tokio::test]
+async fn restore_failure_rolls_back_and_surfaces_the_original_error() {
+    // Two provenTxs with distinct ids but the same txid pass BRC-38
+    // validation (which checks id uniqueness only) and then violate the
+    // proven_txs.txid UNIQUE constraint mid-transaction.
+    let mut doc = minimal_document();
+    // minimal_document carries only what the validators need; decoding into
+    // table structs additionally needs the full settings row.
+    doc["sourceStorage"]["dbtype"] = Value::String("SQLite".to_string());
+    doc["sourceStorage"]["maxOutputScript"] = Value::from(1024);
+    let proven = |id: i64| {
+        serde_json::json!({
+            "created_at": "2026-01-02T03:04:05.006Z",
+            "updated_at": "2026-01-02T03:04:05.006Z",
+            "provenTxId": id,
+            "txid": "duplicate-txid",
+            "height": 1,
+            "index": 0,
+            "merklePath": "AA==",
+            "rawTx": "AA==",
+            "blockHash": "block-hash",
+            "merkleRoot": "merkle-root"
+        })
+    };
+    doc["tables"]["provenTxs"] = serde_json::json!([proven(1), proven(2)]);
+    let poisoned = parse_brc38_json(&doc.to_string()).unwrap();
+    let target = empty_storage().await;
+    let options = Brc38ImportOptions {
+        mode: ImportMode::Restore,
+    };
+
+    let err = import_brc38(&target, &poisoned, &options)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("UNIQUE") || err.contains("unique"),
+        "the original constraint violation must surface: {err}"
+    );
+
+    // Rollback left the target fully empty...
+    assert_eq!(target.count_users(&Default::default(), None).await.unwrap(), 0);
+    assert_eq!(
+        target
+            .count_proven_txs(&Default::default(), None)
+            .await
+            .unwrap(),
+        0
+    );
+    // ...and healthy: a valid restore into the same target still succeeds.
+    let good = parse_brc38_json(&fixture_string("brc38-ts-export.json")).unwrap();
+    import_brc38(&target, &good, &options).await.unwrap();
+}
+
 // ---------------------------------------------------------------------------
 // Validator rejections (mirroring the TS test suite)
 // ---------------------------------------------------------------------------
