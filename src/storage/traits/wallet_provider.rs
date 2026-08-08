@@ -1089,21 +1089,38 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         // (EntitySyncState.ts:394-403) — the user record is merged separately and
         // does NOT keep the round alive, otherwise a round whose `since` is fixed
         // (and therefore re-includes the user every chunk) could never terminate.
-        let chunk_is_empty = chunk.proven_txs.as_ref().is_none_or(|v| v.is_empty())
-            && chunk.output_baskets.as_ref().is_none_or(|v| v.is_empty())
-            && chunk.transactions.as_ref().is_none_or(|v| v.is_empty())
-            && chunk.outputs.as_ref().is_none_or(|v| v.is_empty())
-            && chunk.tx_labels.as_ref().is_none_or(|v| v.is_empty())
-            && chunk.tx_label_maps.as_ref().is_none_or(|v| v.is_empty())
-            && chunk.output_tags.as_ref().is_none_or(|v| v.is_empty())
-            && chunk.output_tag_maps.as_ref().is_none_or(|v| v.is_empty())
-            && chunk.certificates.as_ref().is_none_or(|v| v.is_empty())
+        //
+        // AN ABSENT ARRAY IS NOT AN EMPTY ONE. `is_some_and`, deliberately: the
+        // BRC-40 conformance corpus states the rule outright — "completion
+        // requires all 12 entity arrays present AND empty" — and the interface
+        // doc says an omitted property means "no attempt to update it"
+        // (WalletStorage.interfaces.ts:542). TS agrees: `stateArray === undefined`
+        // keeps the round OPEN (EntitySyncState.ts:402).
+        //
+        // This previously used `is_none_or`, which read absent as complete and
+        // failed OPEN: a truncated or erroring remote made the round declare
+        // success, advance `since` past rows never received, and reset every
+        // offset — silently skipping data for good. It survived because our own
+        // producer collapsed empty to `None`, so producer and consumer agreed
+        // with each other and disagreed with the protocol. Both were fixed
+        // together (`get_sync_chunk` now emits `Some(vec![])` for an entity it
+        // queried and found empty); changing either alone either keeps the hole
+        // open or makes Rust↔Rust sync never terminate.
+        let chunk_is_empty = chunk.proven_txs.as_ref().is_some_and(|v| v.is_empty())
+            && chunk.output_baskets.as_ref().is_some_and(|v| v.is_empty())
+            && chunk.transactions.as_ref().is_some_and(|v| v.is_empty())
+            && chunk.outputs.as_ref().is_some_and(|v| v.is_empty())
+            && chunk.tx_labels.as_ref().is_some_and(|v| v.is_empty())
+            && chunk.tx_label_maps.as_ref().is_some_and(|v| v.is_empty())
+            && chunk.output_tags.as_ref().is_some_and(|v| v.is_empty())
+            && chunk.output_tag_maps.as_ref().is_some_and(|v| v.is_empty())
+            && chunk.certificates.as_ref().is_some_and(|v| v.is_empty())
             && chunk
                 .certificate_fields
                 .as_ref()
-                .is_none_or(|v| v.is_empty())
-            && chunk.commissions.as_ref().is_none_or(|v| v.is_empty())
-            && chunk.proven_tx_reqs.as_ref().is_none_or(|v| v.is_empty());
+                .is_some_and(|v| v.is_empty())
+            && chunk.commissions.as_ref().is_some_and(|v| v.is_empty())
+            && chunk.proven_tx_reqs.as_ref().is_some_and(|v| v.is_empty());
 
         // Load the persisted SyncMap for this storage pair BEFORE merging so the
         // foreign->local idMap, per-entity counts (pagination offsets) and

@@ -74,18 +74,18 @@ pub async fn get_sync_chunk(
                 to_storage_identity_key: args.to_storage_identity_key,
                 user_identity_key: args.user_identity_key,
                 user: None,
-                proven_txs: None,
-                output_baskets: None,
-                transactions: None,
-                outputs: None,
-                tx_labels: None,
-                tx_label_maps: None,
-                output_tags: None,
-                output_tag_maps: None,
-                certificates: None,
-                certificate_fields: None,
-                commissions: None,
-                proven_tx_reqs: None,
+                proven_txs: Some(vec![]),
+                output_baskets: Some(vec![]),
+                transactions: Some(vec![]),
+                outputs: Some(vec![]),
+                tx_labels: Some(vec![]),
+                tx_label_maps: Some(vec![]),
+                output_tags: Some(vec![]),
+                output_tag_maps: Some(vec![]),
+                certificates: Some(vec![]),
+                certificate_fields: Some(vec![]),
+                commissions: Some(vec![]),
+                proven_tx_reqs: Some(vec![]),
             });
         }
     };
@@ -121,11 +121,7 @@ pub async fn get_sync_chunk(
                 trx,
             )
             .await?;
-        if items.is_empty() {
-            None
-        } else {
-            Some(items)
-        }
+        Some(items)
     };
 
     // OutputBasket
@@ -143,11 +139,7 @@ pub async fn get_sync_chunk(
                 trx,
             )
             .await?;
-        if items.is_empty() {
-            None
-        } else {
-            Some(items)
-        }
+        Some(items)
     };
 
     // OutputTag
@@ -165,11 +157,7 @@ pub async fn get_sync_chunk(
                 trx,
             )
             .await?;
-        if items.is_empty() {
-            None
-        } else {
-            Some(items)
-        }
+        Some(items)
     };
 
     // TxLabel
@@ -187,11 +175,7 @@ pub async fn get_sync_chunk(
                 trx,
             )
             .await?;
-        if items.is_empty() {
-            None
-        } else {
-            Some(items)
-        }
+        Some(items)
     };
 
     // Transaction
@@ -210,11 +194,7 @@ pub async fn get_sync_chunk(
                 trx,
             )
             .await?;
-        if items.is_empty() {
-            None
-        } else {
-            Some(items)
-        }
+        Some(items)
     };
 
     // Output
@@ -233,11 +213,7 @@ pub async fn get_sync_chunk(
                 trx,
             )
             .await?;
-        if items.is_empty() {
-            None
-        } else {
-            Some(items)
-        }
+        Some(items)
     };
 
     // TxLabelMap
@@ -252,11 +228,7 @@ pub async fn get_sync_chunk(
                 trx,
             )
             .await?;
-        if items.is_empty() {
-            None
-        } else {
-            Some(items)
-        }
+        Some(items)
     };
 
     // OutputTagMap
@@ -271,11 +243,7 @@ pub async fn get_sync_chunk(
                 trx,
             )
             .await?;
-        if items.is_empty() {
-            None
-        } else {
-            Some(items)
-        }
+        Some(items)
     };
 
     // Certificate
@@ -293,11 +261,7 @@ pub async fn get_sync_chunk(
                 trx,
             )
             .await?;
-        if items.is_empty() {
-            None
-        } else {
-            Some(items)
-        }
+        Some(items)
     };
 
     // CertificateField
@@ -315,11 +279,7 @@ pub async fn get_sync_chunk(
                 trx,
             )
             .await?;
-        if items.is_empty() {
-            None
-        } else {
-            Some(items)
-        }
+        Some(items)
     };
 
     // Commission
@@ -337,11 +297,7 @@ pub async fn get_sync_chunk(
                 trx,
             )
             .await?;
-        if items.is_empty() {
-            None
-        } else {
-            Some(items)
-        }
+        Some(items)
     };
 
     // ProvenTxReq
@@ -356,11 +312,7 @@ pub async fn get_sync_chunk(
                 trx,
             )
             .await?;
-        if items.is_empty() {
-            None
-        } else {
-            Some(items)
-        }
+        Some(items)
     };
 
     // -----------------------------------------------------------------------

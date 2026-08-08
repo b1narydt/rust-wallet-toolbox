@@ -77,12 +77,39 @@ mod sync_tests {
         .await
         .unwrap();
 
-        assert!(chunk.proven_txs.is_none(), "no proven_txs expected");
-        assert!(chunk.transactions.is_none(), "no transactions expected");
-        assert!(chunk.outputs.is_none(), "no outputs expected");
-        assert!(chunk.output_baskets.is_none(), "no baskets expected");
-        assert!(chunk.tx_labels.is_none(), "no tx_labels expected");
-        assert!(chunk.certificates.is_none(), "no certificates expected");
+        // PRESENT AND EMPTY, not absent. BRC-40 draws the distinction and the
+        // conformance corpus states it outright: "completion requires all 12
+        // entity arrays present AND empty", while an omitted property means
+        // "no attempt to update it" (WalletStorage.interfaces.ts:542).
+        //
+        // This test previously asserted `is_none()`, which pinned the opposite
+        // convention: the producer collapsed empty to `None` and the consumer
+        // read absent as done, so the pair agreed with each other and disagreed
+        // with the protocol. That combination made a truncated or erroring
+        // remote look like a completed round — `since` advanced past rows never
+        // received and every offset reset. Both sides were corrected together;
+        // this assertion is the producer half.
+        macro_rules! present_and_empty {
+            ($field:ident) => {
+                let rows = chunk.$field.as_ref().unwrap_or_else(|| {
+                    panic!(
+                        "{} was queried and must be PRESENT, not absent",
+                        stringify!($field)
+                    )
+                });
+                assert!(
+                    rows.is_empty(),
+                    "{} must be empty on an empty storage",
+                    stringify!($field)
+                );
+            };
+        }
+        present_and_empty!(proven_txs);
+        present_and_empty!(transactions);
+        present_and_empty!(outputs);
+        present_and_empty!(output_baskets);
+        present_and_empty!(tx_labels);
+        present_and_empty!(certificates);
     }
 
     // -----------------------------------------------------------------------
