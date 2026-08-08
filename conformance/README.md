@@ -23,6 +23,7 @@ identically for every cloner.
 |---|---|
 | `vectors/wallet/brc100/getpublickey.json` (201) | `tests/conformance_getpublickey.rs` — BRC-42/43 key derivation |
 | `vectors/sync/brc40-user-state.json` (24) | `tests/conformance_brc40.rs` — BRC-40 sync semantics |
+| `vectors/wallet/brc100/{createaction,signaction,internalizeaction,relinquishoutput}.json` (90+8+10+8) | `tests/conformance_brc100_actions.rs` — action/write surface over a funded wallet harness. The upstream reference never executed these channels (all success vectors demoted pending a funded harness); see the runner header for the executable characterization of the synthetic expected values and the pinned divergences. |
 
 Each runner asserts the exact number of vectors loaded and executed, names the
 vector `id` in every failure, and runs error vectors as first-class assertions
@@ -31,10 +32,9 @@ reference that we deliberately do not paper over are pinned in an explicit
 per-runner ledger keyed by vector `id` — the test fails if a divergence
 appears, disappears, or changes shape, so the ledger cannot drift silently.
 
-Not yet wired (vendored for future runners): `createaction.json`,
-`listoutputs.json`, `listactions.json`, `internalizeaction.json`,
-`provecertificate.json`, `relinquishoutput.json`, `signaction.json`,
-`getnetwork.json`, `wallet/storage/adapter-conformance.json`.
+Not yet wired (vendored for future runners): `listoutputs.json`,
+`listactions.json`, `provecertificate.json`, `getnetwork.json`,
+`wallet/storage/adapter-conformance.json`.
 
 ## Refreshing
 
