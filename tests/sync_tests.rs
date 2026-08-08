@@ -942,4 +942,249 @@ mod sync_tests {
              the wallet to boot on a healthy backup"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Merge-update fidelity: the update path must carry the full TS field set
+    // -----------------------------------------------------------------------
+
+    /// A transaction replicated between createAction and signAction only ever
+    /// receives its rawTx/inputBEEF through the merge-UPDATE path. TS writes
+    /// the full field set (EntityTransaction/EntityOutput.mergeExisting); a
+    /// narrower Rust set silently freezes backup rows at insert-time content
+    /// while stamping them current.
+    #[tokio::test]
+    async fn merge_update_carries_raw_tx_and_locking_script() {
+        let target = setup_storage().await.unwrap();
+        let _uid = insert_test_user(&target, "02mergewide").await;
+
+        let t1 = dt("2024-01-15 10:00:00");
+        let t2 = dt("2024-01-15 11:00:00");
+
+        let tx_at = |when, raw_tx: Option<Vec<u8>>, beef: Option<Vec<u8>>| Transaction {
+            created_at: t1,
+            updated_at: when,
+            transaction_id: 100,
+            user_id: 77,
+            proven_tx_id: None,
+            status: TransactionStatus::Unsigned,
+            reference: "ref-widen".to_string(),
+            is_outgoing: true,
+            satoshis: 5000,
+            description: "widen test".to_string(),
+            version: Some(1),
+            lock_time: Some(0),
+            txid: Some("widen_txid".to_string()),
+            input_beef: beef,
+            raw_tx,
+        };
+        let out_at = |when, script: Option<Vec<u8>>, instructions: Option<String>| Output {
+            created_at: t1,
+            updated_at: when,
+            output_id: 200,
+            user_id: 77,
+            transaction_id: 100,
+            basket_id: None,
+            spendable: true,
+            change: false,
+            output_description: Some("widen out".to_string()),
+            vout: 0,
+            satoshis: 4000,
+            provided_by: StorageProvidedBy::You,
+            purpose: "change".to_string(),
+            output_type: "P2PKH".to_string(),
+            txid: Some("widen_txid".to_string()),
+            sender_identity_key: None,
+            derivation_prefix: None,
+            derivation_suffix: None,
+            custom_instructions: instructions,
+            spent_by: None,
+            sequence_number: None,
+            spending_description: None,
+            script_length: script.as_ref().map(|s| s.len() as i64),
+            script_offset: None,
+            locking_script: script,
+        };
+        let chunk_with = |tx: Transaction, out: Output| SyncChunk {
+            from_storage_identity_key: "storage-a".to_string(),
+            to_storage_identity_key: "storage-b".to_string(),
+            user_identity_key: "02mergewide".to_string(),
+            user: None,
+            proven_txs: None,
+            output_baskets: None,
+            transactions: Some(vec![tx]),
+            outputs: Some(vec![out]),
+            tx_labels: None,
+            tx_label_maps: None,
+            output_tags: None,
+            output_tag_maps: None,
+            certificates: None,
+            certificate_fields: None,
+            commissions: None,
+            proven_tx_reqs: None,
+        };
+
+        let mut sync_map = SyncMap::new();
+
+        // Round 1: the row replicates before signing — no rawTx, no script.
+        process_sync_chunk(
+            &target,
+            chunk_with(tx_at(t1, None, None), out_at(t1, None, None)),
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap();
+
+        // Round 2: the source signed — rawTx/inputBEEF/lockingScript now exist,
+        // arriving as an UPDATE to the already-replicated rows.
+        let raw = vec![0xde, 0xad, 0xbe, 0xef];
+        let beef = vec![0xbe, 0xef];
+        let script = vec![0x76, 0xa9, 0x14];
+        process_sync_chunk(
+            &target,
+            chunk_with(
+                tx_at(t2, Some(raw.clone()), Some(beef.clone())),
+                out_at(t2, Some(script.clone()), Some("spend me".to_string())),
+            ),
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let txs = target
+            .find_transactions(
+                &FindTransactionsArgs {
+                    partial: TransactionPartial {
+                        reference: Some("ref-widen".to_string()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(txs.len(), 1);
+        assert_eq!(
+            txs[0].raw_tx.as_deref(),
+            Some(raw.as_slice()),
+            "rawTx set after first replication must reach the backup via the \
+             merge-update path — a restore cannot rebroadcast without it"
+        );
+        assert_eq!(txs[0].input_beef.as_deref(), Some(beef.as_slice()));
+        assert_eq!(
+            txs[0].updated_at, t2,
+            "the merged row must carry the SOURCE timestamp, not the local clock"
+        );
+
+        let outs = target
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        vout: Some(0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(outs.len(), 1);
+        assert_eq!(
+            outs[0].locking_script.as_deref(),
+            Some(script.as_slice()),
+            "lockingScript must reach the backup via the merge-update path"
+        );
+        assert_eq!(outs[0].custom_instructions.as_deref(), Some("spend me"));
+        assert_eq!(outs[0].updated_at, t2);
+    }
+
+    // -----------------------------------------------------------------------
+    // updated_at pass-through: a merge must never stamp a row with local time
+    // -----------------------------------------------------------------------
+
+    /// TS writes max(incoming, local) through the update
+    /// (StorageKnex.validatePartialForUpdate honors a supplied updated_at).
+    /// If the merge instead auto-touches with the local clock, the backup row
+    /// is stamped AHEAD of its source, and the strictly-newer merge rule then
+    /// rejects every future legitimate update — permanent silent divergence.
+    #[tokio::test]
+    async fn merge_updated_at_passthrough_prevents_clock_skew_wedge() {
+        let target = setup_storage().await.unwrap();
+        let _uid = insert_test_user(&target, "02skew").await;
+
+        let mk_label = |when, deleted| TxLabel {
+            created_at: dt("2024-01-15 10:00:00"),
+            updated_at: when,
+            tx_label_id: 300,
+            user_id: 77,
+            label: "skew-label".to_string(),
+            is_deleted: deleted,
+        };
+        let chunk_with = |label: TxLabel| SyncChunk {
+            from_storage_identity_key: "storage-a".to_string(),
+            to_storage_identity_key: "storage-b".to_string(),
+            user_identity_key: "02skew".to_string(),
+            user: None,
+            proven_txs: None,
+            output_baskets: None,
+            transactions: None,
+            outputs: None,
+            tx_labels: Some(vec![label]),
+            tx_label_maps: None,
+            output_tags: None,
+            output_tag_maps: None,
+            certificates: None,
+            certificate_fields: None,
+            commissions: None,
+            proven_tx_reqs: None,
+        };
+
+        let t1 = dt("2024-01-15 10:00:00");
+        let t2 = dt("2024-01-15 11:00:00");
+        let t3 = dt("2024-01-15 12:00:00");
+
+        let mut sync_map = SyncMap::new();
+        // Insert at t1, then two consecutive source-side edits at t2 and t3.
+        // All three timestamps are in the past relative to the local clock: if
+        // the t2 merge stamps the row with "now", t3 is no longer strictly
+        // newer and the third update is silently rejected.
+        process_sync_chunk(&target, chunk_with(mk_label(t1, false)), &mut sync_map, None)
+            .await
+            .unwrap();
+        process_sync_chunk(&target, chunk_with(mk_label(t2, true)), &mut sync_map, None)
+            .await
+            .unwrap();
+        let third = process_sync_chunk(&target, chunk_with(mk_label(t3, false)), &mut sync_map, None)
+            .await
+            .unwrap();
+
+        let labels = target
+            .find_tx_labels(
+                &FindTxLabelsArgs {
+                    partial: TxLabelPartial {
+                        label: Some("skew-label".to_string()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(labels.len(), 1);
+        assert_eq!(third.updates, 1, "the t3 update must not be rejected");
+        assert!(
+            !labels[0].is_deleted,
+            "the t3 edit (is_deleted=false) was rejected: the t2 merge stamped \
+             the row ahead of its source and wedged it against the \
+             strictly-newer rule"
+        );
+        assert_eq!(
+            labels[0].updated_at, t3,
+            "the merged row must carry the source timestamp"
+        );
+    }
 }

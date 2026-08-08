@@ -92,6 +92,7 @@ impl TaskReviewDoubleSpends {
                 partial: MonitorEventPartial {
                     id: None,
                     event: Some("ReviewDoubleSpends".to_string()),
+                    ..Default::default()
                 },
                 since: None,
                 paged: Some(Paged {
@@ -122,6 +123,7 @@ impl TaskReviewDoubleSpends {
                 partial: MonitorEventPartial {
                     id: None,
                     event: Some("ReviewDoubleSpends".to_string()),
+                    ..Default::default()
                 },
                 since: None,
                 paged: None,
@@ -585,6 +587,7 @@ mod tests {
                 partial: MonitorEventPartial {
                     id: None,
                     event: Some("ReviewDoubleSpends".to_string()),
+                    ..Default::default()
                 },
                 since: None,
                 paged: None,
@@ -602,6 +605,7 @@ mod tests {
                 partial: MonitorEventPartial {
                     id: None,
                     event: Some("OtherEvent".to_string()),
+                    ..Default::default()
                 },
                 since: None,
                 paged: None,
@@ -741,6 +745,7 @@ mod tests {
                 partial: MonitorEventPartial {
                     id: None,
                     event: Some("ReviewDoubleSpends".to_string()),
+                    ..Default::default()
                 },
                 since: None,
                 paged: None,

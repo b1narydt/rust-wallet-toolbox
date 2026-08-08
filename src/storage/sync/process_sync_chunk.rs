@@ -74,6 +74,7 @@ pub async fn process_sync_chunk(
                     local_user.user_id,
                     &UserPartial {
                         active_storage: Some(user.active_storage.clone()),
+                        updated_at: Some(user.updated_at.max(local_user.updated_at)),
                         ..Default::default()
                     },
                     trx,
@@ -119,21 +120,9 @@ pub async fn process_sync_chunk(
 
             let foreign_id = incoming.proven_tx_id;
             if let Some(local) = existing.into_iter().next() {
-                // Existing: merge
-                if local.should_update(incoming) {
-                    storage
-                        .update_proven_tx(
-                            local.proven_tx_id,
-                            &ProvenTxPartial {
-                                height: Some(incoming.height),
-                                block_hash: Some(incoming.block_hash.clone()),
-                                ..Default::default()
-                            },
-                            trx,
-                        )
-                        .await?;
-                    result.updates += 1;
-                }
+                // Existing: map only. ProvenTxs are immutable facts and are
+                // never updated on merge (TS EntityProvenTx.mergeExisting
+                // returns false unconditionally).
                 sync_map
                     .proven_tx
                     .map_id(foreign_id, local.proven_tx_id)
@@ -157,27 +146,62 @@ pub async fn process_sync_chunk(
             sync_map.output_basket.count += 1;
 
             let foreign_id = incoming.basket_id;
-            let local = storage
-                .find_or_insert_output_basket(local_user_id, &incoming.name, trx)
-                .await?;
 
-            if local.should_update(incoming) {
-                storage
-                    .update_output_basket(
-                        local.basket_id,
-                        &OutputBasketPartial {
-                            is_deleted: Some(incoming.is_deleted),
+            // Find by natural key (user + name). A miss inserts the FULL
+            // incoming row, timestamps included (TS mergeNew): inserting a
+            // stub stamped with the local clock would leave the row ahead of
+            // its source, and the strictly-newer rule would then reject every
+            // later legitimate update.
+            let existing = storage
+                .find_output_baskets(
+                    &FindOutputBasketsArgs {
+                        partial: OutputBasketPartial {
+                            user_id: Some(local_user_id),
+                            name: Some(incoming.name.clone()),
                             ..Default::default()
                         },
-                        trx,
-                    )
-                    .await?;
-                result.updates += 1;
+                        ..Default::default()
+                    },
+                    trx,
+                )
+                .await?;
+
+            if let Some(local) = existing.into_iter().next() {
+                if local.should_update(incoming) {
+                    storage
+                        .update_output_basket(
+                            local.basket_id,
+                            &OutputBasketPartial {
+                                number_of_desired_utxos: Some(i64::from(
+                                    incoming.number_of_desired_utxos,
+                                )),
+                                minimum_desired_utxo_value: Some(i64::from(
+                                    incoming.minimum_desired_utxo_value,
+                                )),
+                                is_deleted: Some(incoming.is_deleted),
+                                updated_at: Some(incoming.updated_at.max(local.updated_at)),
+                                ..Default::default()
+                            },
+                            trx,
+                        )
+                        .await?;
+                    result.updates += 1;
+                }
+                sync_map
+                    .output_basket
+                    .map_id(foreign_id, local.basket_id)
+                    .map_err(WalletError::Internal)?;
+            } else {
+                let mut to_insert = incoming.clone();
+                to_insert.user_id = local_user_id;
+                to_insert.basket_id = 0; // auto-increment
+                let local_id = storage.insert_output_basket(&to_insert, trx).await?;
+                sync_map
+                    .output_basket
+                    .map_id(foreign_id, local_id)
+                    .map_err(WalletError::Internal)?;
+                result.inserts += 1;
             }
-            sync_map
-                .output_basket
-                .map_id(foreign_id, local.basket_id)
-                .map_err(WalletError::Internal)?;
         }
     }
 
@@ -188,27 +212,54 @@ pub async fn process_sync_chunk(
             sync_map.tx_label.count += 1;
 
             let foreign_id = incoming.tx_label_id;
-            let local = storage
-                .find_or_insert_tx_label(local_user_id, &incoming.label, trx)
-                .await?;
 
-            if local.should_update(incoming) {
-                storage
-                    .update_tx_label(
-                        local.tx_label_id,
-                        &TxLabelPartial {
-                            is_deleted: Some(incoming.is_deleted),
+            // Find by natural key (user + label); a miss inserts the full
+            // incoming row, timestamps included (TS mergeNew) — see the
+            // outputBasket branch for why a stub insert would wedge the row.
+            let existing = storage
+                .find_tx_labels(
+                    &FindTxLabelsArgs {
+                        partial: TxLabelPartial {
+                            user_id: Some(local_user_id),
+                            label: Some(incoming.label.clone()),
                             ..Default::default()
                         },
-                        trx,
-                    )
-                    .await?;
-                result.updates += 1;
+                        ..Default::default()
+                    },
+                    trx,
+                )
+                .await?;
+
+            if let Some(local) = existing.into_iter().next() {
+                if local.should_update(incoming) {
+                    storage
+                        .update_tx_label(
+                            local.tx_label_id,
+                            &TxLabelPartial {
+                                is_deleted: Some(incoming.is_deleted),
+                                updated_at: Some(incoming.updated_at.max(local.updated_at)),
+                                ..Default::default()
+                            },
+                            trx,
+                        )
+                        .await?;
+                    result.updates += 1;
+                }
+                sync_map
+                    .tx_label
+                    .map_id(foreign_id, local.tx_label_id)
+                    .map_err(WalletError::Internal)?;
+            } else {
+                let mut to_insert = incoming.clone();
+                to_insert.user_id = local_user_id;
+                to_insert.tx_label_id = 0; // auto-increment
+                let local_id = storage.insert_tx_label(&to_insert, trx).await?;
+                sync_map
+                    .tx_label
+                    .map_id(foreign_id, local_id)
+                    .map_err(WalletError::Internal)?;
+                result.inserts += 1;
             }
-            sync_map
-                .tx_label
-                .map_id(foreign_id, local.tx_label_id)
-                .map_err(WalletError::Internal)?;
         }
     }
 
@@ -219,27 +270,54 @@ pub async fn process_sync_chunk(
             sync_map.output_tag.count += 1;
 
             let foreign_id = incoming.output_tag_id;
-            let local = storage
-                .find_or_insert_output_tag(local_user_id, &incoming.tag, trx)
-                .await?;
 
-            if local.should_update(incoming) {
-                storage
-                    .update_output_tag(
-                        local.output_tag_id,
-                        &OutputTagPartial {
-                            is_deleted: Some(incoming.is_deleted),
+            // Find by natural key (user + tag); a miss inserts the full
+            // incoming row, timestamps included (TS mergeNew) — see the
+            // outputBasket branch for why a stub insert would wedge the row.
+            let existing = storage
+                .find_output_tags(
+                    &FindOutputTagsArgs {
+                        partial: OutputTagPartial {
+                            user_id: Some(local_user_id),
+                            tag: Some(incoming.tag.clone()),
                             ..Default::default()
                         },
-                        trx,
-                    )
-                    .await?;
-                result.updates += 1;
+                        ..Default::default()
+                    },
+                    trx,
+                )
+                .await?;
+
+            if let Some(local) = existing.into_iter().next() {
+                if local.should_update(incoming) {
+                    storage
+                        .update_output_tag(
+                            local.output_tag_id,
+                            &OutputTagPartial {
+                                is_deleted: Some(incoming.is_deleted),
+                                updated_at: Some(incoming.updated_at.max(local.updated_at)),
+                                ..Default::default()
+                            },
+                            trx,
+                        )
+                        .await?;
+                    result.updates += 1;
+                }
+                sync_map
+                    .output_tag
+                    .map_id(foreign_id, local.output_tag_id)
+                    .map_err(WalletError::Internal)?;
+            } else {
+                let mut to_insert = incoming.clone();
+                to_insert.user_id = local_user_id;
+                to_insert.output_tag_id = 0; // auto-increment
+                let local_id = storage.insert_output_tag(&to_insert, trx).await?;
+                sync_map
+                    .output_tag
+                    .map_id(foreign_id, local_id)
+                    .map_err(WalletError::Internal)?;
+                result.inserts += 1;
             }
-            sync_map
-                .output_tag
-                .map_id(foreign_id, local.output_tag_id)
-                .map_err(WalletError::Internal)?;
         }
     }
 
@@ -275,6 +353,11 @@ pub async fn process_sync_chunk(
 
             if let Some(local) = existing.into_iter().next() {
                 if local.should_update(incoming) {
+                    // Full TS merge field set (EntityTransaction.mergeExisting):
+                    // everything except the identity fields transactionId /
+                    // userId / reference. rawTx and inputBEEF matter most — a
+                    // backup that replicated the row between createAction and
+                    // signAction only ever receives them through this update.
                     storage
                         .update_transaction(
                             local.transaction_id,
@@ -282,6 +365,14 @@ pub async fn process_sync_chunk(
                                 proven_tx_id: local_proven_tx_id,
                                 status: Some(incoming.status.clone()),
                                 txid: incoming.txid.clone(),
+                                version: incoming.version,
+                                lock_time: incoming.lock_time,
+                                is_outgoing: Some(incoming.is_outgoing),
+                                satoshis: Some(incoming.satoshis),
+                                description: Some(incoming.description.clone()),
+                                raw_tx: incoming.raw_tx.clone(),
+                                input_beef: incoming.input_beef.clone(),
+                                updated_at: Some(incoming.updated_at.max(local.updated_at)),
                                 ..Default::default()
                             },
                             trx,
@@ -352,13 +443,30 @@ pub async fn process_sync_chunk(
 
             if let Some(local) = existing.into_iter().next() {
                 if local.should_update(incoming) {
+                    // Full TS merge field set (EntityOutput.mergeExisting).
+                    // lockingScript / customInstructions are what make a
+                    // replicated output spendable-in-practice after restore.
+                    // TS deliberately does NOT merge basketId (basket
+                    // membership stays local), and None fields are skipped,
+                    // never nulled — knex drops undefined values the same way.
                     storage
                         .update_output(
                             local.output_id,
                             &OutputPartial {
-                                basket_id: local_basket_id,
                                 spendable: Some(incoming.spendable),
+                                change: Some(incoming.change),
+                                output_type: Some(incoming.output_type.clone()),
+                                provided_by: Some(incoming.provided_by.clone()),
+                                purpose: Some(incoming.purpose.clone()),
+                                output_description: incoming.output_description.clone(),
+                                spending_description: incoming.spending_description.clone(),
+                                sender_identity_key: incoming.sender_identity_key.clone(),
+                                custom_instructions: incoming.custom_instructions.clone(),
+                                script_length: incoming.script_length,
+                                script_offset: incoming.script_offset,
+                                locking_script: incoming.locking_script.clone(),
                                 spent_by: local_spent_by,
+                                updated_at: Some(incoming.updated_at.max(local.updated_at)),
                                 ..Default::default()
                             },
                             trx,
@@ -430,6 +538,7 @@ pub async fn process_sync_chunk(
                             local.tx_label_id,
                             &TxLabelMapPartial {
                                 is_deleted: Some(incoming.is_deleted),
+                                updated_at: Some(incoming.updated_at.max(local.updated_at)),
                                 ..Default::default()
                             },
                             trx,
@@ -490,6 +599,7 @@ pub async fn process_sync_chunk(
                             local.output_tag_id,
                             &OutputTagMapPartial {
                                 is_deleted: Some(incoming.is_deleted),
+                                updated_at: Some(incoming.updated_at.max(local.updated_at)),
                                 ..Default::default()
                             },
                             trx,
@@ -537,11 +647,14 @@ pub async fn process_sync_chunk(
                         .update_certificate(
                             local.certificate_id,
                             &CertificatePartial {
+                                cert_type: Some(incoming.cert_type.clone()),
                                 subject: Some(incoming.subject.clone()),
-                                verifier: incoming.verifier.clone().map(Some).unwrap_or(None),
+                                serial_number: Some(incoming.serial_number.clone()),
+                                verifier: incoming.verifier.clone(),
                                 revocation_outpoint: Some(incoming.revocation_outpoint.clone()),
                                 signature: Some(incoming.signature.clone()),
                                 is_deleted: Some(incoming.is_deleted),
+                                updated_at: Some(incoming.updated_at.max(local.updated_at)),
                                 ..Default::default()
                             },
                             trx,
@@ -605,6 +718,7 @@ pub async fn process_sync_chunk(
                             &CertificateFieldPartial {
                                 field_value: Some(incoming.field_value.clone()),
                                 master_key: Some(incoming.master_key.clone()),
+                                updated_at: Some(incoming.updated_at.max(local.updated_at)),
                                 ..Default::default()
                             },
                             trx,
@@ -659,9 +773,12 @@ pub async fn process_sync_chunk(
                     storage
                         .update_commission(
                             local.commission_id,
+                            // TS merges only isRedeemed (EntityCommission.
+                            // mergeExisting) — a commission's satoshis are
+                            // fixed at creation.
                             &CommissionPartial {
-                                satoshis: Some(incoming.satoshis),
                                 is_redeemed: Some(incoming.is_redeemed),
+                                updated_at: Some(incoming.updated_at.max(local.updated_at)),
                                 ..Default::default()
                             },
                             trx,
@@ -724,6 +841,7 @@ pub async fn process_sync_chunk(
                                 proven_tx_id: local_proven_tx_id,
                                 status: Some(incoming.status.clone()),
                                 notified: Some(incoming.notified),
+                                updated_at: Some(incoming.updated_at.max(local.updated_at)),
                                 ..Default::default()
                             },
                             trx,

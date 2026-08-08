@@ -37,6 +37,12 @@ pub struct UserPartial {
     pub identity_key: Option<String>,
     /// Filter by active storage name.
     pub active_storage: Option<String>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying users.
@@ -78,6 +84,12 @@ pub struct CertificatePartial {
     pub signature: Option<String>,
     /// Filter by soft-delete flag.
     pub is_deleted: Option<bool>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying certificates.
@@ -109,6 +121,12 @@ pub struct CertificateFieldPartial {
     pub field_value: Option<String>,
     /// Filter by master key used for encryption.
     pub master_key: Option<String>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying certificate fields.
@@ -141,6 +159,12 @@ pub struct CommissionPartial {
     pub key_offset: Option<String>,
     /// Filter by redeemed flag.
     pub is_redeemed: Option<bool>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying commissions.
@@ -165,6 +189,12 @@ pub struct MonitorEventPartial {
     pub id: Option<i64>,
     /// Filter by event type string.
     pub event: Option<String>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying monitor events.
@@ -198,6 +228,12 @@ pub struct OutputBasketPartial {
     pub number_of_desired_utxos: Option<i64>,
     /// Minimum desired UTXO value in satoshis for change management.
     pub minimum_desired_utxo_value: Option<i64>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying output baskets.
@@ -227,6 +263,12 @@ pub struct OutputTagPartial {
     pub tag: Option<String>,
     /// Filter by soft-delete flag.
     pub is_deleted: Option<bool>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying output tags.
@@ -253,6 +295,12 @@ pub struct OutputTagMapPartial {
     pub output_id: Option<i64>,
     /// Filter by soft-delete flag.
     pub is_deleted: Option<bool>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying output tag mappings.
@@ -302,6 +350,24 @@ pub struct OutputPartial {
     pub sender_identity_key: Option<String>,
     /// Filter by the transaction ID that spent this output.
     pub spent_by: Option<i64>,
+    /// Update the output description (update target only).
+    pub output_description: Option<String>,
+    /// Update the spending description (update target only).
+    pub spending_description: Option<String>,
+    /// Update the custom spending instructions (update target only).
+    pub custom_instructions: Option<String>,
+    /// Update the locking script length (update target only).
+    pub script_length: Option<i64>,
+    /// Update the locking script byte offset (update target only).
+    pub script_offset: Option<i64>,
+    /// Update the raw locking script bytes (update target only).
+    pub locking_script: Option<Vec<u8>>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying outputs.
@@ -339,6 +405,12 @@ pub struct ProvenTxPartial {
     pub height: Option<i32>,
     /// Filter by block hash hex.
     pub block_hash: Option<String>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying proven transactions.
@@ -377,6 +449,12 @@ pub struct ProvenTxReqPartial {
     /// `attemptToPostReqsToNetwork` flow where a ServiceError bumps
     /// `req.attempts` in the same update as the status transition.
     pub attempts: Option<i32>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying proven transaction requests.
@@ -410,6 +488,12 @@ pub struct SettingsPartial {
     /// Wallet settings JSON blob to write (used by update_settings).
     /// When set to Some("null") during update, clears the stored settings.
     pub wallet_settings_json: Option<String>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying settings.
@@ -446,6 +530,12 @@ pub struct SyncStatePartial {
     pub sync_map: Option<String>,
     /// Timestamp of last successful sync (advances the high-watermark for the next sync).
     pub when: Option<chrono::NaiveDateTime>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying sync states.
@@ -482,6 +572,22 @@ pub struct TransactionPartial {
     pub txid: Option<String>,
     /// Update raw transaction bytes.
     pub raw_tx: Option<Vec<u8>>,
+    /// Update the transaction version number (update target only).
+    pub version: Option<i32>,
+    /// Update the transaction locktime value (update target only).
+    pub lock_time: Option<i32>,
+    /// Update the net satoshi value (update target only).
+    pub satoshis: Option<i64>,
+    /// Update the human-readable description (update target only).
+    pub description: Option<String>,
+    /// Update the input BEEF bytes (update target only).
+    pub input_beef: Option<Vec<u8>>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying transactions.
@@ -514,6 +620,12 @@ pub struct TxLabelPartial {
     pub label: Option<String>,
     /// Filter by soft-delete flag.
     pub is_deleted: Option<bool>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying transaction labels.
@@ -540,6 +652,12 @@ pub struct TxLabelMapPartial {
     pub transaction_id: Option<i64>,
     /// Filter by soft-delete flag.
     pub is_deleted: Option<bool>,
+    /// When used as an update target, the row's `updated_at` timestamp to
+    /// write. `None` leaves the auto-touch behavior: the update stamps the
+    /// current time. Sync merges pass the source row's timestamp through so
+    /// a replica never stamps a row ahead of its source (TS parity:
+    /// `validatePartialForUpdate`, StorageKnex.ts). Ignored by finds.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 /// Arguments for querying transaction label mappings.

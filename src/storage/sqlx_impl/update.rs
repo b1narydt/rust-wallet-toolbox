@@ -83,7 +83,15 @@ mod sqlite_impl {
                 sets.push("activeStorage = ?");
                 binds.push(BindVal::String(v.clone()));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!("UPDATE users SET {} WHERE userId = ?", sets.join(", "));
             binds.push(BindVal::Int64(id));
             exec_update(self, &sql, &binds, trx).await
@@ -133,7 +141,15 @@ mod sqlite_impl {
                 sets.push("isDeleted = ?");
                 binds.push(BindVal::Bool(*v));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!(
                 "UPDATE certificates SET {} WHERE certificateId = ?",
                 sets.join(", ")
@@ -159,7 +175,15 @@ mod sqlite_impl {
                 sets.push("masterKey = ?");
                 binds.push(BindVal::String(v.clone()));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!(
                 "UPDATE certificate_fields SET {} WHERE certificateId = ? AND fieldName = ?",
                 sets.join(", ")
@@ -197,7 +221,15 @@ mod sqlite_impl {
                 sets.push("isRedeemed = ?");
                 binds.push(BindVal::Bool(*v));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!(
                 "UPDATE commissions SET {} WHERE commissionId = ?",
                 sets.join(", ")
@@ -218,7 +250,15 @@ mod sqlite_impl {
                 sets.push("event = ?");
                 binds.push(BindVal::String(v.clone()));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!("UPDATE monitor_events SET {} WHERE id = ?", sets.join(", "));
             binds.push(BindVal::Int64(id));
             exec_update(self, &sql, &binds, trx).await
@@ -252,7 +292,15 @@ mod sqlite_impl {
                 sets.push("minimumDesiredUTXOValue = ?");
                 binds.push(BindVal::Int64(*v));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!(
                 "UPDATE output_baskets SET {} WHERE basketId = ?",
                 sets.join(", ")
@@ -281,7 +329,15 @@ mod sqlite_impl {
                 sets.push("isDeleted = ?");
                 binds.push(BindVal::Bool(*v));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!(
                 "UPDATE output_tags SET {} WHERE outputTagId = ?",
                 sets.join(", ")
@@ -303,7 +359,15 @@ mod sqlite_impl {
                 sets.push("isDeleted = ?");
                 binds.push(BindVal::Bool(*v));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!(
                 "UPDATE output_tags_map SET {} WHERE outputId = ? AND outputTagId = ?",
                 sets.join(", ")
@@ -386,7 +450,39 @@ mod sqlite_impl {
                     binds.push(BindVal::Int64(*v));
                 }
             }
-            sets.push("updated_at = datetime('now')");
+            if let Some(v) = &update.output_description {
+                sets.push("outputDescription = ?");
+                binds.push(BindVal::String(v.clone()));
+            }
+            if let Some(v) = &update.spending_description {
+                sets.push("spendingDescription = ?");
+                binds.push(BindVal::String(v.clone()));
+            }
+            if let Some(v) = &update.custom_instructions {
+                sets.push("customInstructions = ?");
+                binds.push(BindVal::String(v.clone()));
+            }
+            if let Some(v) = &update.script_length {
+                sets.push("scriptLength = ?");
+                binds.push(BindVal::Int64(*v));
+            }
+            if let Some(v) = &update.script_offset {
+                sets.push("scriptOffset = ?");
+                binds.push(BindVal::Int64(*v));
+            }
+            if let Some(v) = &update.locking_script {
+                sets.push("lockingScript = ?");
+                binds.push(BindVal::Bytes(v.clone()));
+            }
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!("UPDATE outputs SET {} WHERE outputId = ?", sets.join(", "));
             binds.push(BindVal::Int64(id));
             exec_update(self, &sql, &binds, trx).await
@@ -412,7 +508,15 @@ mod sqlite_impl {
                 sets.push("blockHash = ?");
                 binds.push(BindVal::String(v.clone()));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!(
                 "UPDATE proven_txs SET {} WHERE provenTxId = ?",
                 sets.join(", ")
@@ -453,7 +557,15 @@ mod sqlite_impl {
                 sets.push("attempts = ?");
                 binds.push(BindVal::Int64(*v as i64));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!(
                 "UPDATE proven_tx_reqs SET {} WHERE provenTxReqId = ?",
                 sets.join(", ")
@@ -485,7 +597,15 @@ mod sqlite_impl {
                 sets.push("walletSettingsJson = ?");
                 binds.push(BindVal::String(v.clone()));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             // Settings has no PK -- update all rows
             let sql = format!("UPDATE settings SET {}", sets.join(", "));
             exec_update(self, &sql, &binds, trx).await
@@ -527,7 +647,35 @@ mod sqlite_impl {
                 sets.push("rawTx = ?");
                 binds.push(BindVal::Bytes(v.clone()));
             }
-            sets.push("updated_at = datetime('now')");
+            if let Some(v) = &update.version {
+                sets.push("version = ?");
+                binds.push(BindVal::Int32(*v));
+            }
+            if let Some(v) = &update.lock_time {
+                sets.push("lockTime = ?");
+                binds.push(BindVal::Int32(*v));
+            }
+            if let Some(v) = &update.satoshis {
+                sets.push("satoshis = ?");
+                binds.push(BindVal::Int64(*v));
+            }
+            if let Some(v) = &update.description {
+                sets.push("description = ?");
+                binds.push(BindVal::String(v.clone()));
+            }
+            if let Some(v) = &update.input_beef {
+                sets.push("inputBEEF = ?");
+                binds.push(BindVal::Bytes(v.clone()));
+            }
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!(
                 "UPDATE transactions SET {} WHERE transactionId = ?",
                 sets.join(", ")
@@ -556,7 +704,15 @@ mod sqlite_impl {
                 sets.push("isDeleted = ?");
                 binds.push(BindVal::Bool(*v));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!(
                 "UPDATE tx_labels SET {} WHERE txLabelId = ?",
                 sets.join(", ")
@@ -578,7 +734,15 @@ mod sqlite_impl {
                 sets.push("isDeleted = ?");
                 binds.push(BindVal::Bool(*v));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!(
                 "UPDATE tx_labels_map SET {} WHERE transactionId = ? AND txLabelId = ?",
                 sets.join(", ")
@@ -628,7 +792,15 @@ mod sqlite_impl {
                     v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
                 ));
             }
-            sets.push("updated_at = datetime('now')");
+            match &update.updated_at {
+                Some(v) => {
+                    sets.push("updated_at = ?");
+                    binds.push(BindVal::String(
+                        v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                    ));
+                }
+                None => sets.push("updated_at = datetime('now')"),
+            }
             let sql = format!(
                 "UPDATE sync_states SET {} WHERE syncStateId = ?",
                 sets.join(", ")
@@ -734,7 +906,14 @@ macro_rules! impl_update_methods {
                     let mut idx = 0usize;
                     if let Some(v) = &update.identity_key { idx += 1; sets.push(format!("identityKey = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.active_storage { idx += 1; sets.push(format!("activeStorage = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let sql = format!("UPDATE users SET {} WHERE userId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
@@ -753,7 +932,14 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.revocation_outpoint { idx += 1; sets.push(format!("revocationOutpoint = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.signature { idx += 1; sets.push(format!("signature = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.is_deleted { idx += 1; sets.push(format!("isDeleted = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let sql = format!("UPDATE certificates SET {} WHERE certificateId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
@@ -765,7 +951,14 @@ macro_rules! impl_update_methods {
                     let mut idx = 0usize;
                     if let Some(v) = &update.field_value { idx += 1; sets.push(format!("fieldValue = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.master_key { idx += 1; sets.push(format!("masterKey = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let p1 = ph(idx);
                     idx += 1; let p2 = ph(idx);
                     let sql = format!("UPDATE certificate_fields SET {} WHERE certificateId = {} AND fieldName = {}", sets.join(", "), p1, p2);
@@ -783,7 +976,14 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.satoshis { idx += 1; sets.push(format!("satoshis = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
                     if let Some(v) = &update.key_offset { idx += 1; sets.push(format!("keyOffset = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.is_redeemed { idx += 1; sets.push(format!("isRedeemed = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let sql = format!("UPDATE commissions SET {} WHERE commissionId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
@@ -794,7 +994,14 @@ macro_rules! impl_update_methods {
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
                     if let Some(v) = &update.event { idx += 1; sets.push(format!("event = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let sql = format!("UPDATE monitor_events SET {} WHERE id = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
@@ -809,7 +1016,14 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.is_deleted { idx += 1; sets.push(format!("isDeleted = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
                     if let Some(v) = &update.number_of_desired_utxos { idx += 1; sets.push(format!("numberOfDesiredUTXOs = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
                     if let Some(v) = &update.minimum_desired_utxo_value { idx += 1; sets.push(format!("minimumDesiredUTXOValue = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let sql = format!("UPDATE output_baskets SET {} WHERE basketId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
@@ -822,7 +1036,14 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.user_id { idx += 1; sets.push(format!("userId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
                     if let Some(v) = &update.tag { idx += 1; sets.push(format!("tag = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.is_deleted { idx += 1; sets.push(format!("isDeleted = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let sql = format!("UPDATE output_tags SET {} WHERE outputTagId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
@@ -833,7 +1054,14 @@ macro_rules! impl_update_methods {
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
                     if let Some(v) = &update.is_deleted { idx += 1; sets.push(format!("isDeleted = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let p1 = ph(idx);
                     idx += 1; let p2 = ph(idx);
                     let sql = format!("UPDATE output_tags_map SET {} WHERE outputId = {} AND outputTagId = {}", sets.join(", "), p1, p2);
@@ -874,7 +1102,20 @@ macro_rules! impl_update_methods {
                             idx += 1; sets.push(format!("spentBy = {}", ph(idx))); binds.push(BindVal::Int64(*v));
                         }
                     }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    if let Some(v) = &update.output_description { idx += 1; sets.push(format!("outputDescription = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.spending_description { idx += 1; sets.push(format!("spendingDescription = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.custom_instructions { idx += 1; sets.push(format!("customInstructions = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.script_length { idx += 1; sets.push(format!("scriptLength = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
+                    if let Some(v) = &update.script_offset { idx += 1; sets.push(format!("scriptOffset = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
+                    if let Some(v) = &update.locking_script { idx += 1; sets.push(format!("lockingScript = {}", ph(idx))); binds.push(BindVal::Bytes(v.clone())); }
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let sql = format!("UPDATE outputs SET {} WHERE outputId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
@@ -887,7 +1128,14 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.txid { idx += 1; sets.push(format!("txid = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.height { idx += 1; sets.push(format!("height = {}", ph(idx))); binds.push(BindVal::Int32(*v)); }
                     if let Some(v) = &update.block_hash { idx += 1; sets.push(format!("blockHash = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let sql = format!("UPDATE proven_txs SET {} WHERE provenTxId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
@@ -903,7 +1151,14 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.batch { idx += 1; sets.push(format!("batch = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.notified { idx += 1; sets.push(format!("notified = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
                     if let Some(v) = &update.attempts { idx += 1; sets.push(format!("attempts = {}", ph(idx))); binds.push(BindVal::Int64(*v as i64)); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let sql = format!("UPDATE proven_tx_reqs SET {} WHERE provenTxReqId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
@@ -917,7 +1172,14 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.storage_name { idx += 1; sets.push(format!("storageName = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.chain { idx += 1; sets.push(format!("chain = {}", ph(idx))); binds.push(BindVal::String(v.to_string())); }
                     if let Some(v) = &update.wallet_settings_json { idx += 1; sets.push(format!("walletSettingsJson = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     let _ = idx;
                     let sql = format!("UPDATE settings SET {}", sets.join(", "));
                     exec_update(self, &sql, &binds, trx).await
@@ -934,7 +1196,19 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.is_outgoing { idx += 1; sets.push(format!("isOutgoing = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
                     if let Some(v) = &update.txid { idx += 1; sets.push(format!("txid = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.raw_tx { idx += 1; sets.push(format!("rawTx = {}", ph(idx))); binds.push(BindVal::Bytes(v.clone())); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    if let Some(v) = &update.version { idx += 1; sets.push(format!("version = {}", ph(idx))); binds.push(BindVal::Int32(*v)); }
+                    if let Some(v) = &update.lock_time { idx += 1; sets.push(format!("lockTime = {}", ph(idx))); binds.push(BindVal::Int32(*v)); }
+                    if let Some(v) = &update.satoshis { idx += 1; sets.push(format!("satoshis = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
+                    if let Some(v) = &update.description { idx += 1; sets.push(format!("description = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.input_beef { idx += 1; sets.push(format!("inputBEEF = {}", ph(idx))); binds.push(BindVal::Bytes(v.clone())); }
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let sql = format!("UPDATE transactions SET {} WHERE transactionId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
@@ -947,7 +1221,14 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.user_id { idx += 1; sets.push(format!("userId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
                     if let Some(v) = &update.label { idx += 1; sets.push(format!("label = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.is_deleted { idx += 1; sets.push(format!("isDeleted = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let sql = format!("UPDATE tx_labels SET {} WHERE txLabelId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
@@ -958,7 +1239,14 @@ macro_rules! impl_update_methods {
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
                     if let Some(v) = &update.is_deleted { idx += 1; sets.push(format!("isDeleted = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let p1 = ph(idx);
                     idx += 1; let p2 = ph(idx);
                     let sql = format!("UPDATE tx_labels_map SET {} WHERE transactionId = {} AND txLabelId = {}", sets.join(", "), p1, p2);
@@ -979,7 +1267,14 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.sync_map { idx += 1; sets.push(format!("syncMap = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     // "when" is a reserved word — quote it using the db-appropriate quoting fn.
                     if let Some(v) = &update.when { idx += 1; sets.push(format!("{} = {}", $qc_fn("when"), ph(idx))); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string())); }
-                    sets.push(format!("updated_at = {}", $now_expr));
+                    match &update.updated_at {
+                        Some(v) => {
+                            idx += 1;
+                            sets.push(format!("updated_at = {}", ph(idx)));
+                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                        }
+                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                    }
                     idx += 1; let sql = format!("UPDATE sync_states SET {} WHERE syncStateId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
