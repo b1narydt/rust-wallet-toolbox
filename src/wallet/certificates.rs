@@ -258,18 +258,14 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
     let certifier_pk = PublicKey::from_string(&storage_cert.certifier)
         .map_err(|e| WalletError::Internal(format!("Invalid certifier key: {e}")))?;
 
-    let subject =
-        args.certificate
-            .subject
-            .as_ref()
-            .ok_or_else(|| WalletError::InvalidParameter {
-                parameter: "certificate.subject".to_string(),
-                must_be: "provided".to_string(),
-            })?;
+    // ProveCertificate accepts a partial certificate selector. The stored
+    // certificate is authoritative for fields not supplied by the caller.
+    let subject = PublicKey::from_string(&storage_cert.subject)
+        .map_err(|e| WalletError::Internal(format!("Invalid stored certificate subject: {e}")))?;
     let sdk_cert = SdkCertificate {
         cert_type: cert_type.clone(),
         serial_number: serial_number.clone(),
-        subject: subject.clone(),
+        subject,
         certifier: certifier_pk.clone(),
         revocation_outpoint: Some(storage_cert.revocation_outpoint.clone()),
         fields: Some(field_map),

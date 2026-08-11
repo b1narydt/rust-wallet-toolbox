@@ -5,6 +5,7 @@
 //! The logic is identical to the manager version, operating directly on the
 //! single provider rather than routing through active/backup.
 
+use base64::Engine as _;
 use bsv::wallet::interfaces::{AbortActionArgs, AbortActionResult};
 
 use crate::error::{WalletError, WalletResult};
@@ -30,7 +31,11 @@ pub async fn abort_action(
         .await?
         .ok_or_else(|| WalletError::Unauthorized("User not found".to_string()))?;
 
-    let reference = String::from_utf8_lossy(&args.reference).to_string();
+    // BRC-100 transports `reference` as Base64String. The SDK deserializes it
+    // to bytes, while createAction stores the base64 text as its reference.
+    // Re-encode the bytes for the storage lookup; lossy UTF-8 here made a
+    // wire-level abort unable to find an action it had just created.
+    let reference = base64::engine::general_purpose::STANDARD.encode(&args.reference);
 
     let txs = storage
         .find_transactions(
