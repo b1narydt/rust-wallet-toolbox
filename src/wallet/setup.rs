@@ -15,7 +15,7 @@ use bsv::wallet::types::{Counterparty, CounterpartyType, Protocol};
 use bsv::wallet::KeyDeriverApi;
 
 use crate::error::{WalletError, WalletResult};
-use crate::monitor::Monitor;
+use crate::monitor::{AsyncResultCallback, Monitor};
 use crate::services::traits::WalletServices;
 use crate::signer::signing_provider::SigningProvider;
 use crate::storage::manager::WalletStorageManager;
@@ -231,6 +231,7 @@ pub struct WalletBuilder {
     services: Option<Arc<dyn WalletServices>>,
     use_default_services: bool,
     monitor_enabled: bool,
+    monitor_after_task: Option<AsyncResultCallback<String>>,
     privileged_key_manager: Option<Arc<dyn PrivilegedKeyManager>>,
     pool_max_connections: Option<u32>,
     pool_min_connections: Option<u32>,
@@ -259,6 +260,7 @@ impl WalletBuilder {
             // — "works out of the box" means the monitor runs unless the caller
             // explicitly opts out with `without_monitor()`.
             monitor_enabled: true,
+            monitor_after_task: None,
             privileged_key_manager: None,
             pool_max_connections: None,
             pool_min_connections: None,
@@ -396,6 +398,16 @@ impl WalletBuilder {
     /// is a no-op kept for back-compatibility with 0.3.3-era callers.
     pub fn with_monitor(mut self) -> Self {
         self.monitor_enabled = true;
+        self
+    }
+
+    /// Run a fallible hook after each completed background monitor task.
+    ///
+    /// An error pauses the monitor and retries before it starts another task.
+    /// This is useful when an embedding needs a durable replica or external
+    /// acknowledgement to keep pace with background storage changes.
+    pub fn with_monitor_after_task(mut self, callback: AsyncResultCallback<String>) -> Self {
+        self.monitor_after_task = Some(callback);
         self
     }
 
@@ -602,12 +614,15 @@ impl WalletBuilder {
         // rust-mpc#147 faucet never broadcast a single tx that way).
         let monitor = if self.monitor_enabled {
             if let Some(ref svc) = services {
-                let mut monitor = crate::monitor::Monitor::builder()
+                let mut builder = crate::monitor::Monitor::builder()
                     .chain(chain.clone())
                     .storage(storage.clone())
                     .services(svc.clone())
-                    .default_tasks()
-                    .build()?;
+                    .default_tasks();
+                if let Some(callback) = self.monitor_after_task {
+                    builder = builder.after_task(callback);
+                }
+                let mut monitor = builder.build()?;
                 monitor.start_tasks()?;
                 tracing::info!("wallet monitor started (default; opt out with without_monitor())");
                 Some(Arc::new(monitor))
