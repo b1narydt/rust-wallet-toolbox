@@ -568,8 +568,8 @@ mod tests {
         assert_eq!(reqs.len(), 1);
         assert_eq!(reqs[0].status, ProvenTxReqStatus::Unsent);
 
-        // shareReqsWithWorld schedules a delayed request by marking its
-        // owning transaction `sending`; TaskSendWaiting owns the retry.
+        // A standalone delayed action keeps its initial unprocessed status.
+        // sendWith batches move their owning transactions to sending below.
         let tx_args = FindTransactionsArgs {
             partial: TransactionPartial {
                 transaction_id: Some(_tx_id),
@@ -581,7 +581,7 @@ mod tests {
             .find_transactions(&tx_args, None)
             .await
             .expect("find txs");
-        assert_eq!(txs[0].status, TransactionStatus::Sending);
+        assert_eq!(txs[0].status, TransactionStatus::Unprocessed);
     }
 
     #[tokio::test]
