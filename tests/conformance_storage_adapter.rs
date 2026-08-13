@@ -142,16 +142,6 @@ fn corpus_shape() {
 ///   broadcasts (no services at that layer) and always returns
 ///   `not_delayed_results: None`. Real architectural divergence in Rust.
 ///
-/// - `.7` (abortAction): the SDK `AbortActionArgs` deserializes the wire
-///   reference (Base64String per BRC-100) into raw BYTES, and
-///   `abort_action` looks up `String::from_utf8_lossy(bytes)` — i.e. the
-///   base64-DECODED text. Storage stores references as the base64 STRING
-///   itself (create_action.rs base64-encodes; the TS reference compares the
-///   base64 string as-is). Over the wire, a Rust abort can therefore never
-///   find a storage-created action. Rust bug candidate (wire path only;
-///   in-process callers that put the base64 string's bytes into
-///   `reference` are unaffected).
-///
 /// - `.8` / `.9` (internalizeAction): the corpus `tx` is 12 bytes and not a
 ///   valid AtomicBEEF; `Beef::from_binary` rejects it, as would the TS
 ///   reference (`Beef.fromBinary` throws). These vectors are satisfiable
@@ -174,7 +164,6 @@ fn corpus_shape() {
 ///   plain-string decode + mock accepts. Corpus authoring gap.
 const KNOWN_DIVERGENCES: &[&str] = &[
     "wallet.storage.adapterconformance.6",
-    "wallet.storage.adapterconformance.7",
     "wallet.storage.adapterconformance.8",
     "wallet.storage.adapterconformance.9",
     "wallet.storage.adapterconformance.12",

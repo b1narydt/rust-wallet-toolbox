@@ -8,6 +8,7 @@
 //! This prevents a malicious sender from sending outputs with bogus
 //! derivation parameters that the wallet could never spend.
 
+use std::collections::HashSet;
 use std::io::Cursor;
 
 use bsv::script::templates::p2pkh::P2PKH;
@@ -56,6 +57,24 @@ pub async fn signer_internalize_action(
     args: &ValidInternalizeActionArgs,
     signing_provider: Option<&dyn SigningProvider>,
 ) -> WalletResult<SignerInternalizeActionResult> {
+    // Reject duplicate output indices before parsing or mutating storage. The
+    // storage schema correctly prevents two rows for one tx output, but
+    // relying on that constraint yielded an internal error after the first
+    // output had already been persisted.
+    let mut seen_output_indexes = HashSet::with_capacity(args.outputs.len());
+    for output in &args.outputs {
+        let output_index = match output {
+            InternalizeOutput::WalletPayment { output_index, .. }
+            | InternalizeOutput::BasketInsertion { output_index, .. } => *output_index,
+        };
+        if !seen_output_indexes.insert(output_index) {
+            return Err(WalletError::InvalidParameter {
+                parameter: "outputs".to_string(),
+                must_be: "unique outputIndex values".to_string(),
+            });
+        }
+    }
+
     // -----------------------------------------------------------------------
     // 1. Parse AtomicBEEF to get the subject transaction
     // -----------------------------------------------------------------------

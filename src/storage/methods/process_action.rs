@@ -4,13 +4,17 @@
 //! updates Transaction and Output records, handles status state machine.
 //! Ported from wallet-toolbox/src/storage/methods/processAction.ts.
 
+use base64::Engine as _;
+use bsv::wallet::interfaces::{ActionResultStatus, SendWithResult};
 use chrono::Utc;
+use rand::RngCore;
 
 use crate::error::{WalletError, WalletResult};
 use crate::status::{ProvenTxReqStatus, TransactionStatus};
 use crate::storage::action_types::{StorageProcessActionArgs, StorageProcessActionResult};
 use crate::storage::find_args::{
-    FindOutputsArgs, FindTransactionsArgs, OutputPartial, TransactionPartial,
+    FindOutputsArgs, FindProvenTxReqsArgs, FindTransactionsArgs, OutputPartial, ProvenTxReqPartial,
+    TransactionPartial,
 };
 use crate::storage::traits::reader_writer::StorageReaderWriter;
 use crate::storage::{verify_one, TrxToken};
@@ -33,14 +37,16 @@ pub async fn storage_process_action<S: StorageReaderWriter + ?Sized>(
     args: &StorageProcessActionArgs,
     _trx: Option<&TrxToken>,
 ) -> WalletResult<StorageProcessActionResult> {
-    let r = StorageProcessActionResult {
+    let mut r = StorageProcessActionResult {
         send_with_results: None,
         not_delayed_results: None,
         log: None,
     };
 
     if !args.is_new_tx {
-        // If not a new tx, nothing to commit to storage
+        // A sendWith-only call releases durable noSend requests without
+        // creating a new transaction.
+        r.send_with_results = Some(schedule_send_with(storage, user_id, &args.send_with).await?);
         return Ok(r);
     }
 
@@ -180,7 +186,133 @@ pub async fn storage_process_action<S: StorageReaderWriter + ?Sized>(
     // Commit the database transaction
     storage.commit_transaction(db_trx).await?;
 
+    // TS processAction always shares the newly committed request unless it is
+    // a standalone noSend action. The delayed path is deliberately durable:
+    // queued requests become `unsent` and TaskSendWaiting owns retries after
+    // this function returns or the process restarts.
+    let mut txids_to_schedule = args.send_with.clone();
+    if !(args.is_no_send && !args.is_send_with) {
+        txids_to_schedule.push(txid.clone());
+    }
+    // A standalone delayed transaction is already persisted as `unsent` by
+    // the initial status selection above. Run the batch classifier only when
+    // sendWith was explicitly requested, so ordinary delayed actions retain
+    // their established result contract.
+    if !args.send_with.is_empty() {
+        r.send_with_results = Some(schedule_send_with(storage, user_id, &txids_to_schedule).await?);
+    }
+
     Ok(r)
+}
+
+/// Classify and durably schedule a `sendWith` batch.
+///
+/// This is the delayed half of TS `shareReqsWithWorld`: ready requests are
+/// made visible to the monitor as `unsent`, their owning transactions move to
+/// `sending`, and a multi-request call receives one shared batch identifier.
+/// Direct network posting remains in the signer/monitor layer, where Rust owns
+/// services and can rebuild BEEF immediately before broadcast.
+async fn schedule_send_with<S: StorageReaderWriter + ?Sized>(
+    storage: &S,
+    user_id: i64,
+    txids: &[String],
+) -> WalletResult<Vec<SendWithResult>> {
+    if txids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut random = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut random);
+    let batch = (txids.len() > 1).then(|| base64::engine::general_purpose::STANDARD.encode(random));
+    let trx = storage.begin_transaction().await?;
+    let mut results = Vec::with_capacity(txids.len());
+
+    for txid in txids {
+        let reqs = storage
+            .find_proven_tx_reqs(
+                &FindProvenTxReqsArgs {
+                    partial: ProvenTxReqPartial {
+                        txid: Some(txid.clone()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                Some(&trx),
+            )
+            .await?;
+        let Some(req) = reqs.into_iter().next() else {
+            results.push(SendWithResult {
+                txid: txid.clone(),
+                status: ActionResultStatus::Failed,
+            });
+            continue;
+        };
+
+        let ready = matches!(
+            req.status,
+            ProvenTxReqStatus::Sending
+                | ProvenTxReqStatus::Unsent
+                | ProvenTxReqStatus::Nosend
+                | ProvenTxReqStatus::Unprocessed
+        ) && !req.raw_tx.is_empty();
+        let already_sent = matches!(
+            req.status,
+            ProvenTxReqStatus::Unmined
+                | ProvenTxReqStatus::Callback
+                | ProvenTxReqStatus::Unconfirmed
+                | ProvenTxReqStatus::Completed
+        );
+
+        let result_status = if ready {
+            storage
+                .update_proven_tx_req(
+                    req.proven_tx_req_id,
+                    &ProvenTxReqPartial {
+                        status: Some(ProvenTxReqStatus::Unsent),
+                        batch: batch.clone(),
+                        ..Default::default()
+                    },
+                    Some(&trx),
+                )
+                .await?;
+            let transactions = storage
+                .find_transactions(
+                    &FindTransactionsArgs {
+                        partial: TransactionPartial {
+                            user_id: Some(user_id),
+                            txid: Some(txid.clone()),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    Some(&trx),
+                )
+                .await?;
+            for transaction in transactions {
+                storage
+                    .update_transaction(
+                        transaction.transaction_id,
+                        &TransactionPartial {
+                            status: Some(TransactionStatus::Sending),
+                            ..Default::default()
+                        },
+                        Some(&trx),
+                    )
+                    .await?;
+            }
+            ActionResultStatus::Sending
+        } else if already_sent {
+            ActionResultStatus::Unproven
+        } else {
+            ActionResultStatus::Failed
+        };
+        results.push(SendWithResult {
+            txid: txid.clone(),
+            status: result_status,
+        });
+    }
+    storage.commit_transaction(trx).await?;
+    Ok(results)
 }
 
 #[cfg(test)]
@@ -436,7 +568,8 @@ mod tests {
         assert_eq!(reqs.len(), 1);
         assert_eq!(reqs[0].status, ProvenTxReqStatus::Unsent);
 
-        // Verify Transaction has unprocessed status (delayed keeps tx as unprocessed)
+        // A standalone delayed action keeps its initial unprocessed status.
+        // sendWith batches move their owning transactions to sending below.
         let tx_args = FindTransactionsArgs {
             partial: TransactionPartial {
                 transaction_id: Some(_tx_id),
@@ -490,5 +623,60 @@ mod tests {
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].txid, Some(fake_txid));
         assert!(outputs[0].spendable);
+    }
+
+    #[tokio::test]
+    async fn test_send_with_releases_nosend_requests_as_a_durable_batch() {
+        let (storage, user_id, _tx_id, _reference) = setup_test_storage().await;
+        let now = Utc::now().naive_utc();
+        let txids = vec![
+            "1111111111111111111111111111111111111111111111111111111111111111".to_string(),
+            "2222222222222222222222222222222222222222222222222222222222222222".to_string(),
+        ];
+        for txid in &txids {
+            storage
+                .insert_proven_tx_req(
+                    &ProvenTxReq {
+                        created_at: now,
+                        updated_at: now,
+                        proven_tx_req_id: 0,
+                        proven_tx_id: None,
+                        status: ProvenTxReqStatus::Nosend,
+                        attempts: 0,
+                        notified: false,
+                        txid: txid.clone(),
+                        batch: None,
+                        history: "[]".to_string(),
+                        notify: "{\"transactionIds\":[]}".to_string(),
+                        raw_tx: vec![1, 2, 3],
+                        input_beef: Some(vec![4, 5, 6]),
+                    },
+                    None,
+                )
+                .await
+                .expect("insert noSend request");
+        }
+
+        let results = schedule_send_with(&storage, user_id, &txids)
+            .await
+            .expect("schedule batch");
+        assert!(results
+            .iter()
+            .all(|result| result.status == ActionResultStatus::Sending));
+
+        let reqs = storage
+            .find_proven_tx_reqs(
+                &FindProvenTxReqsArgs {
+                    partial: ProvenTxReqPartial::default(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find batch requests");
+        let batch = reqs[0].batch.clone().expect("batch identifier");
+        assert!(reqs.iter().all(|req| {
+            req.status == ProvenTxReqStatus::Unsent && req.batch.as_deref() == Some(&batch)
+        }));
     }
 }

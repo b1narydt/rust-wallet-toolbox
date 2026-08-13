@@ -84,13 +84,22 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
 
     let num_outputs = tx.outputs.len();
 
-    // Validate output indices
+    // Validate output indices before any storage mutation. One output may be
+    // internalized exactly once; duplicate requests must be a caller error,
+    // not a partial insert followed by a database constraint failure.
+    let mut output_indexes = HashSet::with_capacity(args.outputs.len());
     for out_spec in &args.outputs {
         let oi = output_index_of(out_spec);
         if oi >= num_outputs as u32 {
             return Err(WalletError::InvalidParameter {
                 parameter: "outputIndex".to_string(),
                 must_be: format!("a valid output index in range 0 to {}", num_outputs - 1),
+            });
+        }
+        if !output_indexes.insert(oi) {
+            return Err(WalletError::InvalidParameter {
+                parameter: "outputs".to_string(),
+                must_be: "unique outputIndex values".to_string(),
             });
         }
     }

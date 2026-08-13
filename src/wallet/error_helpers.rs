@@ -11,13 +11,13 @@ use bsv::wallet::interfaces::{
 
 /// Check all `send_with_results` in a `CreateActionResult`.
 ///
-/// If any result has a status other than `Unproven`, returns a `WalletError::Internal`
-/// with details about the unsuccessful results.
+/// `Sending` is a successful durable hand-off to the monitor; `Unproven` is
+/// a successful immediate hand-off. Only `Failed` is unsuccessful.
 pub fn throw_if_any_unsuccessful_create_actions(r: &CreateActionResult) -> Result<(), WalletError> {
     let failures: Vec<String> = r
         .send_with_results
         .iter()
-        .filter(|swr| !matches!(swr.status, ActionResultStatus::Unproven))
+        .filter(|swr| matches!(swr.status, ActionResultStatus::Failed))
         .map(|swr| format!("txid={} status={}", swr.txid, swr.status.as_str()))
         .collect();
 
@@ -32,13 +32,13 @@ pub fn throw_if_any_unsuccessful_create_actions(r: &CreateActionResult) -> Resul
 
 /// Check all `send_with_results` in a `SignActionResult`.
 ///
-/// If any result has a status other than `Unproven`, returns a `WalletError::Internal`
-/// with details about the unsuccessful results.
+/// `Sending` is a successful durable hand-off to the monitor; `Unproven` is
+/// a successful immediate hand-off. Only `Failed` is unsuccessful.
 pub fn throw_if_any_unsuccessful_sign_actions(r: &SignActionResult) -> Result<(), WalletError> {
     let failures: Vec<String> = r
         .send_with_results
         .iter()
-        .filter(|swr| !matches!(swr.status, ActionResultStatus::Unproven))
+        .filter(|swr| matches!(swr.status, ActionResultStatus::Failed))
         .map(|swr| format!("txid={} status={}", swr.txid, swr.status.as_str()))
         .collect();
 

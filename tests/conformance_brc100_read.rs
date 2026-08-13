@@ -807,16 +807,6 @@ fn compare_action(
 ///   enforce — corpus bug, flag upstream. (.5 also fails at the wire but
 ///   expects an error, so it is not pinned.)
 ///
-/// - `mechanism …8`: with a representable type, the partial-certificate
-///   vector (type + serialNumber + certifier only) errors in Rust:
-///   "The certificate.subject parameter must be provided". The TS signer
-///   (signer/methods/proveCertificate.ts) treats every certificate field as
-///   an optional lookup filter and takes subject/fields from the STORED
-///   certificate, so a subject-less partial succeeds. Rust
-///   `wallet::certificates::prove_certificate` requires subject (and
-///   type/serial/certifier) from the args instead of reading them back from
-///   storage. Verdict: real Rust toolbox bug — `ProveCertificateArgs.
-///   certificate` is `Partial<WalletCertificate>` by contract.
 const KNOWN_PROVECERTIFICATE_DIVERGENCES: &[&str] = &[
     "wallet.brc100.provecertificate.1:",
     "wallet.brc100.provecertificate.2:",
@@ -825,7 +815,6 @@ const KNOWN_PROVECERTIFICATE_DIVERGENCES: &[&str] = &[
     "wallet.brc100.provecertificate.6:",
     "wallet.brc100.provecertificate.7:",
     "wallet.brc100.provecertificate.8:",
-    "mechanism wallet.brc100.provecertificate.8:",
 ];
 
 /// The 32-byte certificate type used by the mechanism leg: the corpus type
