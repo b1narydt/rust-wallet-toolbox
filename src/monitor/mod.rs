@@ -52,6 +52,10 @@ pub const ONE_WEEK: u64 = 7 * ONE_DAY;
 pub type AsyncCallback<T> =
     Arc<dyn Fn(T) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
+/// A fallible async callback used to place a durability boundary after a task.
+pub type AsyncResultCallback<T> =
+    Arc<dyn Fn(T) -> Pin<Box<dyn Future<Output = WalletResult<()>> + Send>> + Send + Sync>;
+
 // ---------------------------------------------------------------------------
 // MonitorOptions
 // ---------------------------------------------------------------------------
@@ -89,6 +93,11 @@ pub struct MonitorOptions {
 
     /// Hook called when a transaction status changes.
     pub on_tx_status_changed: Option<AsyncCallback<(String, String)>>,
+
+    /// Fallible hook run after a monitor task finishes and before the scheduler
+    /// starts another task. Failures pause scheduling and retry
+    /// with backoff until the hook succeeds or the monitor is stopped.
+    pub after_task: Option<AsyncResultCallback<String>>,
 }
 
 impl Default for MonitorOptions {
@@ -104,6 +113,7 @@ impl Default for MonitorOptions {
             on_tx_broadcasted: None,
             on_tx_proven: None,
             on_tx_status_changed: None,
+            after_task: None,
         }
     }
 }
@@ -204,6 +214,31 @@ async fn run_task_isolated(
     }
 }
 
+/// Wait for an embedding's durable-write barrier after every task outcome.
+/// A task may commit part of its work before returning an error, and monitor
+/// event logging itself writes storage, so the barrier intentionally runs only
+/// after both have completed.
+async fn await_after_task(
+    callback: &AsyncResultCallback<String>,
+    task_name: &str,
+    running: &Arc<AtomicBool>,
+) -> bool {
+    let mut retry_delay_secs = 1_u64;
+    while running.load(Ordering::SeqCst) {
+        match callback(task_name.to_owned()).await {
+            Ok(()) => return true,
+            Err(e) => {
+                error!(
+                    "monitor after_task callback failed after {task_name}: {e}; retrying in {retry_delay_secs}s"
+                );
+                tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay_secs)).await;
+                retry_delay_secs = retry_delay_secs.saturating_mul(2).min(5);
+            }
+        }
+    }
+    false
+}
+
 /// Truncate `log` to at most `max` BYTES on a char boundary. `&log[..1024]` was
 /// a latent panic (F3): provider error strings are interpolated into task logs,
 /// and a multi-byte char straddling the cut would unwind the monitor loop.
@@ -257,6 +292,7 @@ impl Monitor {
         let _check_now = self.check_now.clone();
         let _deactivated_headers = self.deactivated_headers.clone();
         let task_run_wait_msecs = self.options.task_run_wait_msecs;
+        let after_task = self.options.after_task.clone();
 
         // Take tasks out of self for the spawned future.
         // They will be returned when stop_tasks is called.
@@ -324,6 +360,11 @@ impl Monitor {
                                 format!("monitor task {} runTask error: {}", task.name(), e);
                             error!("{}", details);
                             let _ = log_event(&storage, "error1", &details).await;
+                        }
+                    }
+                    if let Some(ref callback) = after_task {
+                        if !await_after_task(callback, task.name(), &running).await {
+                            break;
                         }
                     }
                 }
@@ -652,6 +693,17 @@ impl MonitorBuilder {
         self
     }
 
+    /// Set a fallible hook that runs after each completed task.
+    ///
+    /// The hook runs before the scheduler starts another task. An error pauses
+    /// scheduling and retries with backoff, so embeddings fail closed without
+    /// permanently turning off background processing when a durable replica or
+    /// external acknowledgement is temporarily unavailable.
+    pub fn after_task(mut self, callback: AsyncResultCallback<String>) -> Self {
+        self.options.after_task = Some(callback);
+        self
+    }
+
     /// Build the Monitor instance.
     ///
     /// Validates that required fields (chain, storage, services) are set.
@@ -813,6 +865,7 @@ impl MonitorBuilder {
 mod tests {
     use super::*;
     use crate::services::types::BlockHeader;
+    use std::sync::atomic::AtomicUsize;
 
     // A minimal mock WalletServices for testing.
     // Only constructed indirectly via trait-object boxing in tests below
@@ -1040,6 +1093,27 @@ mod tests {
         let out = run_task_isolated(&mut task).await;
         let err = out.expect_err("a panic must surface as an Err, not an unwind");
         assert!(err.to_string().contains("PANICKED"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn after_task_retries_a_transient_durability_failure_without_stopping() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_for_callback = Arc::clone(&attempts);
+        let callback: AsyncResultCallback<String> = Arc::new(move |_| {
+            let attempts = Arc::clone(&attempts_for_callback);
+            Box::pin(async move {
+                if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Err(WalletError::Internal("temporary artifact outage".to_string()))
+                } else {
+                    Ok(())
+                }
+            })
+        });
+        let running = Arc::new(AtomicBool::new(true));
+
+        assert!(await_after_task(&callback, "test-task", &running).await);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        assert!(running.load(Ordering::SeqCst));
     }
 
     #[test]
