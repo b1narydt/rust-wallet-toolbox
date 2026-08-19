@@ -242,7 +242,8 @@ pub async fn signer_create_action(
             &HashMap::new(),
             *key_deriver,
             identity_pub_key,
-        )?,
+        )
+        .await?,
         SigningBackend::Delegated(provider) => {
             // Let the provider capture per-input spend context before it is
             // asked for signatures (no-op by default).

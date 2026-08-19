@@ -236,7 +236,7 @@ async fn sign_vector_round_trip_is_deterministic() {
         let reference = String::from_utf8_lossy(&signable.reference).to_string();
         (reference, signable.tx, signable.reference)
     };
-    let unlock = caller_unlock_script(&signable_tx, 0, 300, &caller);
+    let unlock = caller_unlock_script(&signable_tx, 0, 300, &caller).await;
 
     // SignActionArgs.reference serializes as base64 on the wire.
     use base64::Engine as _;
@@ -335,7 +335,7 @@ async fn sign_accept_delayed_true_does_not_broadcast_inline() {
         let signable = created.signable_transaction.expect("signable");
         (signable.tx, signable.reference)
     };
-    let unlock = caller_unlock_script(&signable_tx, 0, 300, &caller);
+    let unlock = caller_unlock_script(&signable_tx, 0, 300, &caller).await;
 
     use base64::Engine as _;
     let sign_args = serde_json::json!({

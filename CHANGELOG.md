@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-08-19
+
+Breaking, and the break is one word wide: signing is `async` now.
+
+### Changed
+
+- **`complete_signed_transaction` is `async`.** *(breaking, public API)*
+  `bsv-sdk` 0.5.0 made `ScriptTemplateUnlock::sign` — and therefore
+  `Transaction::{sign, sign_all_inputs}` — `async`, because a template backed by
+  an MPC vault or an HSM reaches its key over the network and a synchronous
+  `sign` forced such a template to refuse at runtime. This crate signs BRC-29
+  inputs through `Transaction::sign`, so the asyncness propagates out through
+  `signer::complete_signed_transaction`, which is re-exported from
+  `crate::signer` and is the direct-signing counterpart of the already-async
+  `complete_signed_transaction_with_provider`. Callers add `.await`.
+
+  Both internal call sites — `signer::methods::create_action` and
+  `signer::methods::sign_action` — were already `async`, so the change is one
+  `.await` each and no restructuring. Nothing else in the public surface moves.
+
+- **`bsv-sdk` 0.4.0 → 0.5.0**, and the `bsv-messagebox-client` dev-dependency
+  0.1.7 → 0.2.0. The dev-dependency is not optional: `cargo publish` resolves
+  dev-dependencies during its verification build, and messagebox 0.1.7 declares
+  `bsv-sdk ^0.4.0`, which would put two `bsv` packages in one graph. That failure
+  is invisible in `cargo build` and shows up only in
+  `tests/record_funded_vectors.rs`, as
+  *"the trait bound `bsv_wallet_toolbox::wallet::Wallet:
+  bsv::wallet::interfaces::WalletInterface` is not satisfied"*.
+
+Verified: `cargo test --workspace --no-fail-fast` — 868 passed, 0 failed, 14
+ignored, exit 0. Exactly the 0.7.1 baseline.
+
+## [0.7.1] - 2026-08-13
+
+### Changed
+
+- **Consumes `bsv-sdk` 0.4.0 and `bsv-messagebox-client` 0.1.7** (which brings
+  `authsocket` 0.1.2), so the whole graph resolves one shared sdk copy. No code
+  change: 0.4's breaking surface — the `ProtoWallet` key-deriver wrap and the
+  `AuthFetchResponse` field addition — does not intersect this crate's usage.
+
+## [0.7.0] - 2026-08-13
+
+### Added
+
+- **Opt-in fallible `after_task` monitor callback** with retry and backoff (#43)
+  — a durability barrier for embedders replicating the wallet DB. `MonitorOptions`
+  gains a public field, which is what makes this a minor rather than a patch.
+- **Durable `sendWith` batch scheduling**, ported from TS `shareReqsWithWorld` (#44).
+
+### Fixed
+
+- `abort_action` base64 reference handling, `proveCertificate` partial-selector
+  parity with TS, and rejection of duplicate `outputIndex` values (#44).
+
 ## [0.6.0] - 2026-08-08
 
 Breaking. Sync replication now carries the data it claimed to.

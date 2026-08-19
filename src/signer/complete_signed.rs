@@ -52,7 +52,7 @@ fn hex_to_bytes(hex: &str) -> Vec<u8> {
 ///
 /// # Returns
 /// The fully signed transaction serialized to bytes.
-pub fn complete_signed_transaction(
+pub async fn complete_signed_transaction(
     tx: &mut Transaction,
     pending_inputs: &[PendingStorageInput],
     spends: &HashMap<u32, SignActionSpend>,
@@ -139,6 +139,7 @@ pub fn complete_signed_transaction(
             pdi.source_satoshis,
             &source_locking_script,
         )
+        .await
         .map_err(|e| WalletError::Internal(format!("Failed to sign input {vin}: {e}")))?;
     }
 
@@ -165,8 +166,8 @@ mod tests {
         (key_deriver, pub_key)
     }
 
-    #[test]
-    fn test_complete_signed_with_no_inputs() {
+    #[tokio::test]
+    async fn test_complete_signed_with_no_inputs() {
         let (key_deriver, pub_key) = test_keys();
         let mut tx = Transaction::new();
         use bsv::script::locking_script::LockingScript;
@@ -181,7 +182,8 @@ mod tests {
         });
 
         let result =
-            complete_signed_transaction(&mut tx, &[], &HashMap::new(), &key_deriver, &pub_key);
+            complete_signed_transaction(&mut tx, &[], &HashMap::new(), &key_deriver, &pub_key)
+                .await;
 
         // Should succeed with no inputs to sign
         assert!(result.is_ok());
@@ -190,8 +192,8 @@ mod tests {
         assert!(!bytes.is_empty());
     }
 
-    #[test]
-    fn test_complete_signed_with_brc29_input() {
+    #[tokio::test]
+    async fn test_complete_signed_with_brc29_input() {
         let (key_deriver, pub_key) = test_keys();
 
         // Create a BRC-29 locking script for the source output
@@ -238,7 +240,8 @@ mod tests {
         }];
 
         let result =
-            complete_signed_transaction(&mut tx, &pdi, &HashMap::new(), &key_deriver, &pub_key);
+            complete_signed_transaction(&mut tx, &pdi, &HashMap::new(), &key_deriver, &pub_key)
+                .await;
 
         assert!(result.is_ok(), "signing should succeed: {:?}", result.err());
         let bytes = result.unwrap();
@@ -257,8 +260,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_complete_signed_invalid_vin_errors() {
+    #[tokio::test]
+    async fn test_complete_signed_invalid_vin_errors() {
         let (key_deriver, pub_key) = test_keys();
         let mut tx = Transaction::new();
 
@@ -272,7 +275,8 @@ mod tests {
         }];
 
         let result =
-            complete_signed_transaction(&mut tx, &pdi, &HashMap::new(), &key_deriver, &pub_key);
+            complete_signed_transaction(&mut tx, &pdi, &HashMap::new(), &key_deriver, &pub_key)
+                .await;
 
         assert!(result.is_err());
     }
