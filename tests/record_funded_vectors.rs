@@ -1463,7 +1463,7 @@ async fn record_one_sign_vector(
     let mut spends: std::collections::HashMap<u32, SignActionSpend> = Default::default();
     for (vin, sats) in &plan.caller_inputs {
         let caller_key = PrivateKey::from_hex(CALLER_KEY).expect("caller key");
-        let unlock = caller_unlock_script(&signable_beef, *vin, *sats, &caller_key);
+        let unlock = caller_unlock_script(&signable_beef, *vin, *sats, &caller_key).await;
         spends.insert(
             *vin as u32,
             SignActionSpend {

@@ -701,7 +701,7 @@ pub fn p2pkh_lock(key: &PrivateKey) -> Vec<u8> {
 
 /// Compute the real P2PKH unlocking script for caller input `vin` of the
 /// signable transaction inside `signable_beef` (RFC 6979, so deterministic).
-pub fn caller_unlock_script(
+pub async fn caller_unlock_script(
     signable_beef: &[u8],
     vin: usize,
     source_sats: u64,
@@ -719,6 +719,7 @@ pub fn caller_unlock_script(
     let template = P2PKH::from_private_key(caller_key.clone());
     let lock = LockingScript::from_binary(&p2pkh_lock(caller_key));
     tx.sign(vin, &template, SIGHASH_ALL | SIGHASH_FORKID, source_sats, &lock)
+        .await
         .expect("caller input sign");
     tx.inputs[vin]
         .unlocking_script

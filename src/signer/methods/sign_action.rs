@@ -64,7 +64,8 @@ pub async fn signer_sign_action(
             &args.spends,
             *key_deriver,
             identity_pub_key,
-        )?,
+        )
+        .await?,
         SigningBackend::Delegated(provider) => {
             provider
                 .prepare_spend_contexts(&tx, &pending.pdi, ctx)
