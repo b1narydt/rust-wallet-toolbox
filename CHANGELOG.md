@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-08-19
+
+### Fixed
+
+- **`list_outputs` with `include: EntireTransactions` failed for the wallet's
+  own transactions** — `unable to merge txid … into beef`. BEEF assembly
+  applied the wallet's `trust_self: Known`, eliding the wallet's own txs as
+  txid-only; the verification step that follows resolves txid-only entries
+  against the in-memory `BeefParty`, which a fresh process holds empty, so
+  the very transactions the caller asked for in full were the ones the call
+  failed on — even with the raw tx and its merkle proof sitting in storage.
+  `EntireTransactions` now assembles with `TrustSelf::No`: it is a request
+  not to apply the elision. First hit by the enterprise box's advert
+  re-publish, which reads its birth transaction's BEEF from the `overlay
+  advertisements` basket on every boot (rust-mpc#326).
+
 ## [0.8.0] - 2026-08-19
 
 Breaking, and the break is one word wide: signing is `async` now.
