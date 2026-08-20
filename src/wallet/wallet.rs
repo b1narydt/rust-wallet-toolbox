@@ -1359,11 +1359,15 @@ impl WalletInterface for Wallet {
             }
 
             if !unique_txids.is_empty() {
-                // Map SDK TrustSelf to local beef TrustSelf
-                let beef_trust_self = match &self.trust_self {
-                    Some(TrustSelf::Known) => crate::storage::beef::TrustSelf::Known,
-                    None => crate::storage::beef::TrustSelf::No,
-                };
+                // The caller asked for ENTIRE transactions, so assembly must not
+                // elide the wallet's own txs as txid-only: the verify step below
+                // resolves txid-only entries against the in-memory BeefParty,
+                // which a fresh process holds EMPTY — trustSelf-elided entries
+                // then fail as "unable to merge txid into beef" even though
+                // storage holds the raw tx and its proof. trustSelf is an
+                // optimization for counterparties that share this wallet's
+                // storage; EntireTransactions is a request not to apply it.
+                let beef_trust_self = crate::storage::beef::TrustSelf::No;
                 let known_txids: HashSet<String> = HashSet::new();
                 let storage_provider = self.storage.get_active().await.map_err(to_sdk_error)?;
 
