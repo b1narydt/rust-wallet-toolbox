@@ -204,13 +204,50 @@ pub async fn signer_create_action(
         // Build signable transaction BEEF for the caller
         let signable_beef = build_beef_bytes(&tx, &dcr.input_beef)?;
 
+        // The unsigned transaction's txid — the SAME value the TS reference
+        // computes here (`prior.tx.id('hex')`, used for noSendChange
+        // outpoints). Persisted on the transaction row so a `listActions` row
+        // for a still-'unsigned' action carries a real 64-hex txid instead of
+        // an empty string (the BRC-100 `Action` row requires one).
+        // `process_action` overwrites it with the final txid when signAction
+        // completes, exactly as it already overwrites `status`.
+        let unsigned_txid = tx
+            .id()
+            .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {e}")))?;
+        {
+            use crate::storage::find_args::{FindTransactionsArgs, TransactionPartial};
+            let rows = storage
+                .find_transactions(&FindTransactionsArgs {
+                    partial: TransactionPartial {
+                        reference: Some(reference.clone()),
+                        ..Default::default()
+                    },
+                    no_raw_tx: true,
+                    ..Default::default()
+                })
+                .await?;
+            if let Some(row) = rows.first() {
+                storage
+                    .update_transaction(
+                        row.transaction_id,
+                        &TransactionPartial {
+                            txid: Some(unsigned_txid.clone()),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+            }
+        }
+
         let no_send_change = if args.is_no_send {
-            let txid = tx
-                .id()
-                .map_err(|e| WalletError::Internal(format!("Failed to compute txid: {e}")))?;
             dcr.no_send_change_output_vouts
                 .as_ref()
-                .map(|vouts| vouts.iter().map(|v| format!("{txid}.{v}")).collect())
+                .map(|vouts| {
+                    vouts
+                        .iter()
+                        .map(|v| format!("{unsigned_txid}.{v}"))
+                        .collect()
+                })
                 .unwrap_or_default()
         } else {
             vec![]
@@ -236,14 +273,16 @@ pub async fn signer_create_action(
         SigningBackend::Local {
             key_deriver,
             identity_pub_key,
-        } => complete_signed_transaction(
-            &mut tx,
-            &pdi,
-            &HashMap::new(),
-            *key_deriver,
-            identity_pub_key,
-        )
-        .await?,
+        } => {
+            complete_signed_transaction(
+                &mut tx,
+                &pdi,
+                &HashMap::new(),
+                *key_deriver,
+                identity_pub_key,
+            )
+            .await?
+        }
         SigningBackend::Delegated(provider) => {
             // Let the provider capture per-input spend context before it is
             // asked for signatures (no-op by default).
