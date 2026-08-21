@@ -489,10 +489,12 @@ async fn outcome_from_create(
                     .iter()
                     .map(|s| serde_json::to_value(s).unwrap_or_default())
                     .collect(),
-                signable_reference: r
-                    .signable_transaction
-                    .as_ref()
-                    .map(|s| String::from_utf8_lossy(&s.reference).to_string()),
+                signable_reference: r.signable_transaction.as_ref().map(|s| {
+                    // The result carries RAW reference bytes; the storage key
+                    // (and the recorded corpus value) is the base64 text.
+                    use base64::Engine as _;
+                    base64::engine::general_purpose::STANDARD.encode(&s.reference)
+                }),
                 change,
                 error: None,
                 message: None,

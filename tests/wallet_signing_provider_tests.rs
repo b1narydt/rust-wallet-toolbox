@@ -637,7 +637,12 @@ mod wallet_signing_provider_tests {
             .await
             .expect("deferred createAction");
         let signable = created.signable_transaction.expect("signable transaction");
-        let reference = String::from_utf8(signable.reference).expect("reference is utf8");
+        let reference = {
+            // The result carries RAW reference bytes; the storage key is the
+            // base64 text they encode to.
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.encode(&signable.reference)
+        };
         assert_eq!(provider.signs(), 0, "nothing signed yet");
 
         let pending = pending_from_signable(&reference, &signable.tx, &provider.root_key);

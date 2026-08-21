@@ -233,7 +233,11 @@ async fn sign_vector_round_trip_is_deterministic() {
         .expect("precursor create");
         bsv_wallet_toolbox::utility::conformance_entropy::clear_conformance_entropy();
         let signable = created.signable_transaction.expect("signable");
-        let reference = String::from_utf8_lossy(&signable.reference).to_string();
+        // Raw reference bytes → the base64 text storage keys the row by.
+        let reference = {
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.encode(&signable.reference)
+        };
         (reference, signable.tx, signable.reference)
     };
     let unlock = caller_unlock_script(&signable_tx, 0, 300, &caller).await;

@@ -4866,7 +4866,7 @@
           }
         ],
         "args": {
-          "reference": "YW5aQTBSYjd5dVJwY2p3NA==",
+          "reference": "anZA0Rb7yuRpcjw4",
           "spends": {
             "0": {
               "unlockingScript": "483045022100d3b0fca5daf016bc6b9295212494e89ea88ec33f9793f0757980f93cae8b8f21022013c3f4b13d50e42b505a1a208a3788ec1791a850ad70b0331793b315e5b767fc4121022f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4"
@@ -4892,7 +4892,8 @@
         "sent": false
       },
       "notes": [
-        "upstream reference/unlockingScript were fabrications (no precursor action exists); recorded against a real signable precursor with a real P2PKH signature over the actual sighash"
+        "upstream reference/unlockingScript were fabrications (no precursor action exists); recorded against a real signable precursor with a real P2PKH signature over the actual sighash",
+        "2026-08-21 wire-encoding fix: args.reference migrated from the double-encoded wire spelling (base64 of the base64 text) to the reference text itself, matching the TS Base64String wire"
       ],
       "upstream": {
         "expected": {
@@ -9741,7 +9742,7 @@
           }
         ],
         "args": {
-          "reference": "bzA4R2sxMzE4bHlwcWpSSw==",
+          "reference": "o08Gk1318lypqjRK",
           "spends": {
             "0": {
               "unlockingScript": "47304402207d2fbc80cc676447a871ca45f5447cd9542599a087cbb5d0844107ee1e31aca5022036394600f220a0cd207baf47c56f47b64ba17ac63b7a5afac59ea97a1e4e62dd4121022f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4"
@@ -9770,7 +9771,8 @@
         "sent": false
       },
       "notes": [
-        "two real caller inputs, both really signed"
+        "two real caller inputs, both really signed",
+        "2026-08-21 wire-encoding fix: args.reference migrated from the double-encoded wire spelling (base64 of the base64 text) to the reference text itself, matching the TS Base64String wire"
       ],
       "upstream": {
         "expected": {
@@ -14618,7 +14620,7 @@
             "acceptDelayedBroadcast": true,
             "noSend": true
           },
-          "reference": "WGNENi9UODVkSGJ4RlFBVg==",
+          "reference": "XcD6/T85dHbxFQAV",
           "spends": {
             "0": {
               "unlockingScript": "483045022100f75adc27d43ac9cd2169bd171c5d7d95fa5c95bf786712c93e8a158cd72416ca02202b840a19212db421e8ee7f16f496f94baba2ad4c3a84343ee24f0c2dd4727ad44121022f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4"
@@ -14644,7 +14646,8 @@
         "sent": false
       },
       "notes": [
-        "precursor created without noSend; the signAction options.noSend=true is what makes the result a noSend"
+        "precursor created without noSend; the signAction options.noSend=true is what makes the result a noSend",
+        "2026-08-21 wire-encoding fix: args.reference migrated from the double-encoded wire spelling (base64 of the base64 text) to the reference text itself, matching the TS Base64String wire"
       ],
       "upstream": {
         "expected": {
@@ -19491,7 +19494,7 @@
           "options": {
             "returnTxidOnly": true
           },
-          "reference": "OVRtS3JyQXJOcXg2OHBxag==",
+          "reference": "9TmKrrArNqx68pqj",
           "spends": {
             "0": {
               "unlockingScript": "483045022100a3571f98553e420041aacc19a3903019aa2728b0ce54f64bf664baf2ef28aa7302200d3de311c12badb91b1b2dac36a6d928350b89662fba1974413c63a469dfcf6e4121022f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4"
@@ -19524,6 +19527,9 @@
         "brc-100",
         "signAction",
         "txid-only"
+      ],
+      "notes": [
+        "2026-08-21 wire-encoding fix: args.reference migrated from the double-encoded wire spelling (base64 of the base64 text) to the reference text itself, matching the TS Base64String wire"
       ]
     },
     {
@@ -24411,7 +24417,7 @@
               "a23129cd891c0d310bea814ef57af0b79c4c457f7f2212d5dae5f3eb429eae5a"
             ]
           },
-          "reference": "RVkxNWFvOGlIaWYvZUJteQ==",
+          "reference": "EY15ao8iHif/eBmy",
           "spends": {
             "0": {
               "unlockingScript": "483045022100c55a0683c53c55cf8c76decef48ac504c009f88260f8d095bf53af217677e745022074b50a996747b126cbad7d72e7a409357a05ea58e5f837ae5d926c72bf45ba784121022f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4"
@@ -24452,7 +24458,8 @@
       },
       "notes": [
         "upstream sendWith txids were placeholders; replaced with the txids of two real noSend precursor actions in the same wallet (the second funded entirely by the first's change via options.noSendChange)",
-        "the signable precursor is a delayed send, not noSend: both the TS reference and this implementation treat isNoSend && isSendWith as an internal error"
+        "the signable precursor is a delayed send, not noSend: both the TS reference and this implementation treat isNoSend && isSendWith as an internal error",
+        "2026-08-21 wire-encoding fix: args.reference migrated from the double-encoded wire spelling (base64 of the base64 text) to the reference text itself, matching the TS Base64String wire"
       ],
       "upstream": {
         "expected": {
@@ -24526,14 +24533,15 @@
       },
       "expected": {
         "error": true,
-        "message": "invalid parameter: spends: must be at least one spend",
+        "message": "invalid parameter: The reference parameter must be a reference for an existing unsigned transaction",
         "status": "error"
       },
       "broadcast": {
         "sent": false
       },
       "notes": [
-        "verbatim upstream args; records the real error"
+        "verbatim upstream args; records the real error",
+        "2026-08-21 reference-parity fix: empty spends is legal (TS validateSignActionArgs has no minimum); the error is now the unknown reference"
       ],
       "upstream": {
         "expected": {
@@ -29381,7 +29389,7 @@
           "options": {
             "acceptDelayedBroadcast": false
           },
-          "reference": "K2xnSEhRSlBuR0J4RXh2YQ==",
+          "reference": "+lgHHQJPnGBxExva",
           "spends": {
             "0": {
               "unlockingScript": "473044022027688a4b37d67591ba5c659cde0526416b5ea1d05d4dd8acc72bb7a5f94c426f022026408716ba648850c2e17dc07ef13725c443180a86276e8eeca4381f0e86e8a34121022f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4"
@@ -29433,7 +29441,8 @@
         "accepted_by": "Bitails"
       },
       "notes": [
-        "recorded with a real inline broadcast (acceptDelayedBroadcast=false); expected.postBeefResponse carries the network's recorded answer, which offline replay serves back instead of the tripwire"
+        "recorded with a real inline broadcast (acceptDelayedBroadcast=false); expected.postBeefResponse carries the network's recorded answer, which offline replay serves back instead of the tripwire",
+        "2026-08-21 wire-encoding fix: args.reference migrated from the double-encoded wire spelling (base64 of the base64 text) to the reference text itself, matching the TS Base64String wire"
       ],
       "upstream": {
         "expected": {

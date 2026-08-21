@@ -1415,7 +1415,11 @@ async fn record_one_sign_vector(
         bsv_wallet_toolbox::utility::conformance_entropy::clear_conformance_entropy();
 
         let st = signable.signable_transaction.expect("signable");
-        reference = String::from_utf8_lossy(&st.reference).to_string();
+        // Raw reference bytes → the base64 text storage keys the row by.
+        reference = {
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.encode(&st.reference)
+        };
         signable_beef = st.tx;
         send_with_txids = vec![ns1_txid, ns2_txid];
         final_setup_json = vec![
@@ -1447,7 +1451,12 @@ async fn record_one_sign_vector(
                 .unwrap_or_else(|e| panic!("{recorded_id}: discovery setup[{i}] failed: {e}"));
             if i == signable_idx {
                 let st = r.signable_transaction.expect("signable");
-                sig_ref = Some((String::from_utf8_lossy(&st.reference).to_string(), st.tx));
+                // Raw reference bytes → base64 text (the storage key).
+                let text = {
+                    use base64::Engine as _;
+                    base64::engine::general_purpose::STANDARD.encode(&st.reference)
+                };
+                sig_ref = Some((text, st.tx));
             }
         }
         bsv_wallet_toolbox::utility::conformance_entropy::clear_conformance_entropy();

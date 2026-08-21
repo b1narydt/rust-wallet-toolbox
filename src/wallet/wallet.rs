@@ -1701,12 +1701,33 @@ impl ContextualWallet for Wallet {
             tx: signer_result.tx,
             no_send_change: signer_result.no_send_change,
             send_with_results: signer_result.send_with_results,
-            signable_transaction: signer_result.signable_transaction.map(|st| {
-                bsv::wallet::interfaces::SignableTransaction {
-                    reference: st.reference.into_bytes(),
-                    tx: st.tx,
+            signable_transaction: match signer_result.signable_transaction {
+                Some(st) => {
+                    // The SDK's `SignableTransaction.reference` is RAW bytes
+                    // that `bytes_as_base64` re-encodes on the wire, and the
+                    // toolbox's reference is already base64 TEXT
+                    // (`random_bytes_base64(12)`, stored verbatim on the
+                    // transaction row). Handing the text's UTF-8 bytes to the
+                    // SDK double-encoded the wire value (base64 of base64) —
+                    // a TS client saw a different string than a TS toolbox
+                    // would return, and `abortAction`'s re-encoding lookup
+                    // could never match the stored row. Decode to the raw
+                    // bytes so the wire carries exactly the stored reference.
+                    use base64::Engine as _;
+                    let reference = base64::engine::general_purpose::STANDARD
+                        .decode(&st.reference)
+                        .map_err(|e| {
+                            SdkWalletError::Internal(format!(
+                                "createAction produced a non-base64 reference: {e}"
+                            ))
+                        })?;
+                    Some(bsv::wallet::interfaces::SignableTransaction {
+                        reference,
+                        tx: st.tx,
+                    })
                 }
-            }),
+                None => None,
+            },
         };
 
         // Merge result beef into BeefParty
@@ -1750,9 +1771,36 @@ impl ContextualWallet for Wallet {
         // create_action_in) — never held across signing or broadcast.
         tracing::debug!("signAction starting");
         self.validate_originator(originator).map_err(to_sdk_error)?;
-        bsv::wallet::validation::validate_sign_action_args(&args)?;
+        // Reference-parity validation (TS `validateSignActionArgs`): `spends`
+        // MAY be empty — signAction legitimately completes an action whose
+        // every input is wallet-signed (the caller supplied no inputs of its
+        // own). The vendored SDK's `validate_sign_action_args` rejects an
+        // empty map ("spends: must be at least one spend"), a rule the TS
+        // reference has never had, so the checks it does share are applied
+        // here instead of calling it.
+        if args.reference.is_empty() {
+            return Err(SdkWalletError::InvalidParameter(
+                "reference: must be non-empty".to_string(),
+            ));
+        }
+        for spend in args.spends.values() {
+            if spend.unlocking_script.is_empty() {
+                return Err(SdkWalletError::InvalidParameter(
+                    "unlocking_script: must be non-empty".to_string(),
+                ));
+            }
+        }
 
-        let reference = String::from_utf8_lossy(&args.reference).to_string();
+        // `args.reference` is the RAW bytes the wire's Base64String decoded to
+        // (SDK `bytes_as_base64`), while createAction stored the base64 TEXT as
+        // the transaction's reference. Re-encode for the storage lookup — the
+        // same bridge `storage::methods::abort_action` crosses; a lossy UTF-8
+        // read here turned the raw bytes into garbage and made a wire-level
+        // signAction unable to find the action its own createAction had built.
+        let reference = {
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.encode(&args.reference)
+        };
         let raw_options = &args.options;
         let options = raw_options.clone().unwrap_or_default();
 
