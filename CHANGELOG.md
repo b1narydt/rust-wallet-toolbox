@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+TS-parity batch. The reference is **ts-stack `packages/wallet/wallet-toolbox`
+2.10.2** — `bsv-blockchain/wallet-toolbox` was archived on 2026-06-12, so the
+live TS toolbox, not the 2.4.0 line this port was written against, is what
+parity now means.
+
+### Fixed
+
+- **`randomizeOutputs` did nothing.** Accepted, validated, defaulted to true and
+  threaded through three layers without being acted on, so change was the
+  trailing vout of every action — the inference the option exists to prevent.
+  Now a port of TS `randomizeOutputVouts` (`actionPlanning.ts`), permuting the
+  vout values while the output array keeps its contract order so the signer can
+  still match `outputs[i]` to `args.outputs[i]`. `random_vals` is honoured as TS
+  honours it; the test expectations are the verbatim TS function's output.
+- **`abort_action` was not atomic.** It ran as separate autocommit statements,
+  so an abort that released the inputs and then failed left a signable action
+  whose coins the funder had already re-lent. TS wraps the same sequence in a
+  transaction; so does this now.
+- **`purge_data` never purged spent outputs** — the spent branch named the Rust
+  field `spent_by` rather than the column `spentBy` and failed with "no such
+  column", so the outputs table only grew.
+- **`get_chain_tracker` returned a cold tracker every call**, discarding the
+  root cache that `internalize_action` — one root lookup per bump — depends on.
+- **The ARC SSE client dialed an endpoint nothing serves** (`/v1/tx/status/stream`
+  with a header token) instead of Arcade's `/events?callbackToken=`, and nothing
+  ever called `connect()`: the task built a client with an empty base URL, so no
+  status event could arrive. Both halves fixed and wired.
+- **Overlay discovery was unreachable** through `WalletBuilder`, which hardcoded
+  `lookup_resolver: None` with no setter, so `discoverByIdentityKey` /
+  `discoverByAttributes` always failed. The wallet now defaults a resolver from
+  its chain, as TS does.
+
+### Added
+
+- `WalletBuilder::lookup_resolver` to point discovery at a private overlay, and
+  `WalletBuilder::arcade_sse` (base URL + callback token) to enable SSE status
+  streaming; `MonitorBuilder::arcade_url` alongside the existing
+  `callback_token`.
+
+### Changed
+
+- Comments corrected where they described behaviour the code no longer has: the
+  signing-provider doc on the crypto surface, the change-selection filter
+  rationale, and a test doc that claimed to be surfacing an already-fixed
+  double-spend bug.
+
 ## [0.8.2] - 2026-08-21
 
 The BEEF the wallet hands back is now the BRC-95 closure it claims to be, and
