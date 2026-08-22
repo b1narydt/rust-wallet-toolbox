@@ -113,6 +113,33 @@ mod sync_tests {
         present_and_empty!(certificates);
     }
 
+    #[tokio::test]
+    async fn test_get_sync_chunk_rejects_unknown_identity() {
+        let storage = setup_storage().await.unwrap();
+        let identity = "02missing-sync-identity";
+        let sync_map = SyncMap::new();
+
+        let err = get_sync_chunk(
+            &storage,
+            GetSyncChunkArgs {
+                from_storage_identity_key: "storage-a".to_string(),
+                to_storage_identity_key: "storage-b".to_string(),
+                user_identity_key: identity.to_string(),
+                sync_map: &sync_map,
+                max_items: 1000,
+                max_rough_size: 10_000_000,
+                offsets: Default::default(),
+            },
+            None,
+        )
+        .await
+        .unwrap_err();
+
+        let message = err.to_string();
+        assert!(message.contains("identityKey"));
+        assert!(message.contains(identity));
+    }
+
     // -----------------------------------------------------------------------
     // Test 2: Insert entities then getSyncChunk returns them
     // -----------------------------------------------------------------------

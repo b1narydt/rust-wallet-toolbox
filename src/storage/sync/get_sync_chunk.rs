@@ -81,30 +81,16 @@ pub async fn get_sync_chunk(
         .find_user_by_identity_key(&args.user_identity_key, trx)
         .await?;
 
-    let user_id = match &user {
-        Some(u) => u.user_id,
-        None => {
-            // No user found -- return empty chunk
-            return Ok(SyncChunk {
-                from_storage_identity_key: args.from_storage_identity_key,
-                to_storage_identity_key: args.to_storage_identity_key,
-                user_identity_key: args.user_identity_key,
-                user: None,
-                proven_txs: Some(vec![]),
-                output_baskets: Some(vec![]),
-                transactions: Some(vec![]),
-                outputs: Some(vec![]),
-                tx_labels: Some(vec![]),
-                tx_label_maps: Some(vec![]),
-                output_tags: Some(vec![]),
-                output_tag_maps: Some(vec![]),
-                certificates: Some(vec![]),
-                certificate_fields: Some(vec![]),
-                commissions: Some(vec![]),
-                proven_tx_reqs: Some(vec![]),
-            });
-        }
-    };
+    let user_id =
+        user.as_ref()
+            .map(|user| user.user_id)
+            .ok_or_else(|| WalletError::InvalidParameter {
+                parameter: "identityKey".to_string(),
+                must_be: format!(
+                    "an identity present in storage; '{}' was not found",
+                    args.user_identity_key
+                ),
+            })?;
 
     // Include user if updated since last sync
     let sync_user = match &user {
