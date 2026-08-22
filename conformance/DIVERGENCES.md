@@ -21,7 +21,7 @@ dispatcher evidence is:
 | Classification | Count | Disposition |
 |---|---:|---|
 | Runner over-assertion | 51 | Removed; assertions now mirror the dispatcher. |
-| `RUST_DEFECT` | 24 | Still executed and individually pinned below. |
+| `RUST_DEFECT` | 24 | Fixed in the Rust SDK; pins removed after all vectors passed. |
 | `SPEC_AMBIGUOUS` | 2 | Still executed and individually pinned below. |
 
 Five of the 51 false divergences are specifically `TS_STUB_ARTEFACT` cases:
@@ -39,45 +39,21 @@ neither dispatcher creates the state named by the scenario. They remain
 explicit at their method branches in `tests/conformance_brc100_info.rs` rather
 than being hidden by a blanket skip.
 
-## Remaining divergences
+## Resolved SDK defect
 
-For BRC-100 call code 10, the wire definition admits `self` and `anyone`
-counterparty sentinels. `ProtoWallet.ts` lines 186-212 derives the specific
-secret, encrypts the linkage and proof, and returns a result for these vectors;
-`wallet.ts` lines 528-535 observes the required result properties. Rust instead
-reaches `proto_wallet.rs` lines 438-445 and returns
-`InvalidParameter("counterparty public key required for linkage revelation")`
-before it can return any result. That is a Rust conformance defect even though
-the official dispatcher intentionally does not compare randomized ciphertext.
+The 24 `wallet.brc100.revealspecifickeylinkage.*` divergences were a real Rust
+defect found by this corpus. The SDK incorrectly refused `self` and `anyone`
+after completing the cryptography. The SDK now returns the original
+`Counterparty` and serializes it with the wire representation (`"self"`,
+`"anyone"`, or compressed public-key hex); all 24 formerly pinned vectors pass
+and have been removed from the divergence ledger.
+
+## Remaining divergences
 
 | Vector ID | Official expectation | Rust behaviour | Verdict |
 |---|---|---|---|
-| `wallet.brc100.revealspecifickeylinkage.1` | Result with `prover`, `encryptedLinkage`, `encryptedLinkageProof`, and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.2` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.3` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.4` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.5` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.6` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.13` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.14` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.15` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.16` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.17` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.18` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.19` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.20` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.21` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.22` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.23` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.24` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.31` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.32` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.33` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.34` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.35` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
-| `wallet.brc100.revealspecifickeylinkage.36` | Result with required properties and matching deterministic fields. | Returns `InvalidParameter`; no result object. | `RUST_DEFECT` |
 | `wallet.brc100.getheaderforheight.2` | Exact Bitcoin genesis header for height 0. | BRC-100 argument validation rejects height 0 before services are called. | `SPEC_AMBIGUOUS`: the corpus/dispatcher accepts genesis height 0, but BRC-100 types `height` as `PositiveInteger` excluding zero. |
 | `wallet.brc100.getheaderforheight.8` | Exact Bitcoin genesis header for height 0. | BRC-100 argument validation rejects height 0 before services are called. | `SPEC_AMBIGUOUS`: same normative type/vector conflict; the vector note itself acknowledges implementations starting at 1. |
 
-All 26 rows execute. The two source ledgers fail if an ID unexpectedly appears
-or disappears; none is listed in `RUST_RUNNERS.json` as skipped.
+Both rows execute. The source ledger fails if an ID unexpectedly appears or
+disappears; neither is listed in `RUST_RUNNERS.json` as skipped.

@@ -70,13 +70,11 @@ fn counterparty_json(result: RevealCounterpartyResult) -> Value {
 fn specific_json(result: RevealSpecificResult) -> Value {
     json!({
         "prover": result.prover.to_der_hex(),
-        "verifier": result.verifier.to_der_hex(),
-        "counterparty": result.counterparty.to_der_hex(),
+        "counterparty": result.counterparty,
         "protocolID": result.protocol,
         "keyID": result.key_id,
         "encryptedLinkage": result.encrypted_linkage,
         "encryptedLinkageProof": result.encrypted_linkage_proof,
-        "proofType": result.proof_type,
     })
 }
 
@@ -97,56 +95,6 @@ fn specific_matches_official_dispatcher(expected: &Value, actual: &Value) -> boo
     }
     true
 }
-
-fn assert_known_divergences(channel: &str, failures: &[String], known: &[&str]) {
-    let unexpected: Vec<&String> = failures
-        .iter()
-        .filter(|failure| !known.iter().any(|id| failure.starts_with(*id)))
-        .collect();
-    let resolved: Vec<&&str> = known
-        .iter()
-        .filter(|id| !failures.iter().any(|failure| failure.starts_with(**id)))
-        .collect();
-    assert!(
-        unexpected.is_empty() && resolved.is_empty(),
-        "{channel}: divergence ledger out of date.\nUnexpected failures:\n{}\nResolved (remove from ledger):\n{}\nAll failures:\n{}",
-        unexpected.iter().map(|failure| format!("  {failure}")).collect::<Vec<_>>().join("\n"),
-        resolved.iter().map(|id| format!("  {id}")).collect::<Vec<_>>().join("\n"),
-        failures.join("\n")
-    );
-}
-
-/// `RUST_DEFECT`: BRC-100 call-code 10 serializes `self` and `anyone` as valid
-/// counterparty sentinels, and TS ProtoWallet.ts lines 186-212 derives,
-/// encrypts, and returns both linkage properties for them. Rust completes the
-/// crypto but then refuses to construct a result unless `counterparty` carries
-/// a concrete public key. Every affected official success vector is pinned.
-const RUST_DEFECT_SPECIFIC_LINKAGE: &[&str] = &[
-    "wallet.brc100.revealspecifickeylinkage.1:",
-    "wallet.brc100.revealspecifickeylinkage.2:",
-    "wallet.brc100.revealspecifickeylinkage.3:",
-    "wallet.brc100.revealspecifickeylinkage.4:",
-    "wallet.brc100.revealspecifickeylinkage.5:",
-    "wallet.brc100.revealspecifickeylinkage.6:",
-    "wallet.brc100.revealspecifickeylinkage.13:",
-    "wallet.brc100.revealspecifickeylinkage.14:",
-    "wallet.brc100.revealspecifickeylinkage.15:",
-    "wallet.brc100.revealspecifickeylinkage.16:",
-    "wallet.brc100.revealspecifickeylinkage.17:",
-    "wallet.brc100.revealspecifickeylinkage.18:",
-    "wallet.brc100.revealspecifickeylinkage.19:",
-    "wallet.brc100.revealspecifickeylinkage.20:",
-    "wallet.brc100.revealspecifickeylinkage.21:",
-    "wallet.brc100.revealspecifickeylinkage.22:",
-    "wallet.brc100.revealspecifickeylinkage.23:",
-    "wallet.brc100.revealspecifickeylinkage.24:",
-    "wallet.brc100.revealspecifickeylinkage.31:",
-    "wallet.brc100.revealspecifickeylinkage.32:",
-    "wallet.brc100.revealspecifickeylinkage.33:",
-    "wallet.brc100.revealspecifickeylinkage.34:",
-    "wallet.brc100.revealspecifickeylinkage.35:",
-    "wallet.brc100.revealspecifickeylinkage.36:",
-];
 
 #[test]
 fn corpus_shape() {
@@ -252,9 +200,10 @@ fn revealspecifickeylinkage_conformance() {
     }
 
     assert_eq!(file.vectors.len(), 36, "every vector must execute");
-    assert_known_divergences(
-        "revealSpecificKeyLinkage",
-        &failures,
-        RUST_DEFECT_SPECIFIC_LINKAGE,
+    assert!(
+        failures.is_empty(),
+        "{} of 36 revealSpecificKeyLinkage vectors diverged:\n{}",
+        failures.len(),
+        failures.join("\n")
     );
 }
