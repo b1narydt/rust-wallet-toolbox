@@ -526,6 +526,131 @@ async fn abort_signed_nosend_recovers_raw_inputs_and_invalidates_its_request() {
     );
 }
 
+#[tokio::test]
+async fn find_outputs_applies_supported_metadata_filters_and_omits_scripts() {
+    let s = storage().await.unwrap();
+    let user_id = seed_user(&s).await;
+    let tx_id = seed_tx(
+        &s,
+        user_id,
+        "find-output-metadata",
+        TransactionStatus::Completed,
+    )
+    .await;
+    let output_id = seed_output(&s, user_id, tx_id, 0, true, None).await;
+    StorageReaderWriter::update_output(
+        &s,
+        output_id,
+        &OutputPartial {
+            output_description: Some("the output".to_string()),
+            spending_description: Some("the spend".to_string()),
+            custom_instructions: Some("custom".to_string()),
+            script_length: Some(25),
+            script_offset: Some(42),
+            locking_script: Some(vec![0x51, 0x21]),
+            ..Default::default()
+        },
+        None,
+    )
+    .await
+    .unwrap();
+
+    macro_rules! assert_filter {
+        ($field:ident, $matching:expr, $missing:expr) => {{
+            let matched = StorageReader::find_outputs(
+                &s,
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        $field: Some($matching),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                matched.len(),
+                1,
+                "{} matching predicate",
+                stringify!($field)
+            );
+            assert_eq!(matched[0].output_id, output_id);
+
+            let absent = StorageReader::find_outputs(
+                &s,
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        $field: Some($missing),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+            assert!(
+                absent.is_empty(),
+                "{} must constrain the query",
+                stringify!($field)
+            );
+        }};
+    }
+    assert_filter!(
+        output_description,
+        "the output".to_string(),
+        "other output".to_string()
+    );
+    assert_filter!(
+        spending_description,
+        "the spend".to_string(),
+        "other spend".to_string()
+    );
+    assert_filter!(
+        custom_instructions,
+        "custom".to_string(),
+        "other".to_string()
+    );
+    assert_filter!(script_length, 25, 26);
+    assert_filter!(script_offset, 42, 43);
+
+    let without_script = StorageReader::find_outputs(
+        &s,
+        &FindOutputsArgs {
+            partial: OutputPartial {
+                output_id: Some(output_id),
+                ..Default::default()
+            },
+            no_script: true,
+            ..Default::default()
+        },
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(without_script.len(), 1);
+    assert!(without_script[0].locking_script.is_none());
+
+    let err = StorageReader::find_outputs(
+        &s,
+        &FindOutputsArgs {
+            partial: OutputPartial {
+                locking_script: Some(vec![0x51, 0x21]),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        None,
+    )
+    .await
+    .unwrap_err();
+    let message = err.to_string();
+    assert!(message.contains("args.partial.lockingScript"));
+    assert!(message.contains("undefined"));
+}
+
 fn base64_encode(bytes: &[u8]) -> String {
     use base64::Engine as _;
     base64::engine::general_purpose::STANDARD.encode(bytes)

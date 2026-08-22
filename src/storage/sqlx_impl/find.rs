@@ -8,6 +8,20 @@
 //! `impl_storage_reader_find!` macro to avoid massive code duplication.
 //! The key difference is placeholder style: `?` for SQLite/MySQL, `$N` for PostgreSQL.
 
+const OUTPUTS_WITHOUT_LOCKING_SCRIPT: &str = "created_at, updated_at, outputId, userId, \
+    transactionId, basketId, spendable, change, vout, satoshis, providedBy, purpose, type, \
+    outputDescription, txid, senderIdentityKey, derivationPrefix, derivationSuffix, \
+    customInstructions, spentBy, sequenceNumber, spendingDescription, scriptLength, \
+    scriptOffset, NULL AS lockingScript";
+
+#[cfg_attr(not(feature = "postgres"), allow(dead_code))]
+const POSTGRES_OUTPUTS_WITHOUT_LOCKING_SCRIPT: &str = "\"created_at\", \"updated_at\", \
+    \"outputId\", \"userId\", \"transactionId\", \"basketId\", \"spendable\", \"change\", \
+    \"vout\", \"satoshis\", \"providedBy\", \"purpose\", \"type\", \"outputDescription\", \
+    \"txid\", \"senderIdentityKey\", \"derivationPrefix\", \"derivationSuffix\", \
+    \"customInstructions\", \"spentBy\", \"sequenceNumber\", \"spendingDescription\", \
+    \"scriptLength\", \"scriptOffset\", NULL AS \"lockingScript\"";
+
 #[cfg(feature = "sqlite")]
 mod sqlite_impl {
     use async_trait::async_trait;
@@ -446,7 +460,13 @@ mod sqlite_impl {
         (sql, binds)
     }
 
-    fn build_outputs_where(args: &FindOutputsArgs) -> (String, Vec<SqliteBindValue>) {
+    fn build_outputs_where(args: &FindOutputsArgs) -> WalletResult<(String, Vec<SqliteBindValue>)> {
+        if args.partial.locking_script.is_some() {
+            return Err(WalletError::InvalidParameter {
+                parameter: "args.partial.lockingScript".to_string(),
+                must_be: "undefined. Outputs may not be found by lockingScript value.".to_string(),
+            });
+        }
         let mut wb = WhereBuilder::new_sqlite();
         let mut binds = Vec::new();
         if let Some(v) = &args.partial.output_id {
@@ -505,6 +525,26 @@ mod sqlite_impl {
             wb.add_eq("spentBy");
             binds.push(SqliteBindValue::Int64(*v));
         }
+        if let Some(v) = &args.partial.output_description {
+            wb.add_eq("outputDescription");
+            binds.push(SqliteBindValue::String(v.clone()));
+        }
+        if let Some(v) = &args.partial.spending_description {
+            wb.add_eq("spendingDescription");
+            binds.push(SqliteBindValue::String(v.clone()));
+        }
+        if let Some(v) = &args.partial.custom_instructions {
+            wb.add_eq("customInstructions");
+            binds.push(SqliteBindValue::String(v.clone()));
+        }
+        if let Some(v) = &args.partial.script_length {
+            wb.add_eq("scriptLength");
+            binds.push(SqliteBindValue::Int64(*v));
+        }
+        if let Some(v) = &args.partial.script_offset {
+            wb.add_eq("scriptOffset");
+            binds.push(SqliteBindValue::Int64(*v));
+        }
         if let Some(statuses) = &args.tx_status {
             if !statuses.is_empty() {
                 wb.add_subquery_in(
@@ -534,7 +574,7 @@ mod sqlite_impl {
                 paged,
             ));
         }
-        (sql, binds)
+        Ok((sql, binds))
     }
 
     fn build_proven_txs_where(args: &FindProvenTxsArgs) -> (String, Vec<SqliteBindValue>) {
@@ -1023,8 +1063,13 @@ mod sqlite_impl {
             args: &FindOutputsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<Output>> {
-            let (where_clause, binds) = build_outputs_where(args);
-            let sql = format!("SELECT * FROM outputs{where_clause}");
+            let (where_clause, binds) = build_outputs_where(args)?;
+            let columns = if args.no_script {
+                super::OUTPUTS_WITHOUT_LOCKING_SCRIPT
+            } else {
+                "*"
+            };
+            let sql = format!("SELECT {columns} FROM outputs{where_clause}");
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1033,7 +1078,7 @@ mod sqlite_impl {
             args: &FindOutputsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_outputs_where(args);
+            let (where_clause, binds) = build_outputs_where(args)?;
             let sql = format!("SELECT COUNT(*) FROM outputs{where_clause}");
             query_count(self, &sql, binds, trx).await
         }
@@ -1733,7 +1778,14 @@ macro_rules! impl_storage_reader_find {
                 (sql, binds)
             }
 
-            fn build_outputs_where(args: &FindOutputsArgs) -> (String, Vec<BindVal>) {
+            fn build_outputs_where(args: &FindOutputsArgs) -> WalletResult<(String, Vec<BindVal>)> {
+                if args.partial.locking_script.is_some() {
+                    return Err(WalletError::InvalidParameter {
+                        parameter: "args.partial.lockingScript".to_string(),
+                        must_be: "undefined. Outputs may not be found by lockingScript value."
+                            .to_string(),
+                    });
+                }
                 let mut w = wb();
                 let mut binds = Vec::new();
                 if let Some(v) = &args.partial.output_id {
@@ -1792,6 +1844,26 @@ macro_rules! impl_storage_reader_find {
                     w.add_eq("spentBy");
                     binds.push(BindVal::Int64(*v));
                 }
+                if let Some(v) = &args.partial.output_description {
+                    w.add_eq("outputDescription");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.spending_description {
+                    w.add_eq("spendingDescription");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.custom_instructions {
+                    w.add_eq("customInstructions");
+                    binds.push(BindVal::String(v.clone()));
+                }
+                if let Some(v) = &args.partial.script_length {
+                    w.add_eq("scriptLength");
+                    binds.push(BindVal::Int64(*v));
+                }
+                if let Some(v) = &args.partial.script_offset {
+                    w.add_eq("scriptOffset");
+                    binds.push(BindVal::Int64(*v));
+                }
                 if let Some(statuses) = &args.tx_status {
                     if !statuses.is_empty() {
                         w.add_subquery_in(
@@ -1819,7 +1891,7 @@ macro_rules! impl_storage_reader_find {
                         paged,
                     ));
                 }
-                (sql, binds)
+                Ok((sql, binds))
             }
 
             fn build_proven_txs_where(args: &FindProvenTxsArgs) -> (String, Vec<BindVal>) {
@@ -2285,15 +2357,23 @@ macro_rules! impl_storage_reader_find {
                     args: &FindOutputsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<Output>> {
-                    let (w, b) = build_outputs_where(args);
-                    query_rows(self, &format!("SELECT * FROM outputs{}", w), b, trx).await
+                    let (w, b) = build_outputs_where(args)?;
+                    let columns = if args.no_script {
+                        match $dialect {
+                            Dialect::Postgres => super::POSTGRES_OUTPUTS_WITHOUT_LOCKING_SCRIPT,
+                            _ => super::OUTPUTS_WITHOUT_LOCKING_SCRIPT,
+                        }
+                    } else {
+                        "*"
+                    };
+                    query_rows(self, &format!("SELECT {columns} FROM outputs{w}"), b, trx).await
                 }
                 async fn count_outputs(
                     &self,
                     args: &FindOutputsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_outputs_where(args);
+                    let (w, b) = build_outputs_where(args)?;
                     query_count(self, &format!("SELECT COUNT(*) FROM outputs{}", w), b, trx).await
                 }
                 async fn find_proven_txs(
