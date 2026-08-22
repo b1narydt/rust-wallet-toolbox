@@ -39,12 +39,16 @@ vendor or assert.
 | `vectors/wallet/storage/adapter-conformance.json` (18) | `tests/conformance_storage_adapter.rs` — storage adapter contract |
 
 The vendored pure-function BRC-100 and BRC-29 files are all asserted by the
-grouped runners above. Known reference divergences are pinned per vector in
-the runner source; none of these files has a governed skip.
+grouped runners above. Assertions mirror the official dispatcher method by
+method: deterministic values are exact, randomized encryption is round-trip,
+and shape-only/state-stub channels remain shape-only. The re-adjudicated
+per-vector evidence is in [`DIVERGENCES.md`](DIVERGENCES.md); none of these
+files has a governed skip.
 
 Each runner asserts the exact number of vectors loaded and executed, names the
-vector `id` in every failure, and runs error vectors as first-class assertions
-(the operation must fail, for the stated reason). Divergences from the
+vector `id` in every failure, and applies the official dispatcher's error
+semantics (`rejects.toThrow()` where that is what upstream asserts, without
+inventing a stricter error-identity comparison). Divergences from the
 reference that we deliberately do not paper over are pinned in an explicit
 per-runner ledger keyed by vector `id` — the test fails if a divergence
 appears, disappears, or changes shape, so the ledger cannot drift silently.
