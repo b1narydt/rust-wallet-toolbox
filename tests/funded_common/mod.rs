@@ -26,8 +26,8 @@ use async_trait::async_trait;
 
 use bsv::primitives::private_key::PrivateKey;
 use bsv::primitives::public_key::PublicKey;
-use bsv::transaction::chain_tracker::ChainTracker;
 use bsv::transaction::beef::Beef;
+use bsv::transaction::chain_tracker::ChainTracker;
 use bsv::transaction::TransactionError;
 use bsv::wallet::interfaces::{
     CreateActionArgs, CreateActionResult, InternalizeActionArgs, InternalizeOutput, Payment,
@@ -331,7 +331,10 @@ pub async fn build_vector_wallet(
         .without_monitor()
         .build()
         .await?;
-    setup.storage.find_or_insert_user(&setup.identity_key).await?;
+    setup
+        .storage
+        .find_or_insert_user(&setup.identity_key)
+        .await?;
     Ok(setup)
 }
 
@@ -395,20 +398,21 @@ pub async fn change_outputs_for_txid(
     txid: &str,
 ) -> WalletResult<Vec<ChangeInfo>> {
     use bsv_wallet_toolbox::storage::find_args::{FindOutputsArgs, OutputPartial};
-    let (user, _) = setup.storage.find_or_insert_user(&setup.identity_key).await?;
+    let (user, _) = setup
+        .storage
+        .find_or_insert_user(&setup.identity_key)
+        .await?;
     let outputs = setup
         .storage
-        .find_outputs(
-            &FindOutputsArgs {
-                partial: OutputPartial {
-                    user_id: Some(user.user_id),
-                    txid: Some(txid.to_string()),
-                    change: Some(true),
-                    ..Default::default()
-                },
+        .find_outputs(&FindOutputsArgs {
+            partial: OutputPartial {
+                user_id: Some(user.user_id),
+                txid: Some(txid.to_string()),
+                change: Some(true),
                 ..Default::default()
             },
-        )
+            ..Default::default()
+        })
         .await?;
     let mut infos: Vec<ChangeInfo> = outputs
         .iter()
@@ -720,9 +724,15 @@ pub async fn caller_unlock_script(
 
     let template = P2PKH::from_private_key(caller_key.clone());
     let lock = LockingScript::from_binary(&p2pkh_lock(caller_key));
-    tx.sign(vin, &template, SIGHASH_ALL | SIGHASH_FORKID, source_sats, &lock)
-        .await
-        .expect("caller input sign");
+    tx.sign(
+        vin,
+        &template,
+        SIGHASH_ALL | SIGHASH_FORKID,
+        source_sats,
+        &lock,
+    )
+    .await
+    .expect("caller input sign");
     tx.inputs[vin]
         .unlocking_script
         .as_ref()

@@ -914,7 +914,7 @@ mod sync_tests {
             user_identity_key: "02abc999".to_string(),
             sync_map: &empty_map,
             max_items: 1000,
-                max_rough_size: 10_000_000,
+            max_rough_size: 10_000_000,
             offsets: Default::default(),
         };
 
@@ -1155,15 +1155,25 @@ mod sync_tests {
         // All three timestamps are in the past relative to the local clock: if
         // the t2 merge stamps the row with "now", t3 is no longer strictly
         // newer and the third update is silently rejected.
-        process_sync_chunk(&target, chunk_with(mk_label(t1, false)), &mut sync_map, None)
-            .await
-            .unwrap();
+        process_sync_chunk(
+            &target,
+            chunk_with(mk_label(t1, false)),
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap();
         process_sync_chunk(&target, chunk_with(mk_label(t2, true)), &mut sync_map, None)
             .await
             .unwrap();
-        let third = process_sync_chunk(&target, chunk_with(mk_label(t3, false)), &mut sync_map, None)
-            .await
-            .unwrap();
+        let third = process_sync_chunk(
+            &target,
+            chunk_with(mk_label(t3, false)),
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap();
 
         let labels = target
             .find_tx_labels(
@@ -1211,7 +1221,9 @@ mod sync_tests {
             && c.proven_tx_reqs.as_ref().is_some_and(|v| v.is_empty())
     }
 
-    fn offsets_from(map: &SyncMap) -> bsv_wallet_toolbox::storage::sync::get_sync_chunk::SyncChunkOffsets {
+    fn offsets_from(
+        map: &SyncMap,
+    ) -> bsv_wallet_toolbox::storage::sync::get_sync_chunk::SyncChunkOffsets {
         bsv_wallet_toolbox::storage::sync::get_sync_chunk::SyncChunkOffsets {
             proven_tx: map.proven_tx.count,
             output_basket: map.output_basket.count,
@@ -1265,7 +1277,10 @@ mod sync_tests {
         let t3 = dt("2024-02-15 09:00:00");
 
         // Round-1 state: a transaction, two labels, one map.
-        let tx_id = source.insert_transaction(&mk_tx(user_id, t1, 0), None).await.unwrap();
+        let tx_id = source
+            .insert_transaction(&mk_tx(user_id, t1, 0), None)
+            .await
+            .unwrap();
         let mk_label = |label: &str| TxLabel {
             created_at: t1,
             updated_at: t1,
@@ -1274,8 +1289,14 @@ mod sync_tests {
             label: label.to_string(),
             is_deleted: false,
         };
-        let label1_id = source.insert_tx_label(&mk_label("cr-label-1"), None).await.unwrap();
-        let label2_id = source.insert_tx_label(&mk_label("cr-label-2"), None).await.unwrap();
+        let label1_id = source
+            .insert_tx_label(&mk_label("cr-label-1"), None)
+            .await
+            .unwrap();
+        let label2_id = source
+            .insert_tx_label(&mk_label("cr-label-2"), None)
+            .await
+            .unwrap();
         source
             .insert_tx_label_map(
                 &TxLabelMap {
@@ -1391,7 +1412,12 @@ mod sync_tests {
         // every map references a parent beyond the first chunk's budget.
         let mut tx_ids = Vec::new();
         for i in 0..30 {
-            tx_ids.push(source.insert_transaction(&mk_tx(user_id, t1, i), None).await.unwrap());
+            tx_ids.push(
+                source
+                    .insert_transaction(&mk_tx(user_id, t1, i), None)
+                    .await
+                    .unwrap(),
+            );
         }
         let label_id = source
             .insert_tx_label(
@@ -1496,7 +1522,10 @@ mod sync_tests {
         let user_id = insert_test_user(&source, "02rough").await;
         let t1 = dt("2024-01-15 10:00:00");
         for i in 0..5 {
-            source.insert_transaction(&mk_tx(user_id, t1, i), None).await.unwrap();
+            source
+                .insert_transaction(&mk_tx(user_id, t1, i), None)
+                .await
+                .unwrap();
         }
 
         let producer_map = SyncMap::new();

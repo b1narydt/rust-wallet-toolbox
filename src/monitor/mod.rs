@@ -1103,7 +1103,9 @@ mod tests {
             let attempts = Arc::clone(&attempts_for_callback);
             Box::pin(async move {
                 if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                    Err(WalletError::Internal("temporary artifact outage".to_string()))
+                    Err(WalletError::Internal(
+                        "temporary artifact outage".to_string(),
+                    ))
                 } else {
                     Ok(())
                 }

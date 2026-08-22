@@ -147,7 +147,10 @@ fn getpublickey_conformance() {
                     // lowercase leading "protocol"; compare case-insensitively
                     // so only a REAL message change fails, not the known
                     // capitalization difference.
-                    if !got_msg.to_ascii_lowercase().contains(&want_msg.to_ascii_lowercase()) {
+                    if !got_msg
+                        .to_ascii_lowercase()
+                        .contains(&want_msg.to_ascii_lowercase())
+                    {
                         failures.push(format!(
                             "{}: expected error message {want_msg:?}, got {got_msg:?}",
                             v.id
@@ -175,7 +178,10 @@ fn getpublickey_conformance() {
         }
     }
 
-    assert_eq!(executed, 201, "every vector must execute — no silent filtering");
+    assert_eq!(
+        executed, 201,
+        "every vector must execute — no silent filtering"
+    );
     assert!(
         failures.is_empty(),
         "{} of 201 getPublicKey vectors diverged from the TS reference:\n{}",

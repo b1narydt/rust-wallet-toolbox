@@ -366,10 +366,17 @@ fn assert_known_divergences(channel: &str, failures: &[String], known: &[&str]) 
 #[test]
 fn corpus_shape() {
     let lo = load(LISTOUTPUTS, "wallet.brc100.listoutputs");
-    assert_eq!(lo.vectors.len(), 144, "listoutputs count changed on refresh");
+    assert_eq!(
+        lo.vectors.len(),
+        144,
+        "listoutputs count changed on refresh"
+    );
     assert_eq!(lo.vectors.iter().filter(|v| v.skip).count(), 0);
     assert_eq!(
-        lo.vectors.iter().filter(|v| v.skip_reason.is_some()).count(),
+        lo.vectors
+            .iter()
+            .filter(|v| v.skip_reason.is_some())
+            .count(),
         0
     );
 
@@ -385,7 +392,11 @@ fn corpus_shape() {
     assert_eq!(la_seeded, vec!["wallet.brc100.listactions.14"]);
 
     let pc = load(PROVECERTIFICATE, "wallet.brc100.provecertificate");
-    assert_eq!(pc.vectors.len(), 8, "provecertificate count changed on refresh");
+    assert_eq!(
+        pc.vectors.len(),
+        8,
+        "provecertificate count changed on refresh"
+    );
     assert_eq!(pc.vectors.iter().filter(|v| v.skip).count(), 0);
     // 7 of 8 are marked "requires pre-existing certificate" by the corpus
     // itself (the reference dispatcher skipped them); only .5 ran fresh.
@@ -437,7 +448,12 @@ async fn getnetwork_conformance() {
         };
 
         let built = backend
-            .build(&VectorIdentity { root_key_hex: DEFAULT_ROOT }, chain)
+            .build(
+                &VectorIdentity {
+                    root_key_hex: DEFAULT_ROOT,
+                },
+                chain,
+            )
             .await;
 
         let want = v.expected["network"]
@@ -455,7 +471,10 @@ async fn getnetwork_conformance() {
                 v.id,
                 r.network.as_str()
             )),
-            Err(e) => failures.push(format!("{}: expected network {want:?}, got error {e}", v.id)),
+            Err(e) => failures.push(format!(
+                "{}: expected network {want:?}, got error {e}",
+                v.id
+            )),
         }
     }
 
@@ -528,7 +547,12 @@ async fn listoutputs_conformance() {
     // One wallet for all 144 vectors: every call is a read against an empty
     // wallet, so no vector can perturb another.
     let built = backend
-        .build(&VectorIdentity { root_key_hex: DEFAULT_ROOT }, Chain::Main)
+        .build(
+            &VectorIdentity {
+                root_key_hex: DEFAULT_ROOT,
+            },
+            Chain::Main,
+        )
         .await;
 
     let mut executed = 0usize;
@@ -576,7 +600,10 @@ async fn listoutputs_conformance() {
         }
     }
 
-    assert_eq!(executed, 144, "every listoutputs vector must execute — no silent filtering");
+    assert_eq!(
+        executed, 144,
+        "every listoutputs vector must execute — no silent filtering"
+    );
     assert_known_divergences("listOutputs", &failures, KNOWN_LISTOUTPUTS_DIVERGENCES);
 }
 
@@ -615,7 +642,12 @@ async fn listactions_conformance() {
     // Shared wallet for the fresh-empty vectors (reads on an empty wallet
     // cannot interfere); the seeded vector gets its own.
     let fresh = backend
-        .build(&VectorIdentity { root_key_hex: DEFAULT_ROOT }, Chain::Main)
+        .build(
+            &VectorIdentity {
+                root_key_hex: DEFAULT_ROOT,
+            },
+            Chain::Main,
+        )
         .await;
 
     let mut executed = 0usize;
@@ -627,7 +659,12 @@ async fn listactions_conformance() {
         let built;
         let wallet = if v.id == "wallet.brc100.listactions.14" {
             built = backend
-                .build(&VectorIdentity { root_key_hex: DEFAULT_ROOT }, Chain::Main)
+                .build(
+                    &VectorIdentity {
+                        root_key_hex: DEFAULT_ROOT,
+                    },
+                    Chain::Main,
+                )
                 .await;
             seed_listactions_14(&built).await;
             &built.wallet
@@ -647,7 +684,10 @@ async fn listactions_conformance() {
             .as_u64()
             .unwrap_or_else(|| panic!("{}: expected.totalActions missing", v.id));
 
-        match wallet.list_actions(args, v.input.originator.as_deref()).await {
+        match wallet
+            .list_actions(args, v.input.originator.as_deref())
+            .await
+        {
             Ok(r) => {
                 if u64::from(r.total_actions) != want_total {
                     failures.push(format!(
@@ -695,9 +735,10 @@ async fn seed_listactions_14(built: &BuiltWallet) {
         .expect("storage-seeded vector requires the local backend");
     let now = chrono::Utc::now().naive_utc();
 
-    let (user, _) = StorageReaderWriter::find_or_insert_user(storage.as_ref(), &built.identity_key, None)
-        .await
-        .expect("user");
+    let (user, _) =
+        StorageReaderWriter::find_or_insert_user(storage.as_ref(), &built.identity_key, None)
+            .await
+            .expect("user");
 
     let tx_id = StorageReaderWriter::insert_transaction(
         storage.as_ref(),
@@ -777,18 +818,34 @@ fn compare_action(
         diff("version", w.to_string(), u64::from(got.version).to_string());
     }
     if let Some(w) = want["lockTime"].as_u64() {
-        diff("lockTime", w.to_string(), u64::from(got.lock_time).to_string());
+        diff(
+            "lockTime",
+            w.to_string(),
+            u64::from(got.lock_time).to_string(),
+        );
     }
     if let Some(w) = want["labels"].as_array() {
         let want_labels: Vec<&str> = w.iter().filter_map(|x| x.as_str()).collect();
         let got_labels: Vec<&str> = got.labels.iter().map(|s| s.as_str()).collect();
-        diff("labels", format!("{want_labels:?}"), format!("{got_labels:?}"));
+        diff(
+            "labels",
+            format!("{want_labels:?}"),
+            format!("{got_labels:?}"),
+        );
     }
     if let Some(w) = want["inputs"].as_array() {
-        diff("inputs.len", w.len().to_string(), got.inputs.len().to_string());
+        diff(
+            "inputs.len",
+            w.len().to_string(),
+            got.inputs.len().to_string(),
+        );
     }
     if let Some(w) = want["outputs"].as_array() {
-        diff("outputs.len", w.len().to_string(), got.outputs.len().to_string());
+        diff(
+            "outputs.len",
+            w.len().to_string(),
+            got.outputs.len().to_string(),
+        );
     }
 }
 
@@ -870,7 +927,12 @@ async fn provecertificate_conformance() {
                 // If a corpus refresh makes the args representable, run them
                 // against a fresh wallet exactly as the reference did.
                 let built = backend
-                    .build(&VectorIdentity { root_key_hex: SUBJECT_ROOT }, Chain::Main)
+                    .build(
+                        &VectorIdentity {
+                            root_key_hex: SUBJECT_ROOT,
+                        },
+                        Chain::Main,
+                    )
                     .await;
                 let outcome = built
                     .wallet
@@ -903,7 +965,12 @@ async fn provecertificate_conformance() {
     // plaintext field value. Both are asserted for every success vector.
     {
         let built = backend
-            .build(&VectorIdentity { root_key_hex: SUBJECT_ROOT }, Chain::Main)
+            .build(
+                &VectorIdentity {
+                    root_key_hex: SUBJECT_ROOT,
+                },
+                Chain::Main,
+            )
             .await;
         let seeded = seed_certificate(&built, &f).await;
 
@@ -911,8 +978,7 @@ async fn provecertificate_conformance() {
 
         for v in &f.vectors {
             let mut args_json = v.input.args.clone();
-            args_json["certificate"]["type"] =
-                Value::String(seeded.cert_type_b64.clone());
+            args_json["certificate"]["type"] = Value::String(seeded.cert_type_b64.clone());
             let args: ProveCertificateArgs = serde_json::from_value(args_json)
                 .unwrap_or_else(|e| panic!("{}: mechanism args must deserialize: {e}", v.id));
 
@@ -1025,9 +1091,8 @@ async fn seed_certificate(built: &BuiltWallet, f: &VectorFile) -> SeededCertific
         serde_json::from_value(v1["certificate"]["serialNumber"].clone()).expect("serial");
     let plaintext_fields: HashMap<String, String> =
         serde_json::from_value(v1["certificate"]["fields"].clone()).expect("fields");
-    let vector_signature =
-        hex::decode(v1["certificate"]["signature"].as_str().expect("signature"))
-            .expect("signature hex");
+    let vector_signature = hex::decode(v1["certificate"]["signature"].as_str().expect("signature"))
+        .expect("signature hex");
     let vector_revocation = v1["certificate"]["revocationOutpoint"]
         .as_str()
         .expect("revocationOutpoint")

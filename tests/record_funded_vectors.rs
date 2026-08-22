@@ -170,8 +170,11 @@ fn load_state() -> State {
 fn save_state(state: &State) {
     std::fs::create_dir_all(work_dir()).expect("create work dir");
     let tmp = state_path().with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_string_pretty(state).expect("state serialize"))
-        .expect("state write");
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(state).expect("state serialize"),
+    )
+    .expect("state write");
     std::fs::rename(&tmp, state_path()).expect("state rename");
 }
 
@@ -213,8 +216,9 @@ impl WalletServices for RecordingServices {
     }
     async fn get_chain_tracker(
         &self,
-    ) -> bsv_wallet_toolbox::error::WalletResult<Box<dyn bsv::transaction::chain_tracker::ChainTracker>>
-    {
+    ) -> bsv_wallet_toolbox::error::WalletResult<
+        Box<dyn bsv::transaction::chain_tracker::ChainTracker>,
+    > {
         self.inner.get_chain_tracker().await
     }
     async fn get_merkle_path(
@@ -237,7 +241,10 @@ impl WalletServices for RecordingServices {
         txids: &[String],
     ) -> Vec<bsv_wallet_toolbox::services::types::PostBeefResult> {
         let results = self.inner.post_beef(beef, txids).await;
-        self.captured.lock().expect("captured lock").extend(results.clone());
+        self.captured
+            .lock()
+            .expect("captured lock")
+            .extend(results.clone());
         results
     }
     async fn get_utxo_status(
@@ -314,10 +321,7 @@ impl WalletServices for RecordingServices {
     ) -> bsv_wallet_toolbox::services::types::ServicesCallHistory {
         self.inner.get_services_call_history(reset)
     }
-    async fn get_beef_for_txid(
-        &self,
-        txid: &str,
-    ) -> bsv_wallet_toolbox::error::WalletResult<Beef> {
+    async fn get_beef_for_txid(&self, txid: &str) -> bsv_wallet_toolbox::error::WalletResult<Beef> {
         self.inner.get_beef_for_txid(txid).await
     }
     fn hash_output_script(&self, script: &[u8]) -> String {
@@ -372,7 +376,10 @@ async fn ensure_faucet_funding(state: &mut State) {
             continue;
         }
         let ident = state.identities[i].clone();
-        eprintln!("--- faucet funding for identity {} ({})", ident.name, ident.identity_key);
+        eprintln!(
+            "--- faucet funding for identity {} ({})",
+            ident.name, ident.identity_key
+        );
 
         let key = PrivateKey::from_hex(&ident.private_key).expect("identity key parse");
         let db = db_dir().join(format!("faucet-{}.db", ident.name));
@@ -407,7 +414,10 @@ async fn ensure_faucet_funding(state: &mut State) {
                 .request_payment(
                     FAUCET_PEER,
                     FAUCET_SATS,
-                    &format!("rust-wallet-toolbox funded BRC-100 conformance vectors ({})", ident.name),
+                    &format!(
+                        "rust-wallet-toolbox funded BRC-100 conformance vectors ({})",
+                        ident.name
+                    ),
                     expires,
                 )
                 .await
@@ -485,8 +495,8 @@ async fn send_brc29<W: WalletInterface>(
 ) -> Result<(FundingPayment, Vec<serde_json::Value>), String> {
     let prefix = random_base64(8);
     let suffix = random_base64(8);
-    let receiver_pub = PublicKey::from_string(receiver_identity)
-        .map_err(|e| format!("receiver key: {e:?}"))?;
+    let receiver_pub =
+        PublicKey::from_string(receiver_identity).map_err(|e| format!("receiver key: {e:?}"))?;
     let template = ScriptTemplateBRC29::new(prefix.clone(), suffix.clone());
     let lock_script = template
         .lock(sender_root, &receiver_pub)
@@ -621,7 +631,9 @@ async fn send_max_brc29<W: WalletInterface>(
             Err(e) => return Err(e),
         }
     }
-    Err(format!("could not size transfer below balance {balance}: {last_err}"))
+    Err(format!(
+        "could not size transfer below balance {balance}: {last_err}"
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -650,8 +662,7 @@ fn transform_create_args(upstream: &serde_json::Value) -> (serde_json::Value, Ve
     if let Some(v) = obj.remove("acceptDelayedBroadcast") {
         options.insert("acceptDelayedBroadcast".to_string(), v);
         notes.push(
-            "upstream put acceptDelayedBroadcast at args top level; moved into options"
-                .to_string(),
+            "upstream put acceptDelayedBroadcast at args top level; moved into options".to_string(),
         );
     }
     if !options.is_empty() {
@@ -691,7 +702,10 @@ fn force_delayed_if_immediate(args: &mut serde_json::Value, notes: &mut Vec<Stri
     let Some(options) = args.get_mut("options").and_then(|o| o.as_object_mut()) else {
         return;
     };
-    let no_send = options.get("noSend").and_then(|v| v.as_bool()).unwrap_or(false);
+    let no_send = options
+        .get("noSend")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let adb = options
         .get("acceptDelayedBroadcast")
         .and_then(|v| v.as_bool())
@@ -814,7 +828,10 @@ async fn record_create_vector_inner(
         accepted_by: None,
     };
     if let Some(rec) = recording {
-        assert_eq!(run.outcome.status, "success", "{recorded_id}: inline-broadcast vector failed");
+        assert_eq!(
+            run.outcome.status, "success",
+            "{recorded_id}: inline-broadcast vector failed"
+        );
         let captured = rec.captured.lock().expect("captured").clone();
         let accepted = captured
             .iter()
@@ -899,7 +916,11 @@ async fn record_defect_vectors(state: &mut State, first_upstream: &UpstreamVecto
                     args,
                 },
                 expected: serde_json::to_value(&run.outcome).expect("serialize"),
-                broadcast: BroadcastRecord { sent: false, txid: None, accepted_by: None },
+                broadcast: BroadcastRecord {
+                    sent: false,
+                    txid: None,
+                    accepted_by: None,
+                },
                 notes: vec![
                     "pins the upstream corpus defect: all 90 upstream createaction vectors claim \
                      basket 'default' on an output, which a conforming implementation rejects"
@@ -952,7 +973,11 @@ async fn record_defect_vectors(state: &mut State, first_upstream: &UpstreamVecto
                     args,
                 },
                 expected: serde_json::to_value(&run.outcome).expect("serialize"),
-                broadcast: BroadcastRecord { sent: false, txid: None, accepted_by: None },
+                broadcast: BroadcastRecord {
+                    sent: false,
+                    txid: None,
+                    accepted_by: None,
+                },
                 notes: vec![
                     "pins the upstream corpus defect: options flags at args top level never \
                      reach any implementation's options parsing"
@@ -1009,7 +1034,10 @@ async fn broadcast_recorded_vector(
         .unwrap_or_else(|| panic!("{vector_id}: no service accepted broadcast: {results:?}"));
 
     let verified = verify_on_network(services, &txid).await;
-    assert!(verified, "{vector_id}: broadcast {txid} not visible on network");
+    assert!(
+        verified,
+        "{vector_id}: broadcast {txid} not visible on network"
+    );
 
     let entry = state.create_vectors.get_mut(vector_id).expect("vector");
     entry.broadcast = BroadcastRecord {
@@ -1126,7 +1154,6 @@ fn nosend_precursor_args(chained_no_send_change: Vec<String>) -> CreateActionArg
         reference: None,
     }
 }
-
 
 /// SignActionOptions with every field in the wire-absent state, so serialized
 /// args carry only what the vector explicitly sets (absent means "inherit
@@ -1304,8 +1331,16 @@ async fn record_sign_vectors(state: &mut State, real: &Arc<dyn WalletServices>) 
             _ => unreachable!(),
         };
 
-        record_one_sign_vector(state, real, &upstream.vectors[plan.upstream_index], plan, recorded_id, seed, &funding)
-            .await;
+        record_one_sign_vector(
+            state,
+            real,
+            &upstream.vectors[plan.upstream_index],
+            plan,
+            recorded_id,
+            seed,
+            &funding,
+        )
+        .await;
     }
 }
 
@@ -1320,17 +1355,13 @@ async fn record_one_sign_vector(
 ) {
     // --- Verbatim error vectors need no discovery pass ---
     if let Some(args) = plan.verbatim_args.clone() {
-        let run = run_sign_vector(
-            fixture_services(state),
-            ROOT_1,
-            &seed,
-            funding,
-            &[],
-            &args,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("{recorded_id}: run failed: {e}"));
-        assert_eq!(run.outcome.status, "error", "{recorded_id}: expected an error");
+        let run = run_sign_vector(fixture_services(state), ROOT_1, &seed, funding, &[], &args)
+            .await
+            .unwrap_or_else(|e| panic!("{recorded_id}: run failed: {e}"));
+        assert_eq!(
+            run.outcome.status, "error",
+            "{recorded_id}: expected an error"
+        );
         eprintln!("recorded {recorded_id}: error {:?}", run.outcome.message);
         state.sign_vectors.insert(
             recorded_id.clone(),
@@ -1345,7 +1376,11 @@ async fn record_one_sign_vector(
                     args,
                 },
                 expected: serde_json::to_value(&run.outcome).expect("serialize"),
-                broadcast: BroadcastRecord { sent: false, txid: None, accepted_by: None },
+                broadcast: BroadcastRecord {
+                    sent: false,
+                    txid: None,
+                    accepted_by: None,
+                },
                 notes: plan.notes,
                 upstream: Some(serde_json::json!({"id": uv.id, "expected": uv.expected})),
                 tags: uv.tags.clone(),
@@ -1512,22 +1547,30 @@ async fn record_one_sign_vector(
             (fixture_services(state), None)
         };
 
-    let run = run_sign_vector(services, ROOT_1, &seed, funding, &setup_json, &sign_args_json)
-        .await
-        .unwrap_or_else(|e| panic!("{recorded_id}: canonical run failed: {e}"));
+    let run = run_sign_vector(
+        services,
+        ROOT_1,
+        &seed,
+        funding,
+        &setup_json,
+        &sign_args_json,
+    )
+    .await
+    .unwrap_or_else(|e| panic!("{recorded_id}: canonical run failed: {e}"));
     assert_eq!(
         run.outcome.status, "success",
         "{recorded_id}: expected success, got {:?}",
         run.outcome.message
     );
-    eprintln!(
-        "recorded {recorded_id}: txid={:?}",
-        run.outcome.txid
-    );
+    eprintln!("recorded {recorded_id}: txid={:?}", run.outcome.txid);
 
     let mut expected = serde_json::to_value(&run.outcome).expect("serialize");
 
-    let mut broadcast = BroadcastRecord { sent: false, txid: None, accepted_by: None };
+    let mut broadcast = BroadcastRecord {
+        sent: false,
+        txid: None,
+        accepted_by: None,
+    };
     if let Some(rec) = recording {
         let captured = rec.captured.lock().expect("captured").clone();
         let accepted = captured
@@ -1796,12 +1839,19 @@ async fn record_funded_vectors() {
             .await
             .expect("root1 wallet");
         for p in &state.funding_sets["S1"].payments.clone() {
-            funded_common::internalize_funding(&setup, p).await.expect("fund");
+            funded_common::internalize_funding(&setup, p)
+                .await
+                .expect("fund");
         }
         let balance = setup.wallet.balance(None).await.expect("balance");
         eprintln!("root1 balance for sweep: {balance}");
         let p = send_max_brc29(
-            &setup.wallet, &real, &id1, &id1_pub, &id2_pub, balance,
+            &setup.wallet,
+            &real,
+            &id1,
+            &id1_pub,
+            &id2_pub,
+            balance,
             "funded-conformance sweep root1 -> root2",
         )
         .await
@@ -1814,7 +1864,9 @@ async fn record_funded_vectors() {
             accepted_by: "inline create_action broadcast".to_string(),
             verified_on_network: true,
         });
-        state.funding_sets.insert("S2".to_string(), FundingSet { payments: vec![p] });
+        state
+            .funding_sets
+            .insert("S2".to_string(), FundingSet { payments: vec![p] });
         save_state(&state);
     }
     pin_roots_for_set(&mut state, &real, "S2").await;
@@ -1839,12 +1891,19 @@ async fn record_funded_vectors() {
             .await
             .expect("root2 wallet");
         for p in &state.funding_sets["S2"].payments.clone() {
-            funded_common::internalize_funding(&setup, p).await.expect("fund");
+            funded_common::internalize_funding(&setup, p)
+                .await
+                .expect("fund");
         }
         let balance = setup.wallet.balance(None).await.expect("balance");
         eprintln!("root2 balance for sweep: {balance}");
         let p = send_max_brc29(
-            &setup.wallet, &real, &id2, &id2_pub, &id3_pub, balance,
+            &setup.wallet,
+            &real,
+            &id2,
+            &id2_pub,
+            &id3_pub,
+            balance,
             "funded-conformance sweep root2 -> root3",
         )
         .await
@@ -1857,24 +1916,40 @@ async fn record_funded_vectors() {
             accepted_by: "inline create_action broadcast".to_string(),
             verified_on_network: true,
         });
-        state.funding_sets.insert("S3".to_string(), FundingSet { payments: vec![p] });
+        state
+            .funding_sets
+            .insert("S3".to_string(), FundingSet { payments: vec![p] });
         save_state(&state);
     }
     pin_roots_for_set(&mut state, &real, "S3").await;
 
     // Phase 5: root-3 vectors. 61 records from S3 and broadcasts; 62 records
     // from S3B (61's change) and broadcasts; the rest record from S3.
-    let uv61 = upstream_create.vectors.iter().find(|v| v.id.ends_with(".61")).expect("61");
+    let uv61 = upstream_create
+        .vectors
+        .iter()
+        .find(|v| v.id.ends_with(".61"))
+        .expect("61");
     {
         let (mut args, mut notes) = transform_create_args(&uv61.input.args);
         force_delayed_if_immediate(&mut args, &mut notes);
-        record_create_vector(&mut state, uv61, "S3", args, notes,
-            "wallet.brc100.createaction-funded.61".to_string()).await;
+        record_create_vector(
+            &mut state,
+            uv61,
+            "S3",
+            args,
+            notes,
+            "wallet.brc100.createaction-funded.61".to_string(),
+        )
+        .await;
     }
     broadcast_recorded_vector(
-        &mut state, &real,
+        &mut state,
+        &real,
         "wallet.brc100.createaction-funded.61",
-        "broadcast chain link 1 (vector 61)", &id3_pub, 1000,
+        "broadcast chain link 1 (vector 61)",
+        &id3_pub,
+        1000,
     )
     .await;
 
@@ -1905,7 +1980,11 @@ async fn record_funded_vectors() {
     }
     pin_roots_for_set(&mut state, &real, "S3B").await;
 
-    let uv62 = upstream_create.vectors.iter().find(|v| v.id.ends_with(".62")).expect("62");
+    let uv62 = upstream_create
+        .vectors
+        .iter()
+        .find(|v| v.id.ends_with(".62"))
+        .expect("62");
     {
         // Vector 62 keeps its upstream acceptDelayedBroadcast=false and runs
         // against real services: the recorded run IS the inline broadcast,
@@ -1918,8 +1997,16 @@ async fn record_funded_vectors() {
              funded by vector 61's broadcast change (set S3B)"
                 .to_string(),
         );
-        record_create_vector_inner(&mut state, uv62, "S3B", args, notes,
-            "wallet.brc100.createaction-funded.62".to_string(), Some(real.clone())).await;
+        record_create_vector_inner(
+            &mut state,
+            uv62,
+            "S3B",
+            args,
+            notes,
+            "wallet.brc100.createaction-funded.62".to_string(),
+            Some(real.clone()),
+        )
+        .await;
     }
 
     for uv in upstream_create.vectors.iter().skip(60) {
@@ -1997,8 +2084,14 @@ async fn record_funded_vectors() {
         let mut result = None;
         for _ in 0..60 {
             match send_brc29(
-                &setup.wallet, &real, &id3, &id3_pub, &id1_pub, amount,
-                "funded-conformance signAction fixture", extra.clone(),
+                &setup.wallet,
+                &real,
+                &id3,
+                &id3_pub,
+                &id1_pub,
+                amount,
+                "funded-conformance signAction fixture",
+                extra.clone(),
             )
             .await
             {
@@ -2006,7 +2099,9 @@ async fn record_funded_vectors() {
                     result = Some(p);
                     break;
                 }
-                Err(e) if e.to_uppercase().contains("INSUFFICIENT") => amount = amount.saturating_sub(5),
+                Err(e) if e.to_uppercase().contains("INSUFFICIENT") => {
+                    amount = amount.saturating_sub(5)
+                }
                 Err(e) => panic!("signAction fixture tx failed: {e}"),
             }
         }
@@ -2026,7 +2121,9 @@ async fn record_funded_vectors() {
             caller_outpoint_b: format!("{}.1", p.txid),
             caller_sats,
         });
-        state.funding_sets.insert("SIG".to_string(), FundingSet { payments: vec![p] });
+        state
+            .funding_sets
+            .insert("SIG".to_string(), FundingSet { payments: vec![p] });
         save_state(&state);
     }
     pin_roots_for_set(&mut state, &real, "SIG").await;

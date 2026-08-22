@@ -79,7 +79,10 @@ fn assert_outcome(vector_id: &str, recorded: &serde_json::Value, replayed: &Reco
     );
 }
 
-fn fixture_services(file: &FundedFile, vector: &funded_common::FundedVector) -> Arc<FixtureServices> {
+fn fixture_services(
+    file: &FundedFile,
+    vector: &funded_common::FundedVector,
+) -> Arc<FixtureServices> {
     // A vector whose recorded run included an inline broadcast carries the
     // network's recorded response; everything else gets the tripwire.
     let post = match vector.expected.get("postBeefResponse") {

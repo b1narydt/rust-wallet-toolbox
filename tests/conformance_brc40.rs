@@ -162,10 +162,10 @@ fn status(v: &Value) -> TransactionStatus {
 
 fn empty_chunk() -> SyncChunk {
     SyncChunk {
-        from_storage_identity_key: "02aaaa00000000000000000000000000000000000000000000000000000000aaaa"
-            .to_string(),
-        to_storage_identity_key: "02bbbb00000000000000000000000000000000000000000000000000000000bbbb"
-            .to_string(),
+        from_storage_identity_key:
+            "02aaaa00000000000000000000000000000000000000000000000000000000aaaa".to_string(),
+        to_storage_identity_key:
+            "02bbbb00000000000000000000000000000000000000000000000000000000bbbb".to_string(),
         user_identity_key: USER_KEY.to_string(),
         user: None,
         proven_txs: None,
@@ -255,7 +255,11 @@ fn output_row(row: &Value, user_id: i64) -> Output {
     }
 }
 
-async fn find_tx_by_reference(storage: &SqliteStorage, user_id: i64, reference: &str) -> Transaction {
+async fn find_tx_by_reference(
+    storage: &SqliteStorage,
+    user_id: i64,
+    reference: &str,
+) -> Transaction {
     let rows = storage
         .find_transactions(
             &FindTransactionsArgs {
@@ -920,7 +924,10 @@ async fn flow_stale_regression(v: &Vector, failures: &mut Vec<String>) {
     }
 
     let final_state = v.expected.final_state.as_ref().expect("finalState");
-    for want in final_state["transactions"].as_array().expect("transactions") {
+    for want in final_state["transactions"]
+        .as_array()
+        .expect("transactions")
+    {
         let reference = format!("vector-tx-{}", i(want, "transactionId"));
         let got = find_tx_by_reference(&storage, user_id, &reference).await;
         if got.status != status(want) {
@@ -980,15 +987,17 @@ async fn flow_since_inclusive(v: &Vector, failures: &mut Vec<String>) {
 
     let mut tx = tx_row(boundary, user_id);
     tx.transaction_id = 0;
-    storage.insert_transaction(&tx, None).await.expect("seed tx");
+    storage
+        .insert_transaction(&tx, None)
+        .await
+        .expect("seed tx");
 
     let mut args = request_args_for(USER_KEY);
     args.since = Some(parse_iso(&since));
-    let chunk = bsv_wallet_toolbox::storage::traits::WalletStorageProvider::get_sync_chunk(
-        &storage, &args,
-    )
-    .await
-    .unwrap_or_else(|e| panic!("{}: get_sync_chunk failed: {e}", v.id));
+    let chunk =
+        bsv_wallet_toolbox::storage::traits::WalletStorageProvider::get_sync_chunk(&storage, &args)
+            .await
+            .unwrap_or_else(|e| panic!("{}: get_sync_chunk failed: {e}", v.id));
 
     let got = chunk.transactions.as_deref().unwrap_or_default();
     if !got.iter().any(|t| t.reference == tx.reference) {

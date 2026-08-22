@@ -498,7 +498,12 @@ where
             let merged = with_derived_create_flags(merged);
             let args: StorageCreateActionArgs = match serde_json::from_value(merged) {
                 Ok(a) => a,
-                Err(e) => return (400, err_body(&format!("invalid args for createAction: {e}"))),
+                Err(e) => {
+                    return (
+                        400,
+                        err_body(&format!("invalid args for createAction: {e}")),
+                    )
+                }
             };
             match storage.create_action(&auth, &args).await {
                 Ok(r) => ok(&r),
@@ -674,7 +679,10 @@ where
         ("POST", "/storage/v1/sync/state") => {
             let key = body["storageIdentityKey"].as_str().unwrap_or_default();
             let name = body["storageName"].as_str().unwrap_or_default();
-            match storage.find_or_insert_sync_state_auth(&auth, key, name).await {
+            match storage
+                .find_or_insert_sync_state_auth(&auth, key, name)
+                .await
+            {
                 Ok((state, is_new)) => (
                     200,
                     json!({
@@ -721,7 +729,9 @@ fn create_action_defaults() -> Value {
 fn with_derived_create_flags(mut v: Value) -> Value {
     let inputs_n = v["inputs"].as_array().map_or(0, Vec::len);
     let outputs_n = v["outputs"].as_array().map_or(0, Vec::len);
-    let is_send_with = v["options"]["sendWith"].as_array().is_some_and(|a| !a.is_empty());
+    let is_send_with = v["options"]["sendWith"]
+        .as_array()
+        .is_some_and(|a| !a.is_empty());
     let is_remix = !is_send_with && inputs_n == 0 && outputs_n == 0;
     let is_new_tx = is_remix || inputs_n > 0 || outputs_n > 0;
     let sign_and_process = v["options"]["signAndProcess"].as_bool().unwrap_or(true);
@@ -784,7 +794,10 @@ fn check_vector(v: &Vector, status: u16, body: &Value, failures: &mut Vec<String
     let got_obj = match body.as_object() {
         Some(o) => o,
         None => {
-            failures.push(format!("{}: response body is not an object: {}", v.id, body));
+            failures.push(format!(
+                "{}: response body is not an object: {}",
+                v.id, body
+            ));
             return;
         }
     };

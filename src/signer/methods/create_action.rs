@@ -474,10 +474,19 @@ pub(crate) fn build_beef_bytes(
     serialize_beef_atomic(&beef, &txid)
 }
 
-/// Populate `dcr.input_beef` with BEEF proof data for all storage-provided inputs.
+/// Populate `dcr.input_beef` with BEEF proof data for ALL inputs.
 ///
 /// Without this, the outgoing BEEF won't include source tx proofs and
 /// recipients/miners will reject it during SPV verification.
+///
+/// Covers every input regardless of `providedBy` — a caller-named input
+/// (`providedBy: you`) spending a wallet-known output (e.g. a minted token
+/// spent by outpoint) needs its ancestor chain exactly as storage-allocated
+/// change does; gating on `providedBy == storage` was the rust-mpc#352
+/// defect (returned Atomic BEEF missing the caller-named input's parent,
+/// violating the BRC-95 closure). Fail closed: an input whose ancestry is
+/// neither already in the assembled BEEF nor producible from storage is an
+/// error naming the txid — never a silently partial BEEF.
 ///
 /// Also merges any stored `inputBEEF` from source transactions (which may
 /// contain the original sender's BEEF chain, needed for full verification
@@ -487,7 +496,6 @@ pub(crate) async fn merge_input_beef_signer(
     dcr: &mut crate::storage::action_types::StorageCreateActionResult,
 ) -> WalletResult<()> {
     use crate::storage::beef::{get_valid_beef_for_txid, TrustSelf};
-    use crate::types::StorageProvidedBy;
     use bsv::transaction::beef::{Beef, BEEF_V2};
     use std::collections::HashSet;
 
@@ -510,32 +518,33 @@ pub(crate) async fn merge_input_beef_signer(
         }
     }
 
-    // Merge BEEF for each storage-provided input
+    // Merge BEEF for every input not already represented in the assembled
+    // BEEF (the caller's inputBEEF is the base, merged above). TrustSelf::No:
+    // the walk must produce full raw txs + proofs, never trust-elided
+    // txid-only entries (#326 posture).
     let mut known_txids: HashSet<String> = HashSet::new();
     for input in &dcr.inputs {
-        if input.provided_by == StorageProvidedBy::Storage {
-            let txid = &input.source_txid;
-            if !txid.is_empty() && beef.find_txid(txid).is_none() {
-                let tx_beef_bytes =
-                    get_valid_beef_for_txid(&*active, txid, TrustSelf::No, &known_txids)
-                        .await
-                        .map_err(|e| {
-                            WalletError::Internal(format!(
-                                "Failed to fetch BEEF for storage input {txid}: {e}"
-                            ))
-                        })?
-                        .ok_or_else(|| {
-                            WalletError::Internal(format!(
-                                "No BEEF proof found for storage-provided input {txid}"
-                            ))
-                        })?;
+        let txid = &input.source_txid;
+        if !txid.is_empty() && beef.find_txid(txid).is_none() {
+            let tx_beef_bytes =
+                get_valid_beef_for_txid(&*active, txid, TrustSelf::No, &known_txids)
+                    .await
+                    .map_err(|e| {
+                        WalletError::Internal(format!("Failed to fetch BEEF for input {txid}: {e}"))
+                    })?
+                    .ok_or_else(|| {
+                        WalletError::Internal(format!(
+                            "No BEEF ancestry available for input {txid}: not in the provided \
+                         inputBEEF and storage cannot produce its transaction (fail closed \
+                         rather than return a partial BEEF)"
+                        ))
+                    })?;
 
-                beef.merge_beef_from_binary(&tx_beef_bytes).map_err(|e| {
-                    WalletError::Internal(format!("Failed to merge BEEF for input {txid}: {e}"))
-                })?;
+            beef.merge_beef_from_binary(&tx_beef_bytes).map_err(|e| {
+                WalletError::Internal(format!("Failed to merge BEEF for input {txid}: {e}"))
+            })?;
 
-                known_txids.insert(txid.clone());
-            }
+            known_txids.insert(txid.clone());
         }
     }
 
@@ -543,7 +552,7 @@ pub(crate) async fn merge_input_beef_signer(
     // When UTXOs came from received payments, the sender's proof chain
     // is stored as inputBEEF on the source transaction record.
     for input in &dcr.inputs {
-        if input.provided_by == StorageProvidedBy::Storage && !input.source_txid.is_empty() {
+        if !input.source_txid.is_empty() {
             let txs = active
                 .find_transactions(&crate::storage::find_args::FindTransactionsArgs {
                     partial: crate::storage::find_args::TransactionPartial {

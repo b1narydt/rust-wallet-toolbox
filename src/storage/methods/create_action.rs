@@ -114,11 +114,17 @@ pub async fn storage_create_action<S: StorageReaderWriter + ?Sized>(
     }
 }
 
-/// Merge BEEF data from allocated change inputs into the result's input_beef.
+/// Merge BEEF data from allocated inputs into the result's input_beef.
 ///
-/// The signer needs BEEF proof data for ALL inputs (both user-provided and
-/// storage-allocated change). This function walks the allocated change inputs,
-/// fetches their BEEF from storage, and merges everything into a single BEEF.
+/// The signer needs BEEF proof data for ALL inputs — storage-allocated change
+/// AND caller-named (`providedBy: you`) inputs alike; gating on
+/// `providedBy == storage` was the rust-mpc#352 defect (a wallet-minted
+/// output spent by outpoint contributed no ancestor, so the eventual Atomic
+/// BEEF violated the BRC-95 closure). This function walks every input,
+/// fetches its BEEF from storage when the assembled BEEF does not already
+/// carry it, and merges everything into a single BEEF. Fail closed: an input
+/// whose ancestry is neither in the caller's inputBEEF nor producible from
+/// storage is an error naming the txid — never a silently partial BEEF.
 ///
 /// This must be called AFTER storage_create_action and AFTER the db transaction
 /// is committed, so the committed data is readable.
@@ -144,25 +150,33 @@ pub async fn merge_input_beef(
         }
     }
 
-    // Merge BEEF for each storage-provided input's source transaction.
+    // Merge BEEF for every input's source transaction not already present.
     // Use TrustSelf::No to include full raw_tx + merkle proofs — the remote
-    // client's signer needs complete BEEF data. Matches TS: trustSelf: undefined
-    let known_txids: HashSet<String> = HashSet::new();
+    // client's signer needs complete BEEF data (#326 posture; matches TS
+    // trustSelf: undefined).
+    let mut known_txids: HashSet<String> = HashSet::new();
     for input in &result.inputs {
-        if input.provided_by == StorageProvidedBy::Storage {
-            let txid = &input.source_txid;
-            if !txid.is_empty() && beef.find_txid(txid).is_none() {
-                if let Ok(Some(tx_beef_bytes)) =
-                    get_valid_beef_for_storage_reader(storage, txid, TrustSelf::No, &known_txids)
-                        .await
-                {
-                    beef.merge_beef_from_binary(&tx_beef_bytes).map_err(|e| {
+        let txid = &input.source_txid;
+        if !txid.is_empty() && beef.find_txid(txid).is_none() {
+            let tx_beef_bytes =
+                get_valid_beef_for_storage_reader(storage, txid, TrustSelf::No, &known_txids)
+                    .await
+                    .map_err(|e| {
+                        WalletError::Internal(format!("Failed to fetch BEEF for input {txid}: {e}"))
+                    })?
+                    .ok_or_else(|| {
                         WalletError::Internal(format!(
-                            "Failed to merge BEEF for storage input {txid}: {e}"
+                            "No BEEF ancestry available for input {txid}: not in the provided \
+                             inputBEEF and storage cannot produce its transaction (fail closed \
+                             rather than return a partial BEEF)"
                         ))
                     })?;
-                }
-            }
+
+            beef.merge_beef_from_binary(&tx_beef_bytes).map_err(|e| {
+                WalletError::Internal(format!("Failed to merge BEEF for input {txid}: {e}"))
+            })?;
+
+            known_txids.insert(txid.clone());
         }
     }
 
@@ -552,8 +566,11 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         target_net_count: Some(target_net_count),
     };
 
-    let change_result =
-        generate_change_sdk_with_no_send(&change_args, &no_send_change_available, &available_change)?;
+    let change_result = generate_change_sdk_with_no_send(
+        &change_args,
+        &no_send_change_available,
+        &available_change,
+    )?;
 
     // --- Allocate change inputs in storage ---
     // Mark allocated change UTXOs as spent

@@ -159,7 +159,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["userId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["userId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -215,7 +219,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["certificateId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["certificateId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -253,7 +261,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["certificateId", "fieldName"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["certificateId", "fieldName"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -293,7 +305,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["commissionId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["commissionId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -317,7 +333,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["id"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["id"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -349,7 +369,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["basketId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["basketId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -377,7 +401,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["outputId", "outputTagId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["outputId", "outputTagId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -409,7 +437,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["outputTagId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["outputTagId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -496,7 +528,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["outputId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["outputId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -528,7 +564,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["provenTxId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["provenTxId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -576,7 +616,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["provenTxReqId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["provenTxReqId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -604,7 +648,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["storageIdentityKey"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["storageIdentityKey"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -644,7 +692,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["syncStateId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["syncStateId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -696,7 +748,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["transactionId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["transactionId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -724,7 +780,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["transactionId", "txLabelId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["transactionId", "txLabelId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -756,7 +816,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["txLabelId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["txLabelId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -779,7 +843,11 @@ mod sqlite_impl {
         }
         let mut sql = wb.build_where();
         if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["userId"], paged));
+            sql.push_str(&WhereBuilder::build_ordered_page(
+                Dialect::Sqlite,
+                &["userId"],
+                paged,
+            ));
         }
         (sql, binds)
     }
@@ -1133,7 +1201,11 @@ mod sqlite_impl {
                 ));
             }
             if let Some(paged) = &args.paged {
-                sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["pt.provenTxId"], paged));
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["pt.provenTxId"],
+                    paged,
+                ));
             }
             query_rows(self, &sql, binds, trx).await
         }
@@ -1157,7 +1229,11 @@ mod sqlite_impl {
                 ));
             }
             if let Some(paged) = &args.paged {
-                sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["ptr.provenTxReqId"], paged));
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["ptr.provenTxReqId"],
+                    paged,
+                ));
             }
             query_rows(self, &sql, binds, trx).await
         }
@@ -1181,7 +1257,11 @@ mod sqlite_impl {
                 ));
             }
             if let Some(paged) = &args.paged {
-                sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["tlm.transactionId", "tlm.txLabelId"], paged));
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["tlm.transactionId", "tlm.txLabelId"],
+                    paged,
+                ));
             }
             query_rows(self, &sql, binds, trx).await
         }
@@ -1205,7 +1285,11 @@ mod sqlite_impl {
                 ));
             }
             if let Some(paged) = &args.paged {
-                sql.push_str(&WhereBuilder::build_ordered_page(Dialect::Sqlite, &["otm.outputId", "otm.outputTagId"], paged));
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["otm.outputId", "otm.outputTagId"],
+                    paged,
+                ));
             }
             query_rows(self, &sql, binds, trx).await
         }
@@ -1380,7 +1464,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["userId"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["userId"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1434,7 +1522,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["certificateId"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["certificateId"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1470,7 +1562,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["certificateId", "fieldName"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["certificateId", "fieldName"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1508,7 +1604,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["commissionId"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["commissionId"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1560,7 +1660,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["basketId"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["basketId"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1586,7 +1690,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["outputId", "outputTagId"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["outputId", "outputTagId"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1616,7 +1724,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["outputTagId"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["outputTagId"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1701,7 +1813,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["outputId"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["outputId"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1731,7 +1847,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["provenTxId"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["provenTxId"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1777,7 +1897,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["provenTxReqId"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["provenTxReqId"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1803,7 +1927,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["storageIdentityKey"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["storageIdentityKey"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1841,7 +1969,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["syncStateId"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["syncStateId"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1891,7 +2023,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["transactionId"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["transactionId"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1917,7 +2053,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["transactionId", "txLabelId"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["transactionId", "txLabelId"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -1947,7 +2087,11 @@ macro_rules! impl_storage_reader_find {
                 }
                 let mut sql = w.build_where();
                 if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["txLabelId"], paged));
+                    sql.push_str(&WhereBuilder::build_ordered_page(
+                        $dialect,
+                        &["txLabelId"],
+                        paged,
+                    ));
                 }
                 (sql, binds)
             }
@@ -2319,7 +2463,11 @@ macro_rules! impl_storage_reader_find {
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
                     if let Some(paged) = &args.paged {
-                        sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["pt.provenTxId"], paged));
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["pt.provenTxId"],
+                            paged,
+                        ));
                     }
                     query_rows(self, &sql, binds, trx).await
                 }
@@ -2341,7 +2489,11 @@ macro_rules! impl_storage_reader_find {
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
                     if let Some(paged) = &args.paged {
-                        sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["ptr.provenTxReqId"], paged));
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["ptr.provenTxReqId"],
+                            paged,
+                        ));
                     }
                     query_rows(self, &sql, binds, trx).await
                 }
@@ -2363,7 +2515,11 @@ macro_rules! impl_storage_reader_find {
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
                     if let Some(paged) = &args.paged {
-                        sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["tlm.transactionId", "tlm.txLabelId"], paged));
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["tlm.transactionId", "tlm.txLabelId"],
+                            paged,
+                        ));
                     }
                     query_rows(self, &sql, binds, trx).await
                 }
@@ -2385,7 +2541,11 @@ macro_rules! impl_storage_reader_find {
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
                     if let Some(paged) = &args.paged {
-                        sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["otm.outputId", "otm.outputTagId"], paged));
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["otm.outputId", "otm.outputTagId"],
+                            paged,
+                        ));
                     }
                     query_rows(self, &sql, binds, trx).await
                 }
@@ -2413,13 +2573,13 @@ mod paged_order_tests {
 
     use chrono::NaiveDateTime;
 
+    use crate::status::TransactionStatus;
     use crate::storage::find_args::*;
     use crate::storage::sqlx_impl::SqliteStorage;
     use crate::storage::traits::provider::StorageProvider;
     use crate::storage::traits::reader::StorageReader;
     use crate::storage::traits::reader_writer::StorageReaderWriter;
     use crate::storage::{StorageConfig, TrxToken};
-    use crate::status::TransactionStatus;
     use crate::tables::{Transaction, TxLabel, TxLabelMap, User};
     use crate::types::Chain;
 
