@@ -212,4 +212,51 @@ mod beef_spend_closure {
 
         assert_closure(&spend_beef, "spend BEEF");
     }
+
+    /// The TS-parity hydration entry point (`getBeefForTransaction`):
+    /// storage must hydrate a COMPLETE BEEF for a wallet-known txid — the
+    /// call one-shot / monitor-off processes rely on — and error naming the
+    /// txid for one it cannot hydrate.
+    #[tokio::test]
+    async fn get_beef_for_transaction_hydrates_a_closed_beef() {
+        use bsv_wallet_toolbox::storage::beef::get_beef_for_transaction;
+        use std::collections::HashSet;
+
+        let setup = funded_wallet().await;
+
+        let mint_args: bsv::wallet::interfaces::CreateActionArgs =
+            serde_json::from_value(serde_json::json!({
+                "description": "mint for hydration",
+                "outputs": [{
+                    "lockingScript": "5187",
+                    "satoshis": 900,
+                    "outputDescription": "hydration token",
+                    "basket": "regression 352"
+                }]
+            }))
+            .expect("mint args");
+        let mint = setup
+            .wallet
+            .create_action(mint_args, None)
+            .await
+            .expect("mint createAction");
+        let mint_txid = mint.txid.expect("mint txid");
+
+        let provider = setup.storage.get_active().await.expect("active storage");
+        let beef = get_beef_for_transaction(provider.as_ref(), &mint_txid, &HashSet::new())
+            .await
+            .expect("hydration succeeds for a wallet-known txid");
+        let subject = beef.find_txid(&mint_txid).expect("subject present");
+        assert!(!subject.is_txid_only(), "subject must be a full tx");
+        assert_closure(&beef, "hydrated BEEF");
+
+        let unknown = "11".repeat(32);
+        let err = get_beef_for_transaction(provider.as_ref(), &unknown, &HashSet::new())
+            .await
+            .expect_err("unknown txid must fail closed");
+        assert!(
+            err.to_string().contains(&unknown),
+            "error must name the txid, got: {err}"
+        );
+    }
 }

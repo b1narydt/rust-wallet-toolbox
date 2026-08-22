@@ -466,7 +466,21 @@ pub(crate) fn build_beef(
 }
 
 /// Recursively merge the `source_transaction` graph of `tx`'s inputs into
-/// `beef` (port of TS `Beef.mergeTransaction`'s graph walk).
+/// `beef` — the toolbox port of TS `Beef.mergeTransaction`'s
+/// sourceTransaction recursion (@bsv/sdk Beef.ts), which the Rust SDK's
+/// `Beef` does not yet provide.
+///
+/// TODO(bsv-sdk): upstream as `Beef::merge_transaction` so callers get the
+/// TS method directly; this helper then reduces to that call plus the
+/// fail-closed closure check.
+///
+/// Deliberate deviations from TS, both narrowing:
+///   * sources already represented in the BEEF are not re-merged (dedup;
+///     the resulting closure is identical), and
+///   * a branch that cannot be completed FAILS CLOSED here, where TS defers
+///     the hole to `verifyValid` at consumption time — a returned BEEF must
+///     be complete without relying on later rehydration (one-shot processes
+///     exit before any monitor runs; the live rust-mpc#352 failure mode).
 ///
 /// For each input: if its source txid is already represented in the BEEF,
 /// done. Otherwise the input must carry a genuine `source_transaction` —
@@ -537,16 +551,86 @@ fn merge_input_ancestry(
 
 /// Serialize a Beef as Atomic BEEF bytes targeting a specific txid.
 ///
-/// Sorts a copy into dependency order first: the TS SDK's `toBinary` sorts
-/// implicitly, but the Rust SDK's `to_binary_atomic` truncates everything
-/// after the subject WITHOUT sorting — any ancestor sitting after the
-/// subject in insertion order would be silently dropped from the closure.
-pub(crate) fn serialize_beef_atomic(beef: &Beef, txid: &str) -> WalletResult<Vec<u8>> {
+/// Port of TS `Beef.toBinaryAtomic` (@bsv/sdk Beef.ts) — BRC-95 semantics,
+/// byte-verified against the TS-golden vectors
+/// (conformance/vectors/beef/beef_atomic_closure.json + beef_spend_closure.json):
+///   * the emitted BEEF is the subject's DEPENDENCY CLOSURE only —
+///     transactions unrelated to the subject are dropped;
+///   * bumps not referenced by a retained transaction are pruned, and
+///     retained bump indices are re-derived;
+///   * ancestors precede dependents (the TS SDK's `toBinary` sorts
+///     implicitly; the Rust SDK's `to_binary_atomic` instead truncates after
+///     the subject in insertion order, which both keeps unrelated txs and
+///     can silently drop late-merged ancestors — so the closure is computed
+///     here, not delegated).
+///
+/// TODO(bsv-sdk): upstream this as the conformant `Beef::to_binary_atomic`;
+/// the SDK's current truncate-after-subject behavior is nonconformant with
+/// the normative TS output.
+pub fn serialize_beef_atomic(beef: &Beef, txid: &str) -> WalletResult<Vec<u8>> {
+    use std::collections::HashSet;
+
+    if beef.find_txid(txid).is_none() {
+        return Err(WalletError::Internal(format!(
+            "Failed to serialize Atomic BEEF: {txid} does not exist in this Beef"
+        )));
+    }
+
+    // Dependency closure of the subject over the txs present in this BEEF.
+    let mut closure: HashSet<&str> = HashSet::new();
+    let mut frontier: Vec<&str> = vec![txid];
+    while let Some(t) = frontier.pop() {
+        if !closure.insert(t) {
+            continue;
+        }
+        if let Some(btx) = beef.find_txid(t) {
+            for input_txid in &btx.input_txids {
+                if beef.find_txid(input_txid).is_some() {
+                    frontier.push(input_txid.as_str());
+                }
+            }
+        }
+    }
+
+    // Rebuild: closure txs in dependency order, referenced bumps re-indexed
+    // in first-use order.
     let mut sorted = beef.clone();
     sorted.sort_txs();
-    sorted
-        .to_binary_atomic(txid)
-        .map_err(|e| WalletError::Internal(format!("Failed to serialize Atomic BEEF: {e}")))
+
+    let mut atomic = Beef::new(beef.version);
+    atomic.atomic_txid = Some(txid.to_string());
+    let mut bump_map: Vec<Option<usize>> = vec![None; beef.bumps.len()];
+    for btx in &sorted.txs {
+        if !closure.contains(btx.txid.as_str()) {
+            continue;
+        }
+        let mut new_btx = btx.clone();
+        if let Some(old_idx) = btx.bump_index {
+            let slot = bump_map.get_mut(old_idx).ok_or_else(|| {
+                WalletError::Internal(format!(
+                    "Failed to serialize Atomic BEEF: {} names bump {old_idx} which does not exist",
+                    btx.txid
+                ))
+            })?;
+            let new_idx = match slot {
+                Some(i) => *i,
+                None => {
+                    let i = atomic.bumps.len();
+                    atomic.bumps.push(sorted.bumps[old_idx].clone());
+                    *slot = Some(i);
+                    i
+                }
+            };
+            new_btx.bump_index = Some(new_idx);
+        }
+        atomic.txs.push(new_btx);
+    }
+
+    let mut buf = Vec::new();
+    atomic
+        .to_binary(&mut buf)
+        .map_err(|e| WalletError::Internal(format!("Failed to serialize Atomic BEEF: {e}")))?;
+    Ok(buf)
 }
 
 /// Build Atomic BEEF bytes containing the transaction and its input proofs.

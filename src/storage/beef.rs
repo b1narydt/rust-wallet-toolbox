@@ -59,6 +59,44 @@ pub async fn get_valid_beef_for_txid(
     get_valid_beef_for_txid_inner(storage, txid, trust_self, known_txids).await
 }
 
+/// TS-parity hydration entry point — `getBeefForTransaction` (TS
+/// wallet-toolbox `storage/methods/getBeefForTransaction.ts`).
+///
+/// Returns the COMPLETE, parsed BEEF for `txid`, hydrated from storage's own
+/// rows (ProvenTx proofs, Transaction raw_tx + stored inputBEEF) via the same
+/// recursive ancestor walk the monitor's broadcast rebuild trusts. Fails
+/// closed: a txid storage cannot hydrate is an error naming it, never a
+/// partial or absent BEEF.
+///
+/// This is the call one-shot / monitor-off processes (e.g. the enterprise
+/// box's spend-proof paths) want: a returned BEEF must be complete in itself,
+/// because a process that exits after signAction never benefits from the
+/// monitor's later rehydration (the live rust-mpc#352 failure mode).
+///
+/// `TrustSelf::No` — full raw txs + merkle proofs, no trust-elided txid-only
+/// entries (#326 posture). Pass known txids only when the consumer has
+/// declared them (they become txid-only entries).
+pub async fn get_beef_for_transaction(
+    storage: &(dyn WalletStorageProvider + Send + Sync),
+    txid: &str,
+    known_txids: &HashSet<String>,
+) -> WalletResult<Beef> {
+    let bytes = get_valid_beef_for_txid(storage, txid, TrustSelf::No, known_txids)
+        .await?
+        .ok_or_else(|| {
+            WalletError::Internal(format!(
+                "getBeefForTransaction: storage cannot hydrate a BEEF for {txid} \
+                 (not proven and no stored transaction)"
+            ))
+        })?;
+    let mut cursor = Cursor::new(&bytes);
+    Beef::from_binary(&mut cursor).map_err(|e| {
+        WalletError::Internal(format!(
+            "getBeefForTransaction: hydrated BEEF for {txid} failed to parse: {e}"
+        ))
+    })
+}
+
 /// Variant accepting a `StorageReader` for use from within storage methods.
 ///
 /// Uses the low-level `StorageReader` trait (with explicit `None` trx args)
