@@ -391,6 +391,99 @@ async fn abort_writes_are_confined_to_its_transaction() {
 }
 
 #[tokio::test]
+async fn abort_accepts_a_txid_deserialized_from_the_typescript_wire_shape() {
+    let s = storage().await.unwrap();
+    let user_id = seed_user(&s).await;
+    let txid = "22".repeat(32);
+    let tx_id = seed_tx(
+        &s,
+        user_id,
+        "stored-reference-is-not-the-txid",
+        TransactionStatus::Unsigned,
+    )
+    .await;
+    StorageReaderWriter::update_transaction(
+        &s,
+        tx_id,
+        &TransactionPartial {
+            txid: Some(txid.clone()),
+            ..Default::default()
+        },
+        None,
+    )
+    .await
+    .unwrap();
+
+    // This is the JSON shape sent by a TypeScript Base64String client. The SDK
+    // decodes its 64 wire characters to 48 bytes before storage sees the args.
+    let args: AbortActionArgs = serde_json::from_value(serde_json::json!({
+        "reference": txid,
+    }))
+    .expect("the TypeScript wire value is valid base64");
+    assert_eq!(args.reference.len(), 48);
+
+    let auth = AuthId {
+        identity_key: IDENTITY.to_string(),
+        user_id: Some(user_id),
+        is_active: Some(true),
+    };
+    let result = WalletStorageProvider::abort_action(&s, &auth, &args)
+        .await
+        .expect("the wire txid should fall back from reference to txid");
+
+    assert!(result.aborted);
+    assert_eq!(tx_by_id(&s, tx_id).await.status, TransactionStatus::Failed);
+}
+
+#[tokio::test]
+async fn abort_prefers_a_64_character_reference_over_the_txid_fallback() {
+    let s = storage().await.unwrap();
+    let user_id = seed_user(&s).await;
+    let identifier = "33".repeat(32);
+    let reference_match = seed_tx(&s, user_id, &identifier, TransactionStatus::Unsigned).await;
+    let txid_match = seed_tx(
+        &s,
+        user_id,
+        "different-stored-reference",
+        TransactionStatus::Unsigned,
+    )
+    .await;
+    StorageReaderWriter::update_transaction(
+        &s,
+        txid_match,
+        &TransactionPartial {
+            txid: Some(identifier.clone()),
+            ..Default::default()
+        },
+        None,
+    )
+    .await
+    .unwrap();
+
+    let args: AbortActionArgs = serde_json::from_value(serde_json::json!({
+        "reference": identifier,
+    }))
+    .expect("the TypeScript wire value is valid base64");
+    let auth = AuthId {
+        identity_key: IDENTITY.to_string(),
+        user_id: Some(user_id),
+        is_active: Some(true),
+    };
+    WalletStorageProvider::abort_action(&s, &auth, &args)
+        .await
+        .expect("the reference match should take precedence");
+
+    assert_eq!(
+        tx_by_id(&s, reference_match).await.status,
+        TransactionStatus::Failed
+    );
+    assert_eq!(
+        tx_by_id(&s, txid_match).await.status,
+        TransactionStatus::Unsigned
+    );
+}
+
+#[tokio::test]
 async fn abort_signed_nosend_recovers_raw_inputs_and_invalidates_its_request() {
     let s = storage().await.unwrap();
     let user_id = seed_user(&s).await;

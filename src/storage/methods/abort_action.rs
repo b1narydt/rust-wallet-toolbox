@@ -55,12 +55,18 @@ pub async fn abort_action(
         )
         .await?;
 
-    // Direct storage callers may identify an action by its 64-character txid.
-    // The public reference remains the preferred lookup key.
-    let txid_fallback = std::str::from_utf8(&args.reference)
-        .ok()
-        .filter(|value| value.len() == 64)
-        .map(str::to_owned);
+    // A TypeScript client can supply a 64-character txid in the Base64String
+    // reference field. Serde has decoded that wire text to 48 bytes, so recover
+    // it from the canonical re-encoding. Keep accepting ASCII txids from direct
+    // Rust callers as well. In either case, reference lookup retains precedence.
+    let txid_fallback = (reference.len() == 64)
+        .then(|| reference.clone())
+        .or_else(|| {
+            std::str::from_utf8(&args.reference)
+                .ok()
+                .filter(|value| value.len() == 64)
+                .map(str::to_owned)
+        });
     if txs.is_empty() {
         if let Some(txid) = &txid_fallback {
             txs = storage
