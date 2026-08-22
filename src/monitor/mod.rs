@@ -85,6 +85,11 @@ pub struct MonitorOptions {
     /// Stable callback token for ARC SSE event streaming.
     pub callback_token: Option<String>,
 
+    /// Base URL of the Arcade instance whose SSE stream carries status events.
+    /// TS reads the equivalent from `services.options.arcadeUrl`; the
+    /// `WalletServices` trait exposes no config, so it is set here.
+    pub arcade_url: Option<String>,
+
     /// Hook called when a transaction is broadcasted.
     pub on_tx_broadcasted: Option<AsyncCallback<String>>,
 
@@ -110,6 +115,7 @@ impl Default for MonitorOptions {
             unproven_attempts_limit_test: 10,
             unproven_attempts_limit_main: 144,
             callback_token: None,
+            arcade_url: None,
             on_tx_broadcasted: None,
             on_tx_proven: None,
             on_tx_status_changed: None,
@@ -638,7 +644,13 @@ impl MonitorBuilder {
         self
     }
 
-    /// Set the callback token for ARC SSE streaming.
+    /// Set the Arcade base URL whose `/events` stream carries status updates.
+    pub fn arcade_url(mut self, url: String) -> Self {
+        self.options.arcade_url = Some(url);
+        self
+    }
+
+    /// Stable callback token matching the `X-CallbackToken` sent on broadcast.
     pub fn callback_token(mut self, token: String) -> Self {
         self.options.callback_token = Some(token);
         self
@@ -818,6 +830,7 @@ impl MonitorBuilder {
                     make_storage(&storage),
                     services.clone(),
                     self.options.callback_token.clone(),
+                    self.options.arcade_url.clone(),
                     self.options.on_tx_status_changed.clone(),
                 )));
                 tasks.push(Box::new(tasks::task_sync_when_idle::TaskSyncWhenIdle::new()));

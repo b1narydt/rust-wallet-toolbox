@@ -203,6 +203,12 @@ impl Wallet {
             WalletSettingsManager::new(active_provider)
         });
 
+        // Captured before `args.chain` moves into the struct below.
+        let resolver_network = match args.chain {
+            Chain::Main => bsv::services::overlay_tools::Network::Mainnet,
+            Chain::Test => bsv::services::overlay_tools::Network::Testnet,
+        };
+
         Ok(Wallet {
             chain: args.chain,
             key_deriver: args.key_deriver,
@@ -220,7 +226,15 @@ impl Wallet {
             trust_self: Some(TrustSelf::Known),
             user_party,
             overlay_cache: OverlayCache::new(),
-            lookup_resolver: args.lookup_resolver,
+            // TS builds one from the chain when the caller supplies none
+            // (Wallet.ts: `args.lookupResolver || new LookupResolver({...})`),
+            // so discovery works on a default wallet. Leaving this None made
+            // discoverByIdentityKey/discoverByAttributes fail with "No lookup
+            // resolver configured" for every wallet built through
+            // WalletBuilder, which had no way to set it.
+            lookup_resolver: args
+                .lookup_resolver
+                .or_else(|| Some(Arc::new(LookupResolver::for_network(resolver_network)))),
             random_vals: None,
             signer,
         })

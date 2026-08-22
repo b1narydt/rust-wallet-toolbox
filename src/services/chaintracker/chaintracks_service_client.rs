@@ -27,6 +27,7 @@ struct FetchStatus<T> {
 ///
 /// Provides methods to query block headers by height or hash,
 /// get the chain tip, and fetch exchange rates.
+#[derive(Clone)]
 pub struct ChaintracksServiceClient {
     chain: Chain,
     service_url: String,

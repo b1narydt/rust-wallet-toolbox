@@ -656,19 +656,13 @@ mod signer_flow_tests {
     /// restored. Inputs that `is_utxo` returns false for (i.e. consumed by the
     /// competing tx) must remain `spendable=false`.
     ///
-    /// BUG SURFACED: this test currently FAILS because
-    /// `handle_permanent_broadcast_failure` calls
-    /// `update_transaction_status_trx(txid, Failed)` in step 1, which at the
-    /// SQLite layer (see `src/storage/sqlx_impl/trait_impls.rs:387-414`) has a
-    /// side-effect of eagerly restoring ALL `spent_by=tx_id` outputs to
-    /// `spendable=true, spent_by=NULL` — BEFORE the per-outpoint `is_utxo`
-    /// filtering in step 4 runs. Net effect: every consumed input is
-    /// restored regardless of whether the competing tx took it on chain, which
-    /// enables a subsequent double-spend by the wallet. The fix (future wave)
-    /// is either to (a) not auto-release in `update_transaction_status` when
-    /// the handler supplies its own input-restoration plan, or (b) have the
-    /// handler mark inputs unspendable AGAIN after step 1 for any outpoint
-    /// not in `safe_ids`.
+    /// This began as a failing test: `update_transaction_status` used to
+    /// cascade, eagerly restoring every `spent_by = tx_id` output before the
+    /// per-outpoint `is_utxo` filtering ran, so the wallet re-lent inputs the
+    /// competing transaction had already taken on chain. The cascade was
+    /// removed (`src/storage/sqlx_impl/trait_impls.rs`, which now says why),
+    /// and restoration is an explicit `restore_consumed_inputs` call driven
+    /// from the handler's own plan. The test now guards that arrangement.
     #[tokio::test]
     async fn double_spend_restores_only_chain_verified_unspent_inputs() {
         let (manager, concrete) = build_manager_pair().await;

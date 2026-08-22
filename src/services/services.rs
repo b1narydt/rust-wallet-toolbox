@@ -215,13 +215,11 @@ impl WalletServices for Services {
     }
 
     async fn get_chain_tracker(&self) -> WalletResult<Box<dyn ChainTracker>> {
-        let chaintracks_url = self.config.chaintracks_url.as_deref();
-        let service_client = ChaintracksServiceClient::new(
-            self.config.chain.clone(),
-            chaintracks_url,
-            self.client.clone(),
-        );
-        Ok(Box::new(ChaintracksChainTracker::new(service_client)))
+        // Hand out a clone of the warm tracker, which shares its root cache.
+        // Building a fresh one here gave every caller an empty cache, so
+        // `internalize_action` — the heaviest user, one root lookup per bump —
+        // re-fetched roots this instance had already resolved.
+        Ok(Box::new(self.chain_tracker.clone()))
     }
 
     async fn get_merkle_path(&self, txid: &str, use_next: bool) -> GetMerklePathResult {

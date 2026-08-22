@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::error::WalletError;
@@ -31,21 +32,33 @@ const TERMINAL_STATUSES: &[ProvenTxReqStatus] = &[
 
 /// Task that receives and processes real-time ARC transaction status via SSE.
 ///
-/// Consumes events from an ArcSseClient mpsc channel. If no callback_token is
-/// configured, the task is a no-op (trigger always returns false).
+/// Consumes events from an ArcSseClient mpsc channel. Both a callback token and
+/// an Arcade base URL are required; with either missing the task stays dormant
+/// (trigger always returns false), which is TS's behaviour too
+/// (TaskArcadeSSE.asyncSetup: "no arcadeUrl configured; SSE disabled").
 pub struct TaskArcSse {
     storage: Arc<WalletStorageManager>,
     _services: Arc<dyn WalletServices>,
     /// Callback token for ARC SSE streaming.
     callback_token: Option<String>,
+    /// Base URL of the Arcade instance serving `/events`.
+    arcade_url: Option<String>,
     /// Optional callback when transaction status changes.
     on_tx_status_changed: Option<AsyncCallback<(String, String)>>,
-    /// The ARC SSE client (created during async_setup if token is configured).
-    sse_client: Option<ArcSseClient>,
+    /// Cancels the spawned connection loop when the task is dropped.
+    sse_cancel: Option<CancellationToken>,
     /// Receiver for SSE events from the client.
     sse_receiver: Option<mpsc::Receiver<ArcSseEvent>>,
     /// Buffer of pending events drained from the receiver.
     pending_events: Vec<ArcSseEvent>,
+}
+
+impl Drop for TaskArcSse {
+    fn drop(&mut self) {
+        if let Some(cancel) = self.sse_cancel.take() {
+            cancel.cancel();
+        }
+    }
 }
 
 impl TaskArcSse {
@@ -54,14 +67,16 @@ impl TaskArcSse {
         storage: Arc<WalletStorageManager>,
         services: Arc<dyn WalletServices>,
         callback_token: Option<String>,
+        arcade_url: Option<String>,
         on_tx_status_changed: Option<AsyncCallback<(String, String)>>,
     ) -> Self {
         Self {
             storage,
             _services: services,
             callback_token,
+            arcade_url,
             on_tx_status_changed,
-            sse_client: None,
+            sse_cancel: None,
             sse_receiver: None,
             pending_events: Vec::new(),
         }
@@ -276,23 +291,34 @@ impl WalletMonitorTask for TaskArcSse {
             }
         };
 
-        // For now, SSE client setup requires an arc_url from the services layer.
-        // If it cannot be obtained, the task remains dormant.
-        // The ArcSseClient is created but actual connection depends on runtime config.
+        let arcade_url = match &self.arcade_url {
+            Some(u) if !u.is_empty() => u.clone(),
+            _ => {
+                info!("[TaskArcSse] no arcadeUrl configured -- SSE disabled");
+                return Ok(());
+            }
+        };
+
         info!(
-            "[TaskArcSse] setting up -- token={}...",
+            "[TaskArcSse] setting up SSE for arcadeUrl={arcade_url} -- token={}...",
             &callback_token[..callback_token.len().min(8)]
         );
 
         let options = ArcSseClientOptions {
-            base_url: String::new(), // Will be configured from services at runtime
+            base_url: arcade_url,
             callback_token,
             arc_api_key: None,
             last_event_id: None,
         };
 
-        let (client, receiver) = ArcSseClient::new(options);
-        self.sse_client = Some(client);
+        // Connect. The loop reconnects with backoff and only ends when
+        // cancelled, so it owns the client on its own task; the task keeps the
+        // receiver and the cancel handle. Previously the client was built with
+        // an empty base_url and `connect` was never called at all, so the
+        // receiver could never yield and this task never ran.
+        let (mut client, receiver) = ArcSseClient::new(options);
+        self.sse_cancel = Some(client.cancel_handle());
+        tokio::spawn(async move { client.connect().await });
         self.sse_receiver = Some(receiver);
 
         Ok(())

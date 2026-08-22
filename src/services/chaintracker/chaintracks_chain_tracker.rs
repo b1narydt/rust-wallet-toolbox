@@ -25,6 +25,7 @@ use super::chaintracks_service_client::ChaintracksServiceClient;
 // Backend enum
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 enum ChaintracksBackend {
     Remote(ChaintracksServiceClient),
     Local(Arc<Chaintracks>),
@@ -61,9 +62,15 @@ impl From<crate::chaintracks::BlockHeader> for BlockHeader {
 /// Implements the bsv-sdk `ChainTracker` trait for merkle root validation.
 /// Caches previously looked-up merkle roots by block height to avoid
 /// redundant network or storage calls.
+/// Cloning shares the root cache: every clone reads and fills the same map.
+/// `Services::get_chain_tracker` hands out a clone per call, and a cache that
+/// did not survive that call would re-fetch every header root on every
+/// `internalize_action` — the cache exists precisely because one action
+/// validates many bumps at the same heights.
+#[derive(Clone)]
 pub struct ChaintracksChainTracker {
     backend: ChaintracksBackend,
-    root_cache: Mutex<HashMap<u32, String>>,
+    root_cache: Arc<Mutex<HashMap<u32, String>>>,
 }
 
 impl ChaintracksChainTracker {
@@ -73,7 +80,7 @@ impl ChaintracksChainTracker {
     pub fn new(service_client: ChaintracksServiceClient) -> Self {
         Self {
             backend: ChaintracksBackend::Remote(service_client),
-            root_cache: Mutex::new(HashMap::new()),
+            root_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -81,7 +88,7 @@ impl ChaintracksChainTracker {
     pub fn with_local(chaintracks: Arc<Chaintracks>) -> Self {
         Self {
             backend: ChaintracksBackend::Local(chaintracks),
-            root_cache: Mutex::new(HashMap::new()),
+            root_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 

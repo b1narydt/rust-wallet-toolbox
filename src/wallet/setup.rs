@@ -9,6 +9,7 @@
 use std::sync::Arc;
 
 use bsv::primitives::private_key::PrivateKey;
+use bsv::services::overlay_tools::LookupResolver;
 use bsv::wallet::cached_key_deriver::CachedKeyDeriver;
 use bsv::wallet::interfaces::{CreateActionArgs, CreateActionOutput, CreateActionResult};
 use bsv::wallet::types::{Counterparty, CounterpartyType, Protocol};
@@ -233,6 +234,9 @@ pub struct WalletBuilder {
     monitor_enabled: bool,
     monitor_after_task: Option<AsyncResultCallback<String>>,
     privileged_key_manager: Option<Arc<dyn PrivilegedKeyManager>>,
+    lookup_resolver: Option<Arc<LookupResolver>>,
+    arcade_url: Option<String>,
+    arcade_callback_token: Option<String>,
     pool_max_connections: Option<u32>,
     pool_min_connections: Option<u32>,
     pool_idle_timeout: Option<std::time::Duration>,
@@ -262,11 +266,38 @@ impl WalletBuilder {
             monitor_enabled: true,
             monitor_after_task: None,
             privileged_key_manager: None,
+            lookup_resolver: None,
+            arcade_url: None,
+            arcade_callback_token: None,
             pool_max_connections: None,
             pool_min_connections: None,
             pool_idle_timeout: None,
             pool_connect_timeout: None,
         }
+    }
+
+    /// Supply the overlay `LookupResolver` used by `discoverByIdentityKey` /
+    /// `discoverByAttributes`.
+    ///
+    /// Optional: a wallet built without one resolves against the default
+    /// trackers for its chain, matching TS (`Wallet.ts`:
+    /// `args.lookupResolver || new LookupResolver({networkPreset})`). Pass one
+    /// to point discovery at a private overlay.
+    pub fn lookup_resolver(mut self, resolver: Arc<LookupResolver>) -> Self {
+        self.lookup_resolver = Some(resolver);
+        self
+    }
+
+    /// Enable ARC/Arcade SSE status streaming for the monitor.
+    ///
+    /// Both halves are required — the base URL of the Arcade instance and the
+    /// stable callback token that broadcasts carry as `X-CallbackToken`.
+    /// Without them the SSE task stays dormant and transaction status is
+    /// discovered by the proof poll instead.
+    pub fn arcade_sse(mut self, arcade_url: String, callback_token: String) -> Self {
+        self.arcade_url = Some(arcade_url);
+        self.arcade_callback_token = Some(callback_token);
+        self
     }
 
     /// Set the chain (required).
@@ -601,7 +632,7 @@ impl WalletBuilder {
             monitor: None, // Monitor is created after wallet
             privileged_key_manager: self.privileged_key_manager,
             settings_manager: None,
-            lookup_resolver: None,
+            lookup_resolver: self.lookup_resolver,
         };
 
         // Construct wallet
@@ -621,6 +652,12 @@ impl WalletBuilder {
                     .default_tasks();
                 if let Some(callback) = self.monitor_after_task {
                     builder = builder.after_task(callback);
+                }
+                if let Some(url) = self.arcade_url {
+                    builder = builder.arcade_url(url);
+                }
+                if let Some(token) = self.arcade_callback_token {
+                    builder = builder.callback_token(token);
                 }
                 let mut monitor = builder.build()?;
                 monitor.start_tasks()?;

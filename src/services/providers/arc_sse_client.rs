@@ -80,8 +80,32 @@ impl ArcSseClient {
     /// Events are sent through the mpsc channel returned by `new()`.
     /// Reconnects with exponential backoff (1s, 2s, 4s, ... up to 30s).
     /// Respects the cancel_token to stop reconnection.
+    /// A handle that cancels this client's connection loop.
+    ///
+    /// `connect` owns the client, so a caller that spawns it keeps this to
+    /// stop the loop later; `close` is the equivalent for a caller that still
+    /// holds the client itself.
+    pub fn cancel_handle(&self) -> CancellationToken {
+        self.cancel_token.clone()
+    }
+
+    /// The SSE endpoint this client dials.
+    ///
+    /// `GET /events?callbackToken=<token>` — what Arcade serves and what the TS
+    /// client builds (ArcSSEClient.ts: `${base}/events?callbackToken=...`).
+    /// This used to request `/v1/tx/status/stream` with the token in an
+    /// `x-callback-token` header, which no deployed instance answers: the
+    /// stream could only ever fail, so no status event ever arrived this way.
+    pub fn stream_url(&self) -> String {
+        format!(
+            "{}/events?callbackToken={}",
+            self.base_url,
+            percent_encode_query_value(&self.callback_token)
+        )
+    }
+
     pub async fn connect(&mut self) {
-        let url = format!("{}/v1/tx/status/stream", self.base_url);
+        let url = self.stream_url();
         let mut backoff_secs: u64 = 1;
         #[allow(unused_assignments)]
         let max_backoff_secs: u64 = 30;
@@ -92,9 +116,7 @@ impl ArcSseClient {
                 break;
             }
 
-            let mut request = reqwest::Client::new()
-                .get(&url)
-                .header("x-callback-token", &self.callback_token);
+            let mut request = reqwest::Client::new().get(&url);
 
             if let Some(ref api_key) = self.arc_api_key {
                 request = request.header("Authorization", format!("Bearer {api_key}"));
@@ -194,5 +216,66 @@ impl ArcSseClient {
 
             backoff_secs = (backoff_secs * 2).min(max_backoff_secs);
         }
+    }
+}
+
+/// Percent-encode a value for use inside a query string.
+///
+/// Keeps the unreserved set (RFC 3986 §2.3) and encodes everything else, so a
+/// callback token containing `+`, `/` or `=` (base64 alphabets do) survives the
+/// round trip instead of being read as a query delimiter. Hand-rolled because
+/// `url` is an optional dependency of this crate.
+fn percent_encode_query_value(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*byte as char)
+            }
+            other => out.push_str(&format!("%{other:02X}")),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client_with(base_url: &str, token: &str) -> ArcSseClient {
+        ArcSseClient::new(ArcSseClientOptions {
+            base_url: base_url.to_string(),
+            callback_token: token.to_string(),
+            arc_api_key: None,
+            last_event_id: None,
+        })
+        .0
+    }
+
+    #[test]
+    fn stream_url_matches_the_ts_client() {
+        let c = client_with("https://arcade.example/", "tok123");
+        assert_eq!(
+            c.stream_url(),
+            "https://arcade.example/events?callbackToken=tok123",
+            "must dial Arcade's /events endpoint with the token as a query \
+             parameter, exactly as the TS ArcSSEClient does"
+        );
+    }
+
+    #[test]
+    fn stream_url_escapes_a_base64_token() {
+        // Base64 tokens carry +, / and = — unescaped they would terminate or
+        // corrupt the query string.
+        let c = client_with("https://arcade.example", "a+b/c=");
+        assert_eq!(
+            c.stream_url(),
+            "https://arcade.example/events?callbackToken=a%2Bb%2Fc%3D"
+        );
+    }
+
+    #[test]
+    fn percent_encoding_leaves_the_unreserved_set_alone() {
+        assert_eq!(percent_encode_query_value("Az09-_.~"), "Az09-_.~");
     }
 }
