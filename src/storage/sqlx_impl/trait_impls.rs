@@ -6,9 +6,12 @@
 
 #[cfg(feature = "sqlite")]
 mod sqlite_impl {
+    use std::collections::HashSet;
+    use std::io::Cursor;
     use std::sync::atomic::Ordering;
 
     use async_trait::async_trait;
+    use bsv::transaction::beef::Beef;
     use sqlx::Sqlite;
 
     use crate::error::{WalletError, WalletResult};
@@ -667,17 +670,112 @@ mod sqlite_impl {
                 let age_ms = params.purge_spent_age;
                 let cutoff =
                     chrono::Utc::now().naive_utc() - chrono::Duration::milliseconds(age_ms as i64);
-                // `spentBy` is the column; `spent_by` is the Rust field name.
-                // Naming the field here made every purge_spent run fail with
-                // "no such column: spent_by", so spent outputs were never
-                // reclaimed and the outputs table only ever grew — which also
-                // slows the change-candidate scan on every createAction.
-                let sql = "DELETE FROM outputs WHERE spendable = 0 AND spentBy IS NOT NULL AND updated_at < ?";
-                let result = sqlx::query(sql)
-                    .bind(cutoff)
-                    .execute(&self.write_pool)
+
+                // Spendable outputs may depend on older wallet transactions for
+                // their BEEF proofs. Keep every transaction in those proof chains.
+                let mut proof_txids = HashSet::new();
+                let spendable_outputs = StorageReader::find_outputs(
+                    self,
+                    &FindOutputsArgs {
+                        partial: OutputPartial {
+                            spendable: Some(true),
+                            ..Default::default()
+                        },
+                        tx_status: Some(vec![
+                            crate::status::TransactionStatus::Sending,
+                            crate::status::TransactionStatus::Unproven,
+                            crate::status::TransactionStatus::Completed,
+                            crate::status::TransactionStatus::Nosend,
+                        ]),
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .await?;
+                for output in spendable_outputs {
+                    let Some(txid) = output.txid else { continue };
+                    let Some(bytes) = crate::storage::beef::get_valid_beef_for_storage_reader(
+                        self,
+                        &txid,
+                        crate::storage::beef::TrustSelf::No,
+                        &HashSet::new(),
+                    )
+                    .await?
+                    else {
+                        continue;
+                    };
+                    let beef = Beef::from_binary(&mut Cursor::new(bytes)).map_err(|e| {
+                        WalletError::Internal(format!(
+                            "purge_data: failed to parse proof BEEF for {txid}: {e}"
+                        ))
+                    })?;
+                    proof_txids.extend(beef.txs.into_iter().map(|tx| tx.txid));
+                }
+
+                // A completed transaction is spent only when none of its outputs
+                // remains spendable. Purging the transaction as one unit preserves
+                // its history and output metadata until the final output is spent.
+                let candidates = sqlx::query_as::<_, (i64, Option<String>)>(
+                    "SELECT t.transactionId, t.txid \
+                     FROM transactions t \
+                     WHERE t.updated_at < ? AND t.status = 'completed' \
+                       AND NOT EXISTS (\
+                         SELECT 1 FROM outputs o \
+                         WHERE o.transactionId = t.transactionId AND o.spendable = 1\
+                       )",
+                )
+                .bind(cutoff)
+                .fetch_all(&self.write_pool)
+                .await?;
+                let transaction_ids: Vec<i64> = candidates
+                    .into_iter()
+                    .filter(|(_, txid)| {
+                        txid.as_ref().is_none_or(|txid| !proof_txids.contains(txid))
+                    })
+                    .map(|(transaction_id, _)| transaction_id)
+                    .collect();
+
+                let mut deleted_transactions = 0u64;
+                let mut db_tx = self.write_pool.begin().await?;
+                for transaction_id in transaction_ids {
+                    // Clear incoming spentBy references, then remove dependent
+                    // mapping rows before their outputs and parent transaction.
+                    sqlx::query(
+                        "UPDATE outputs SET spentBy = NULL \
+                         WHERE spendable = 0 AND spentBy = ?",
+                    )
+                    .bind(transaction_id)
+                    .execute(&mut *db_tx)
                     .await?;
-                summary.push(format!("purged {} spent outputs", result.rows_affected()));
+                    sqlx::query(
+                        "DELETE FROM output_tags_map WHERE outputId IN (\
+                           SELECT outputId FROM outputs WHERE transactionId = ?\
+                         )",
+                    )
+                    .bind(transaction_id)
+                    .execute(&mut *db_tx)
+                    .await?;
+                    sqlx::query("DELETE FROM outputs WHERE transactionId = ?")
+                        .bind(transaction_id)
+                        .execute(&mut *db_tx)
+                        .await?;
+                    sqlx::query("DELETE FROM tx_labels_map WHERE transactionId = ?")
+                        .bind(transaction_id)
+                        .execute(&mut *db_tx)
+                        .await?;
+                    sqlx::query("DELETE FROM commissions WHERE transactionId = ?")
+                        .bind(transaction_id)
+                        .execute(&mut *db_tx)
+                        .await?;
+                    deleted_transactions +=
+                        sqlx::query("DELETE FROM transactions WHERE transactionId = ?")
+                            .bind(transaction_id)
+                            .execute(&mut *db_tx)
+                            .await?
+                            .rows_affected();
+                }
+                db_tx.commit().await?;
+                summary.push(format!("purged {deleted_transactions} spent transactions"));
             }
 
             if params.purge_monitor_events {

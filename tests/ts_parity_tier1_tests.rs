@@ -90,6 +90,17 @@ async fn seed_tx(
 
 /// An output already consumed by `spent_by`, i.e. what a pending action holds.
 async fn seed_consumed_output(s: &SqliteStorage, user_id: i64, spent_by: i64) -> i64 {
+    seed_output(s, user_id, spent_by, 0, false, Some(spent_by)).await
+}
+
+async fn seed_output(
+    s: &SqliteStorage,
+    user_id: i64,
+    transaction_id: i64,
+    vout: i32,
+    spendable: bool,
+    spent_by: Option<i64>,
+) -> i64 {
     let now = long_ago();
     StorageReaderWriter::insert_output(
         s,
@@ -98,12 +109,12 @@ async fn seed_consumed_output(s: &SqliteStorage, user_id: i64, spent_by: i64) ->
             updated_at: now,
             output_id: 0,
             user_id,
-            transaction_id: spent_by,
+            transaction_id,
             basket_id: None,
-            spendable: false,
+            spendable,
             change: true,
             output_description: None,
-            vout: 0,
+            vout,
             satoshis: 5000,
             provided_by: StorageProvidedBy::Storage,
             purpose: "change".to_string(),
@@ -113,7 +124,7 @@ async fn seed_consumed_output(s: &SqliteStorage, user_id: i64, spent_by: i64) ->
             derivation_prefix: None,
             derivation_suffix: None,
             custom_instructions: None,
-            spent_by: Some(spent_by),
+            spent_by,
             sequence_number: None,
             spending_description: None,
             script_length: None,
@@ -165,18 +176,16 @@ async fn tx_by_id(s: &SqliteStorage, transaction_id: i64) -> Transaction {
 }
 
 // ---------------------------------------------------------------------------
-// purge_data: spent outputs are actually reclaimed
+// purge_data: whole spent transactions are reclaimed
 // ---------------------------------------------------------------------------
 
-/// The spent-output purge named the Rust field (`spent_by`) instead of the
-/// column (`spentBy`), so every run failed with "no such column" and the
-/// outputs table only ever grew.
 #[tokio::test]
-async fn purge_spent_deletes_spent_outputs() {
+async fn purge_spent_retains_a_transaction_with_any_spendable_output() {
     let s = storage().await.unwrap();
     let user_id = seed_user(&s).await;
     let tx_id = seed_tx(&s, user_id, "ref-purge", TransactionStatus::Completed).await;
-    let output_id = seed_consumed_output(&s, user_id, tx_id).await;
+    let spent_output_id = seed_output(&s, user_id, tx_id, 0, false, Some(tx_id)).await;
+    let spendable_output_id = seed_output(&s, user_id, tx_id, 1, true, None).await;
 
     let summary = StorageReaderWriter::purge_data(
         &s,
@@ -188,18 +197,82 @@ async fn purge_spent_deletes_spent_outputs() {
         None,
     )
     .await
-    .expect("purge_data must not fail on the spent branch");
+    .expect("purge_data should inspect complete transactions");
 
     assert!(
-        summary.contains("purged 1 spent outputs"),
-        "expected one spent output purged, got: {summary}"
+        summary.contains("purged 0 spent transactions"),
+        "a transaction with spendable change must be retained: {summary}"
     );
+    assert_eq!(
+        output_by_id(&s, spent_output_id).await.output_id,
+        spent_output_id
+    );
+    assert_eq!(
+        output_by_id(&s, spendable_output_id).await.output_id,
+        spendable_output_id
+    );
+    assert_eq!(tx_by_id(&s, tx_id).await.transaction_id, tx_id);
+}
 
-    let remaining = StorageReader::find_outputs(
+#[tokio::test]
+async fn purge_spent_deletes_output_tags_before_the_spent_transaction() {
+    let s = storage().await.unwrap();
+    let user_id = seed_user(&s).await;
+    let tx_id = seed_tx(
         &s,
-        &FindOutputsArgs {
-            partial: OutputPartial {
-                output_id: Some(output_id),
+        user_id,
+        "ref-purge-tagged",
+        TransactionStatus::Completed,
+    )
+    .await;
+    let output_id = seed_consumed_output(&s, user_id, tx_id).await;
+    let now = long_ago();
+    let tag_id = StorageReaderWriter::insert_output_tag(
+        &s,
+        &OutputTag {
+            created_at: now,
+            updated_at: now,
+            output_tag_id: 0,
+            user_id,
+            tag: "keep-delete-order".to_string(),
+            is_deleted: false,
+        },
+        None,
+    )
+    .await
+    .unwrap();
+    StorageReaderWriter::insert_output_tag_map(
+        &s,
+        &OutputTagMap {
+            created_at: now,
+            updated_at: now,
+            output_tag_id: tag_id,
+            output_id,
+            is_deleted: false,
+        },
+        None,
+    )
+    .await
+    .unwrap();
+
+    let summary = StorageReaderWriter::purge_data(
+        &s,
+        &PurgeParams {
+            purge_spent: true,
+            purge_spent_age: 0,
+            ..Default::default()
+        },
+        None,
+    )
+    .await
+    .expect("tag mappings must be deleted before their output");
+
+    assert!(summary.contains("purged 1 spent transactions"));
+    let transactions = StorageReader::find_transactions(
+        &s,
+        &FindTransactionsArgs {
+            partial: TransactionPartial {
+                transaction_id: Some(tx_id),
                 ..Default::default()
             },
             ..Default::default()
@@ -208,7 +281,10 @@ async fn purge_spent_deletes_spent_outputs() {
     )
     .await
     .unwrap();
-    assert!(remaining.is_empty(), "the spent output should be gone");
+    assert!(
+        transactions.is_empty(),
+        "the fully spent transaction is purged"
+    );
 }
 
 // ---------------------------------------------------------------------------
