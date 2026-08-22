@@ -262,7 +262,9 @@ pub async fn complete_signed_transaction_with_provider(
 
         let source_locking_script = LockingScript::from_binary(&hex_to_bytes(&pdi.locking_script)?);
 
-        // Build source transaction stub for sighash computation
+        // Build a source-transaction STUB for sighash computation only. Its
+        // txid is NOT the real parent's — build_beef's ancestry merge refuses
+        // it and fetches the real parent from storage. Never let it reach a BEEF.
         let mut source_tx = Transaction::new();
         for _ in 0..tx.inputs[vin].source_output_index {
             source_tx.add_output(TransactionOutput {

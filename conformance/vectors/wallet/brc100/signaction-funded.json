@@ -4894,7 +4894,7 @@
       "notes": [
         "upstream reference/unlockingScript were fabrications (no precursor action exists); recorded against a real signable precursor with a real P2PKH signature over the actual sighash",
         "2026-08-21 wire-encoding fix: args.reference migrated from the double-encoded wire spelling (base64 of the base64 text) to the reference text itself, matching the TS Base64String wire",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -9774,7 +9774,7 @@
       "notes": [
         "two real caller inputs, both really signed",
         "2026-08-21 wire-encoding fix: args.reference migrated from the double-encoded wire spelling (base64 of the base64 text) to the reference text itself, matching the TS Base64String wire",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -14650,7 +14650,7 @@
       "notes": [
         "precursor created without noSend; the signAction options.noSend=true is what makes the result a noSend",
         "2026-08-21 wire-encoding fix: args.reference migrated from the double-encoded wire spelling (base64 of the base64 text) to the reference text itself, matching the TS Base64String wire",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -24463,7 +24463,7 @@
         "upstream sendWith txids were placeholders; replaced with the txids of two real noSend precursor actions in the same wallet (the second funded entirely by the first's change via options.noSendChange)",
         "the signable precursor is a delayed send, not noSend: both the TS reference and this implementation treat isNoSend && isSendWith as an internal error",
         "2026-08-21 wire-encoding fix: args.reference migrated from the double-encoded wire spelling (base64 of the base64 text) to the reference text itself, matching the TS Base64String wire",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -29447,7 +29447,7 @@
       "notes": [
         "recorded with a real inline broadcast (acceptDelayedBroadcast=false); expected.postBeefResponse carries the network's recorded answer, which offline replay serves back instead of the tripwire",
         "2026-08-21 wire-encoding fix: args.reference migrated from the double-encoded wire spelling (base64 of the base64 text) to the reference text itself, matching the TS Base64String wire",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {

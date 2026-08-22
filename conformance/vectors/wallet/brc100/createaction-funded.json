@@ -171,7 +171,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -250,7 +250,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -337,7 +337,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -429,7 +429,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -499,7 +499,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -577,7 +577,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -661,7 +661,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -757,7 +757,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -825,7 +825,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -900,7 +900,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -989,7 +989,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -1067,7 +1067,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -1162,7 +1162,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -1227,7 +1227,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -1306,7 +1306,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -1393,7 +1393,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -1485,7 +1485,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -1555,7 +1555,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -1633,7 +1633,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -1717,7 +1717,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -1813,7 +1813,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -1881,7 +1881,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -1965,7 +1965,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -2040,7 +2040,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -2110,7 +2110,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -2188,7 +2188,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -2272,7 +2272,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -2368,7 +2368,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -2436,7 +2436,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -2511,7 +2511,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -2600,7 +2600,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -2695,7 +2695,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -2760,7 +2760,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -2856,7 +2856,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -2935,7 +2935,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -3022,7 +3022,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -3114,7 +3114,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -3184,7 +3184,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -3262,7 +3262,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -3346,7 +3346,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -3442,7 +3442,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -3510,7 +3510,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -3585,7 +3585,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -3674,7 +3674,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -3742,7 +3742,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -3837,7 +3837,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -3902,7 +3902,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -3981,7 +3981,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -4068,7 +4068,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -4160,7 +4160,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -4230,7 +4230,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -4308,7 +4308,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -4392,7 +4392,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -4488,7 +4488,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -4556,7 +4556,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -4631,7 +4631,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -4706,7 +4706,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -4778,7 +4778,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -4870,7 +4870,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "the immediate-broadcast representative: recorded with its upstream acceptDelayedBroadcast=false intact, really broadcast inline during the recorded run (expected.postBeefResponse carries the network's answer for offline replay), funded by vector 61's broadcast change (set S3B)",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -4954,7 +4954,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -5050,7 +5050,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -5118,7 +5118,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -5193,7 +5193,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -5282,7 +5282,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -5377,7 +5377,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -5442,7 +5442,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -5531,7 +5531,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -5610,7 +5610,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -5697,7 +5697,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -5789,7 +5789,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -5859,7 +5859,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -5937,7 +5937,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -6021,7 +6021,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -6117,7 +6117,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -6185,7 +6185,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -6260,7 +6260,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -6349,7 +6349,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -6444,7 +6444,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -6539,7 +6539,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -6604,7 +6604,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -6683,7 +6683,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -6770,7 +6770,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -6862,7 +6862,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -6932,7 +6932,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -7010,7 +7010,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -7094,7 +7094,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -7190,7 +7190,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -7258,7 +7258,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -7323,7 +7323,7 @@
         "upstream put noSend at args top level (silently dropped by every impl's parser); moved into options where BRC-100 defines it",
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -7398,7 +7398,7 @@
         "upstream put acceptDelayedBroadcast at args top level; moved into options",
         "upstream claimed the reserved basket 'default' on an output (BRC-100 reserves it for wallet change; the SDK validator rejects it); renamed to 'corpus'",
         "upstream intent was an immediate broadcast (noSend=false,              acceptDelayedBroadcast=false); recorded as a delayed send because 30 immediate              broadcasts from one funding state are mutually double-spending. The true              inline-broadcast path is recorded (and network-verified) by vector 62 and              signaction vector 8",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "expected": {
@@ -7507,7 +7507,7 @@
       },
       "notes": [
         "pins the upstream corpus defect: options flags at args top level never reach any implementation's options parsing",
-        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
+        "2026-08-21: expected.tx regenerated — BEEF-only byte change (rust-mpc#352: BEEF re-serialized in TS-parity sorted order (delta is sort-only; refuter-verified strict superset with identical raws and pinned bump roots) + dependency-sorted atomic serialization); status/txid/rawTx/change/signatures verified unchanged and the new BEEF verified a superset of the recorded one before rewriting."
       ],
       "upstream": {
         "id": "wallet.brc100.createaction.1"

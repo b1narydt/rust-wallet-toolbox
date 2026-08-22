@@ -110,9 +110,12 @@ pub async fn complete_signed_transaction(
 
         let source_locking_script = LockingScript::from_binary(&hex_to_bytes(&pdi.locking_script));
 
-        // Build a synthetic source transaction with the correct output at source_output_index.
-        // This sets source_transaction on the input for BEEF construction correctness
-        // and future compatibility with Transaction::sign_all_inputs().
+        // Build a synthetic source transaction with the correct output at
+        // source_output_index, ONLY so signing APIs that read
+        // `source_transaction` (satoshis + locking script) can run. Its txid
+        // is NOT the real parent's — `build_beef`'s ancestry merge detects and
+        // REFUSES it (`synthetic_source_stub_is_not_merged`), fetching the
+        // real parent from storage instead. Never let this stub reach a BEEF.
         let mut source_tx = Transaction::new();
         // Pad outputs up to source_output_index
         for _ in 0..tx.inputs[vin].source_output_index {

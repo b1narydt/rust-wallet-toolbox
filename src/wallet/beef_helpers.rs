@@ -201,20 +201,22 @@ pub fn get_known_txids(beef: &mut BeefParty, new_known_txids: Option<&[String]>)
     // matching TS behavior which calls sortTxs() before collecting txids.
     beef.beef.sort_txs();
 
-    // Collect txids in dependency order, EXCLUDING txid-only entries: a
-    // txid-only entry is an unproven claim, and advertising it as "known"
-    // lets the wallet elide proof data the recipient cannot reconstruct.
+    // Collect txids in dependency order. TS PARITY (partitionTxs): an
+    // input-less txid-only entry IS in the reference's `valid` set — the
+    // caller DECLARED it known, and that declaration is the whole point of
+    // knownTxids (the counterparty may trim that ancestry). Excluding them
+    // (the previous behavior) silently dropped caller declarations and
+    // defeated trimming.
     //
-    // TODO(bsv-sdk): full TS parity is `sortTxs().valid` — only txids that
-    // are bump-proven or chain to proven ancestors. The Rust SDK's
-    // `sort_txs()` returns no SortResult, so the proven-or-chained subset
-    // is not observable here; excluding txid-only entries is the sound
-    // narrowing available today. Upstream a SortResult return, then switch
-    // this to its `valid` set.
+    // TODO(bsv-sdk): remaining parity gap is TS's `notValid` partition
+    // (full entries whose input chain is broken). The Rust SDK's
+    // `sort_txs()` returns no SortResult, so that subset is not observable
+    // here; upstream a SortResult return, then adopt its `valid` set
+    // verbatim.
     beef.beef
         .txs
         .iter()
-        .filter(|btx| !btx.is_txid_only())
+        .filter(|btx| !btx.is_txid_only() || btx.input_txids.is_empty())
         .map(|btx| btx.txid.clone())
         .collect()
 }
@@ -287,10 +289,11 @@ mod tests {
         assert!(err.to_string().contains(&missing));
     }
 
-    /// get_known_txids excludes txid-only entries: an unproven claim must
-    /// not be advertised as a txid the wallet can vouch for.
+    /// TS parity (partitionTxs): a caller-declared, input-less txid-only
+    /// entry is in the reference's `valid` set and IS advertised — dropping
+    /// it silently un-declared the caller's knownTxids and defeated trimming.
     #[test]
-    fn get_known_txids_excludes_txid_only_entries() {
+    fn get_known_txids_advertises_caller_declared_txid_only_entries() {
         let full = simple_tx(300);
         let full_txid = full.id().unwrap();
         let mut party = party_with(&[&full]);
@@ -300,8 +303,9 @@ mod tests {
 
         assert!(known.contains(&full_txid), "full tx txid is known");
         assert!(
-            !known.contains(&claimed),
-            "txid-only entry must not be advertised as known"
+            known.contains(&claimed),
+            "a caller-declared input-less txid-only entry is in TS's `valid` \
+             set and must be advertised — dropping it un-declares knownTxids"
         );
     }
 }
