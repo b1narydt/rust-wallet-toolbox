@@ -436,7 +436,28 @@ fn request_args_for(identity_key: &str) -> RequestSyncChunkArgs {
         since: None,
         max_rough_size: 10_000_000,
         max_items: 1000,
-        offsets: vec![],
+        offsets: [
+            "provenTx",
+            "outputBasket",
+            "outputTag",
+            "txLabel",
+            "transaction",
+            "output",
+            "txLabelMap",
+            "outputTagMap",
+            "certificate",
+            "certificateField",
+            "commission",
+            "provenTxReq",
+        ]
+        .into_iter()
+        .map(
+            |name| bsv_wallet_toolbox::storage::sync::request_args::SyncChunkOffset {
+                name: name.to_string(),
+                offset: 0,
+            },
+        )
+        .collect(),
     }
 }
 

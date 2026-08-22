@@ -15,6 +15,7 @@ mod sync_tests {
     use bsv_wallet_toolbox::storage::sqlx_impl::SqliteStorage;
     use bsv_wallet_toolbox::storage::sync::get_sync_chunk::{get_sync_chunk, GetSyncChunkArgs};
     use bsv_wallet_toolbox::storage::sync::process_sync_chunk::process_sync_chunk;
+    use bsv_wallet_toolbox::storage::sync::request_args::{RequestSyncChunkArgs, SyncChunkOffset};
     use bsv_wallet_toolbox::storage::sync::sync_map::{SyncChunk, SyncMap};
     use bsv_wallet_toolbox::storage::traits::provider::StorageProvider;
     use bsv_wallet_toolbox::storage::traits::reader::StorageReader;
@@ -138,6 +139,70 @@ mod sync_tests {
         let message = err.to_string();
         assert!(message.contains("identityKey"));
         assert!(message.contains(identity));
+    }
+
+    #[tokio::test]
+    async fn wire_sync_offsets_are_a_positional_prefix() {
+        let storage = setup_storage().await.unwrap();
+        let identity = "02abc-positional-offsets";
+        let user_id = insert_test_user(&storage, identity).await;
+        let now = dt("2024-01-15 10:00:00");
+        StorageReaderWriter::insert_transaction(
+            &storage,
+            &Transaction {
+                created_at: now,
+                updated_at: now,
+                transaction_id: 0,
+                user_id,
+                proven_tx_id: None,
+                status: TransactionStatus::Completed,
+                reference: "offset-row".to_string(),
+                is_outgoing: true,
+                satoshis: 1,
+                description: "offset row".to_string(),
+                version: Some(1),
+                lock_time: Some(0),
+                txid: None,
+                input_beef: None,
+                raw_tx: None,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+        let args = |offsets| RequestSyncChunkArgs {
+            from_storage_identity_key: "storage-a".to_string(),
+            to_storage_identity_key: "storage-b".to_string(),
+            identity_key: identity.to_string(),
+            since: None,
+            max_items: 1000,
+            max_rough_size: 10_000_000,
+            offsets,
+        };
+
+        let stopped = bsv_wallet_toolbox::storage::traits::wallet_provider::WalletStorageProvider::get_sync_chunk(
+            &storage,
+            &args(vec![]),
+        )
+        .await
+        .unwrap();
+        assert!(
+            stopped.transactions.is_none(),
+            "an exhausted positional offset array must not default later entities to zero"
+        );
+
+        let err = bsv_wallet_toolbox::storage::traits::wallet_provider::WalletStorageProvider::get_sync_chunk(
+            &storage,
+            &args(vec![SyncChunkOffset {
+                name: "transaction".to_string(),
+                offset: 0,
+            }]),
+        )
+        .await
+        .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("provenTx"));
+        assert!(message.contains("transaction"));
     }
 
     // -----------------------------------------------------------------------

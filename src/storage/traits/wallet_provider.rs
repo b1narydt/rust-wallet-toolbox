@@ -1092,7 +1092,7 @@ impl<T: StorageProvider> WalletStorageProvider for T {
 
     async fn get_sync_chunk(&self, args: &RequestSyncChunkArgs) -> WalletResult<SyncChunk> {
         args.validate()?;
-        let (sync_map, offsets) = build_sync_map_and_offsets(args);
+        let (sync_map, offsets) = build_sync_map_and_offsets(args)?;
         let internal_args = GetSyncChunkArgs {
             from_storage_identity_key: args.from_storage_identity_key.clone(),
             to_storage_identity_key: args.to_storage_identity_key.clone(),
@@ -1493,7 +1493,9 @@ impl<T: StorageProvider> WalletStorageProvider for T {
 
 /// Convert `RequestSyncChunkArgs` wire format into the internal `SyncMap` and
 /// `SyncChunkOffsets` types used by the low-level sync functions.
-fn build_sync_map_and_offsets(args: &RequestSyncChunkArgs) -> (SyncMap, SyncChunkOffsets) {
+fn build_sync_map_and_offsets(
+    args: &RequestSyncChunkArgs,
+) -> WalletResult<(SyncMap, SyncChunkOffsets)> {
     let mut sync_map = SyncMap::new();
 
     // Apply the `since` timestamp to all 12 entity maps uniformly
@@ -1512,27 +1514,54 @@ fn build_sync_map_and_offsets(args: &RequestSyncChunkArgs) -> (SyncMap, SyncChun
         sync_map.proven_tx_req.max_updated_at = Some(since);
     }
 
-    // Convert Vec<SyncChunkOffset> to SyncChunkOffsets struct
-    let mut offsets = SyncChunkOffsets::default();
-    for SyncChunkOffset { name, offset } in &args.offsets {
-        match name.as_str() {
-            "provenTx" => offsets.proven_tx = *offset,
-            "outputBasket" => offsets.output_basket = *offset,
-            "outputTag" => offsets.output_tag = *offset,
-            "txLabel" => offsets.tx_label = *offset,
-            "transaction" => offsets.transaction = *offset,
-            "output" => offsets.output = *offset,
-            "txLabelMap" => offsets.tx_label_map = *offset,
-            "outputTagMap" => offsets.output_tag_map = *offset,
-            "certificate" => offsets.certificate = *offset,
-            "certificateField" => offsets.certificate_field = *offset,
-            "commission" => offsets.commission = *offset,
-            "provenTxReq" => offsets.proven_tx_req = *offset,
-            _ => {} // unknown entity names are ignored
+    // The wire array is a positional prefix in dependency order. Once it is
+    // exhausted, no later entity is queried in this chunk.
+    const ENTITY_ORDER: [&str; 12] = [
+        "provenTx",
+        "outputBasket",
+        "outputTag",
+        "txLabel",
+        "transaction",
+        "output",
+        "txLabelMap",
+        "outputTagMap",
+        "certificate",
+        "certificateField",
+        "commission",
+        "provenTxReq",
+    ];
+    let mut offsets = SyncChunkOffsets::stopped();
+    for (index, SyncChunkOffset { name, offset }) in args.offsets.iter().enumerate() {
+        let Some(expected) = ENTITY_ORDER.get(index) else {
+            return Err(WalletError::InvalidParameter {
+                parameter: "offsets".to_string(),
+                must_be: "at most 12 entries in dependency order".to_string(),
+            });
+        };
+        if name != expected {
+            return Err(WalletError::InvalidParameter {
+                parameter: "offsets".to_string(),
+                must_be: format!("in dependency order; '{expected}' expected, found {name}"),
+            });
+        }
+        match index {
+            0 => offsets.proven_tx = *offset,
+            1 => offsets.output_basket = *offset,
+            2 => offsets.output_tag = *offset,
+            3 => offsets.tx_label = *offset,
+            4 => offsets.transaction = *offset,
+            5 => offsets.output = *offset,
+            6 => offsets.tx_label_map = *offset,
+            7 => offsets.output_tag_map = *offset,
+            8 => offsets.certificate = *offset,
+            9 => offsets.certificate_field = *offset,
+            10 => offsets.commission = *offset,
+            11 => offsets.proven_tx_req = *offset,
+            _ => unreachable!("ENTITY_ORDER bounds checked above"),
         }
     }
 
-    (sync_map, offsets)
+    Ok((sync_map, offsets))
 }
 
 /// The maximum `updated_at` across all per-entity sync maps, or `None` when no

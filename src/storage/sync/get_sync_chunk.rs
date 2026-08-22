@@ -43,6 +43,26 @@ pub struct SyncChunkOffsets {
     pub proven_tx_req: i64,
 }
 
+impl SyncChunkOffsets {
+    /// Offsets for entities the positional wire request did not reach.
+    pub(crate) fn stopped() -> Self {
+        Self {
+            proven_tx: -1,
+            output_basket: -1,
+            output_tag: -1,
+            tx_label: -1,
+            transaction: -1,
+            output: -1,
+            tx_label_map: -1,
+            output_tag_map: -1,
+            certificate: -1,
+            certificate_field: -1,
+            commission: -1,
+            proven_tx_req: -1,
+        }
+    }
+}
+
 /// Arguments for getSyncChunk.
 pub struct GetSyncChunkArgs<'a> {
     /// Identity key of the storage being read from.
@@ -132,7 +152,7 @@ pub async fn get_sync_chunk(
     // entity has been queried once; entities never reached stay absent.
     macro_rules! chunk_entity {
         ($target:ident, $offset:expr, $divider:literal, $fetch:expr) => {
-            if !done {
+            if !done && $offset >= 0 {
                 let mut offset = $offset;
                 loop {
                     // TS: Math.min(itemCount, Math.max(10, maxItems / maxDivider))
