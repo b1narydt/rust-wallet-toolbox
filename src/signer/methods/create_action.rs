@@ -474,28 +474,15 @@ pub(crate) fn build_beef(
 /// sourceTransaction recursion (@bsv/sdk Beef.ts), which the Rust SDK's
 /// `Beef` does not yet provide.
 ///
-/// TODO(bsv-sdk): upstream as `Beef::merge_transaction` so callers get the
-/// TS method directly; this helper then reduces to that call plus the
-/// fail-closed closure check.
-///
-/// Deliberate deviations from TS, both narrowing:
-///   * sources already represented in the BEEF are not re-merged (dedup;
-///     the resulting closure is identical), and
-///   * a branch that cannot be completed FAILS CLOSED here, where TS defers
-///     the hole to `verifyValid` at consumption time — a returned BEEF must
-///     be complete without relying on later rehydration (one-shot processes
-///     exit before any monitor runs; the live rust-mpc#352 failure mode).
-///
-/// For each input: if its source txid is already represented in the BEEF,
-/// done. Otherwise the input must carry a genuine `source_transaction` —
-/// one whose computed txid matches the input's `source_txid`; the synthetic
-/// output-padded stubs `complete_signed_transaction` fabricates for signing
-/// hash their own (wrong) txid and are deliberately NOT merged, because a
-/// stub cannot satisfy the closure. A genuine source with a `merkle_path`
-/// terminates its branch (bump merged alongside); one without recurses into
-/// its own inputs first. A branch ending with neither a usable source nor
-/// BEEF representation is an error naming the txid — fail closed, never a
-/// partial BEEF.
+/// `Beef::merge_transaction` (bsv-sdk 0.5.2) is the TS `mergeTransactionGraph`
+/// walk, and this is deliberately NOT delegated to it. Two properties here are
+/// narrower than the reference and both are load-bearing: a branch that ends
+/// without a proof and without a carried source is an ERROR rather than a
+/// silent partial (the rust-mpc#352 closure requirement), and a carried
+/// `source_transaction` whose computed txid does not match the input is
+/// rejected — the signer fabricates output-padded stubs for sighash, and
+/// merging one would put a transaction with the wrong txid into the BEEF.
+/// The SDK's version, correctly, does neither.
 fn merge_input_ancestry(
     beef: &mut Beef,
     tx: &bsv::transaction::transaction::Transaction,

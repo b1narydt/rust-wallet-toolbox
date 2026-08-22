@@ -185,40 +185,19 @@ pub fn verify_returned_txid_only_beef(
 /// * `beef` - The wallet's BeefParty to query.
 /// * `new_known_txids` - Optional additional txids to add as txid-only.
 pub fn get_known_txids(beef: &mut BeefParty, new_known_txids: Option<&[String]>) -> Vec<String> {
-    // Merge new txids as txid-only entries
     if let Some(txids) = new_known_txids {
         for txid in txids {
-            // Add as txid-only if not already present
-            if beef.beef.find_txid(txid).is_none() {
-                beef.beef
-                    .txs
-                    .push(bsv::transaction::beef_tx::BeefTx::from_txid(txid.clone()));
-            }
+            beef.beef.merge_txid_only(txid);
         }
     }
-
-    // Sort transactions in dependency order using Kahn's algorithm (SDK 0.1.6)
-    // matching TS behavior which calls sortTxs() before collecting txids.
-    beef.beef.sort_txs();
-
-    // Collect txids in dependency order. TS PARITY (partitionTxs): an
-    // input-less txid-only entry IS in the reference's `valid` set — the
-    // caller DECLARED it known, and that declaration is the whole point of
-    // knownTxids (the counterparty may trim that ancestry). Excluding them
-    // (the previous behavior) silently dropped caller declarations and
-    // defeated trimming.
-    //
-    // TODO(bsv-sdk): remaining parity gap is TS's `notValid` partition
-    // (full entries whose input chain is broken). The Rust SDK's
-    // `sort_txs()` returns no SortResult, so that subset is not observable
-    // here; upstream a SortResult return, then adopt its `valid` set
-    // verbatim.
-    beef.beef
-        .txs
-        .iter()
-        .filter(|btx| !btx.is_txid_only() || btx.input_txids.is_empty())
-        .map(|btx| btx.txid.clone())
-        .collect()
+    // `sort_txs().valid` is the reference's answer, not an approximation of
+    // it: proven transactions, those chaining back to one, and the input-less
+    // txid-only entries the caller declared (TS `partitionTxs` marks all three
+    // valid). It also excludes the `notValid` partition — full entries whose
+    // input chain is broken — which the previous hand-rolled filter had no way
+    // to see, so this wallet could advertise a txid it could not actually
+    // vouch for.
+    beef.beef.sort_txs().valid
 }
 
 #[cfg(test)]
