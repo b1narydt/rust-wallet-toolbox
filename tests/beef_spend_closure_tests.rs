@@ -260,6 +260,104 @@ mod beef_spend_closure {
         );
     }
 
+    /// The monitor's broadcast rebuild (rust-mpc#352 P3-a): the BEEF posted
+    /// by attempt_to_post_reqs_to_network must be PLAIN (no Atomic frame)
+    /// and dependency-sorted — the subject was merged before its source
+    /// BEEFs, so without the explicit sort it preceded its parents on the
+    /// wire.
+    #[tokio::test]
+    async fn monitor_rebuild_posts_plain_sorted_beef() {
+        use bsv_wallet_toolbox::monitor::helpers::attempt_to_post_reqs_to_network;
+        use bsv_wallet_toolbox::storage::find_args::{FindProvenTxReqsArgs, ProvenTxReqPartial};
+
+        // Same funded fixtures as funded_wallet(), but with a capturing
+        // post_beef so the rebuilt broadcast bytes can be asserted.
+        let file: FundedFile =
+            serde_json::from_str(CREATE_CORPUS).expect("funded corpus JSON must parse");
+        let vector = file
+            .vectors
+            .iter()
+            .find(|v| !v.input.funding_set.is_empty())
+            .expect("a funded vector");
+        let services = Arc::new(FixtureServices {
+            roots: file.merkle_roots.clone(),
+            post: PostMode::Capture(std::sync::Mutex::new(Vec::new())),
+        });
+        let setup = build_vector_wallet(&vector.input.root_key, services.clone())
+            .await
+            .expect("wallet build");
+        for p in &file
+            .funding_sets
+            .get(&vector.input.funding_set)
+            .expect("funding set present")
+            .payments
+        {
+            internalize_funding(&setup, p).await.expect("internalize");
+        }
+
+        // A delayed mint leaves a ProvenTxReq for the broadcast queue.
+        let mint_args: CreateActionArgs = serde_json::from_value(serde_json::json!({
+            "description": "mint for monitor rebuild",
+            "outputs": [{
+                "lockingScript": "5187",
+                "satoshis": 700,
+                "outputDescription": "monitor token",
+                "basket": "regression 352"
+            }]
+        }))
+        .expect("mint args");
+        let mint = setup
+            .wallet
+            .create_action(mint_args, None)
+            .await
+            .expect("mint createAction");
+        let mint_txid = mint.txid.expect("mint txid");
+
+        let reqs = setup
+            .storage
+            .find_proven_tx_reqs(&FindProvenTxReqsArgs {
+                partial: ProvenTxReqPartial {
+                    txid: Some(mint_txid.clone()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .await
+            .expect("find reqs");
+        assert_eq!(reqs.len(), 1, "delayed mint leaves one req");
+
+        attempt_to_post_reqs_to_network(&setup.storage, services.as_ref(), &reqs)
+            .await
+            .expect("rebuild + post");
+
+        let captured = match &services.post {
+            PostMode::Capture(store) => store.lock().unwrap().clone(),
+            _ => unreachable!(),
+        };
+        assert_eq!(captured.len(), 1, "exactly one broadcast");
+        let bytes = &captured[0];
+
+        let mut cursor = std::io::Cursor::new(bytes);
+        let beef = Beef::from_binary(&mut cursor).expect("posted beef parses");
+        assert!(
+            beef.atomic_txid.is_none(),
+            "broadcast BEEF must be plain, not Atomic-framed"
+        );
+        assert!(beef.find_txid(&mint_txid).is_some(), "subject present");
+        assert_closure(&beef, "monitor broadcast BEEF");
+        for (i, btx) in beef.txs.iter().enumerate() {
+            for input_txid in &btx.input_txids {
+                if let Some(pos) = beef.txs.iter().position(|t| &t.txid == input_txid) {
+                    assert!(
+                        pos < i,
+                        "ancestor {input_txid} serialized after dependent {}",
+                        btx.txid
+                    );
+                }
+            }
+        }
+    }
+
     /// listOutputs(include=EntireTransactions) assembly (rust-mpc#352 P2-c):
     /// per-txid BEEFs merge through the SDK's merge_beef — bumps deduped by
     /// (height, root), no duplicate txids — and the wire order is

@@ -184,6 +184,9 @@ pub enum PostMode {
     /// Replay the network response recorded when the vector was recorded
     /// (vectors whose recorded behavior includes an inline broadcast).
     Recorded(Vec<types::PostBeefResult>),
+    /// Record every posted BEEF for assertion (broadcast-encoding tests);
+    /// responds with no provider results.
+    Capture(std::sync::Mutex<Vec<Vec<u8>>>),
 }
 
 /// WalletServices for offline replay. The chain tracker answers from pinned
@@ -218,12 +221,17 @@ impl WalletServices for FixtureServices {
         tripwire("get_raw_tx")
     }
 
-    async fn post_beef(&self, _beef: &[u8], txids: &[String]) -> Vec<types::PostBeefResult> {
+    async fn post_beef(&self, beef: &[u8], txids: &[String]) -> Vec<types::PostBeefResult> {
         match &self.post {
             PostMode::Tripwire => tripwire("post_beef"),
             PostMode::Recorded(results) => {
                 let _ = txids;
                 results.clone()
+            }
+            PostMode::Capture(store) => {
+                let _ = txids;
+                store.lock().expect("capture lock").push(beef.to_vec());
+                vec![]
             }
         }
     }

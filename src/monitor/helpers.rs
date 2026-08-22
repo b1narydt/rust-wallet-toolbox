@@ -383,6 +383,11 @@ pub async fn attempt_to_post_reqs_to_network(
         }
 
         // Step 4: serialize as plain BEEF targeted at this req's txid.
+        // Dependency order first: the subject was merged before its source
+        // BEEFs above, so without an explicit sort it precedes its parents
+        // on the wire (TS Beef.toBinary sorts implicitly; the Rust SDK's
+        // does not).
+        beef.sort_txs();
         let mut beef_bytes = Vec::new();
         if let Err(e) = beef.to_binary(&mut beef_bytes) {
             result.log.push_str(&format!(
