@@ -2,7 +2,7 @@
 //!
 //! Consumes the vendored corpus embedded at compile time from
 //! `conformance/vectors/sync/brc40-user-state.json` (pinned via
-//! `conformance/SOURCE` to bsv-blockchain/ts-stack @ 1920a9c1).
+//! `conformance/SOURCE` to bsv-blockchain/ts-stack @ 8b074a06).
 //!
 //! Dispatcher contract (mirrors the Go runner in
 //! go-wallet-toolbox/pkg/internal/storage/repo/syncrepo/brc40_conformance_test.go
@@ -60,6 +60,8 @@ const USER_KEY: &str = "02cccc00000000000000000000000000000000000000000000000000
 #[derive(Deserialize)]
 struct VectorFile {
     id: String,
+    parity_class: String,
+    skip_reason: Option<String>,
     vectors: Vec<Vector>,
 }
 
@@ -70,6 +72,8 @@ struct Vector {
     expected: Expected,
     #[serde(default)]
     skip: bool,
+    #[serde(default)]
+    notes: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -115,6 +119,20 @@ fn vectors_for(channel: &str) -> Vec<Vector> {
         .into_iter()
         .filter(|v| v.input.channel == channel)
         .collect()
+}
+
+/// The upstream corpus can govern a runtime-only assertion at file level.
+/// The vector itself identifies when that inherited classification applies;
+/// avoid pinning a vector ID or a per-vector skip count in this runner.
+fn governed_by_file_classification(file: &VectorFile, vector: &Vector) -> bool {
+    file.parity_class == "intended"
+        && file
+            .skip_reason
+            .as_deref()
+            .is_some_and(|reason| !reason.is_empty())
+        && vector.notes.as_deref().is_some_and(|notes| {
+            notes.contains("governed by the file-level intended classification")
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -282,26 +300,30 @@ async fn find_tx_by_reference(
 // Corpus shape
 // ---------------------------------------------------------------------------
 
-/// 24 vectors across 4 channels; exactly one is corpus-skipped
-/// (sync.brc40.request.error.3 — needs a seeded producer user table, skipped
-/// by the upstream dispatcher itself). A refresh that changes these numbers
+/// 24 vectors across 4 channels. Upstream classifies the file as intended
+/// because runtime producer assertions require seeded state; individual
+/// vectors no longer carry `skip: true`. A refresh that changes this shape
 /// fails here and the per-channel counts below must be re-verified.
 #[test]
 fn corpus_shape() {
     let f = load_corpus();
     assert_eq!(f.vectors.len(), 24, "vector count changed on refresh");
+    assert_eq!(f.parity_class, "intended");
+    assert!(
+        f.skip_reason
+            .as_deref()
+            .is_some_and(|reason| !reason.is_empty()),
+        "intended file classification must explain the governed skip"
+    );
     let count = |c: &str| f.vectors.iter().filter(|v| v.input.channel == c).count();
     assert_eq!(count("brc40/requestSyncChunk"), 9);
     assert_eq!(count("brc40/syncChunk"), 5);
     assert_eq!(count("brc40/mergeExisting"), 6);
     assert_eq!(count("brc40/flow"), 4);
-    let skipped: Vec<&str> = f
-        .vectors
-        .iter()
-        .filter(|v| v.skip)
-        .map(|v| v.id.as_str())
-        .collect();
-    assert_eq!(skipped, vec!["sync.brc40.request.error.3"]);
+    assert!(
+        f.vectors.iter().all(|v| !v.skip),
+        "per-vector skips returned; re-check the upstream classification"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -310,17 +332,20 @@ fn corpus_shape() {
 
 #[test]
 fn request_sync_chunk_channel() {
-    let vectors = vectors_for("brc40/requestSyncChunk");
+    let file = load_corpus();
+    let vectors: Vec<&Vector> = file
+        .vectors
+        .iter()
+        .filter(|v| v.input.channel == "brc40/requestSyncChunk")
+        .collect();
     assert_eq!(vectors.len(), 9);
     let mut executed = 0usize;
+    let mut governed = 0usize;
     let mut failures: Vec<String> = Vec::new();
 
     for v in &vectors {
-        if v.skip {
-            assert_eq!(
-                v.id, "sync.brc40.request.error.3",
-                "only the corpus's own skip flag may skip a vector"
-            );
+        if governed_by_file_classification(&file, v) {
+            governed += 1;
             continue;
         }
         executed += 1;
@@ -337,7 +362,12 @@ fn request_sync_chunk_channel() {
         }
     }
 
-    assert_eq!(executed, 8, "8 of 9 request vectors must execute");
+    assert!(governed > 0, "file-level classification governs no vector");
+    assert_eq!(
+        executed + governed,
+        vectors.len(),
+        "every request vector must execute or be governed by upstream metadata"
+    );
     assert!(
         failures.is_empty(),
         "requestSyncChunk divergences:\n{}",
