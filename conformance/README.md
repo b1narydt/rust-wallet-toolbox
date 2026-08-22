@@ -10,6 +10,11 @@ Tests embed the JSON at compile time via `include_str!` — no network fetch at
 test time, no sibling-repo filesystem path. Tests stay hermetic and work
 identically for every cloner.
 
+The upstream vector contract is vendored as `VECTOR-FORMAT.md` and
+`schema/vector.schema.json`. `COVERAGE.md` is the generated, file-by-file
+ledger for the complete upstream corpus, including files this crate does not
+vendor or assert.
+
 ## Why vendor?
 
 - **Determinism** — every commit pins the exact vector revision the code
@@ -28,6 +33,10 @@ identically for every cloner.
 | `vectors/wallet/brc100/{listoutputs,listactions,provecertificate,getnetwork}.json` (144+16+8+5) | `tests/conformance_brc100_read.rs` — read surface |
 | `vectors/wallet/storage/adapter-conformance.json` (18) | `tests/conformance_storage_adapter.rs` — storage adapter contract |
 
+The newly vendored pure-function BRC-100 and BRC-29 files intentionally have
+no Rust runners in this change. `COVERAGE.md` records them as vendored but
+unasserted so runner work cannot be mistaken for completed coverage.
+
 Each runner asserts the exact number of vectors loaded and executed, names the
 vector `id` in every failure, and runs error vectors as first-class assertions
 (the operation must fail, for the stated reason). Divergences from the
@@ -35,7 +44,9 @@ reference that we deliberately do not paper over are pinned in an explicit
 per-runner ledger keyed by vector `id` — the test fails if a divergence
 appears, disappears, or changes shape, so the ledger cannot drift silently.
 
-Every vendored channel now has a runner.
+Runner ownership and governed skips are machine-readable in
+`RUST_RUNNERS.json`, which the coverage generator validates against both the
+vendored JSON and each runner's `include_str!` reference.
 
 ## The funded createAction/signAction corpus
 
@@ -72,8 +83,23 @@ implementation's parser silently drops them (BRC-100 defines them inside
 
 ## Refreshing
 
-Fetch the tracked files from `raw.githubusercontent.com` at the new upstream
-SHA, update `conformance/SOURCE` (`upstream_sha`, `fetched_at`), and re-run:
+Use the helper modelled on the Go wallet toolbox. The tracked-file manifest is
+the single source of truth for both refresh and coverage generation:
+
+```sh
+./conformance/scripts/refresh-vectors.sh           # current upstream main
+./conformance/scripts/refresh-vectors.sh <sha>     # explicit immutable pin
+```
+
+The refresh resolves the ref, downloads every path in `TRACKED_FILES` without
+reformatting it, rewrites `SOURCE`, and regenerates `COVERAGE.md`. To regenerate
+only the ledger from the current pin:
+
+```sh
+./conformance/scripts/generate-coverage.py
+```
+
+Then re-run the existing conformance tests, including at minimum:
 
 ```sh
 cargo test --features sqlite --test conformance_getpublickey

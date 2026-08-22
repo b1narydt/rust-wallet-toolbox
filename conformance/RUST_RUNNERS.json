@@ -1,0 +1,46 @@
+{
+  "vectors/sync/brc40-user-state.json": {
+    "runner": "tests/conformance_brc40.rs",
+    "skipped_ids": ["sync.brc40.request.error.3"]
+  },
+  "vectors/wallet/brc100/createaction.json": {
+    "runner": "tests/conformance_brc100_actions.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/getnetwork.json": {
+    "runner": "tests/conformance_brc100_read.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/getpublickey.json": {
+    "runner": "tests/conformance_getpublickey.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/internalizeaction.json": {
+    "runner": "tests/conformance_brc100_actions.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/listactions.json": {
+    "runner": "tests/conformance_brc100_read.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/listoutputs.json": {
+    "runner": "tests/conformance_brc100_read.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/provecertificate.json": {
+    "runner": "tests/conformance_brc100_read.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/relinquishoutput.json": {
+    "runner": "tests/conformance_brc100_actions.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/signaction.json": {
+    "runner": "tests/conformance_brc100_actions.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/storage/adapter-conformance.json": {
+    "runner": "tests/conformance_storage_adapter.rs",
+    "skipped_ids": []
+  }
+}

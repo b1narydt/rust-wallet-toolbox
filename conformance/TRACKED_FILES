@@ -1,0 +1,31 @@
+# Paths are relative to both this directory and upstream's conformance/ tree.
+# Keep this as the single source of truth for refresh-vectors.sh and the
+# generated coverage ledger. Local BEEF and funded-replay fixtures do not
+# belong here.
+VECTOR-FORMAT.md
+schema/vector.schema.json
+vectors/sync/brc40-user-state.json
+vectors/wallet/brc29/payment-derivation.json
+vectors/wallet/brc100/createaction.json
+vectors/wallet/brc100/createhmac.json
+vectors/wallet/brc100/createsignature.json
+vectors/wallet/brc100/decrypt.json
+vectors/wallet/brc100/encrypt.json
+vectors/wallet/brc100/getheaderforheight.json
+vectors/wallet/brc100/getheight.json
+vectors/wallet/brc100/getnetwork.json
+vectors/wallet/brc100/getpublickey.json
+vectors/wallet/brc100/getversion.json
+vectors/wallet/brc100/internalizeaction.json
+vectors/wallet/brc100/isauthenticated.json
+vectors/wallet/brc100/listactions.json
+vectors/wallet/brc100/listoutputs.json
+vectors/wallet/brc100/provecertificate.json
+vectors/wallet/brc100/relinquishoutput.json
+vectors/wallet/brc100/revealcounterpartykeylinkage.json
+vectors/wallet/brc100/revealspecifickeylinkage.json
+vectors/wallet/brc100/signaction.json
+vectors/wallet/brc100/verifyhmac.json
+vectors/wallet/brc100/verifysignature.json
+vectors/wallet/brc100/waitforauthentication.json
+vectors/wallet/storage/adapter-conformance.json
