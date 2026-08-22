@@ -667,7 +667,12 @@ mod sqlite_impl {
                 let age_ms = params.purge_spent_age;
                 let cutoff =
                     chrono::Utc::now().naive_utc() - chrono::Duration::milliseconds(age_ms as i64);
-                let sql = "DELETE FROM outputs WHERE spendable = 0 AND spent_by IS NOT NULL AND updated_at < ?";
+                // `spentBy` is the column; `spent_by` is the Rust field name.
+                // Naming the field here made every purge_spent run fail with
+                // "no such column: spent_by", so spent outputs were never
+                // reclaimed and the outputs table only ever grew — which also
+                // slows the change-candidate scan on every createAction.
+                let sql = "DELETE FROM outputs WHERE spendable = 0 AND spentBy IS NOT NULL AND updated_at < ?";
                 let result = sqlx::query(sql)
                     .bind(cutoff)
                     .execute(&self.write_pool)

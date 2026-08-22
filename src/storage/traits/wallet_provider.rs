@@ -842,8 +842,35 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         auth: &AuthId,
         args: &AbortActionArgs,
     ) -> WalletResult<AbortActionResult> {
-        crate::storage::methods::abort_action::abort_action(self, &auth.identity_key, args, None)
-            .await
+        // Releasing the inputs and failing the transaction row are one fact,
+        // so they commit together. Run as separate autocommit statements, an
+        // abort that restored the coins and then died before flipping the
+        // status left a still-signable action whose inputs the funder had
+        // already re-lent — the wallet double-spending its own change.
+        //
+        // TS wraps the identical sequence in `this.transaction`
+        // (StorageProvider.abortAction). Note TS 2.10.2 additionally refuses
+        // to abort a signed `nosend` action that has since reached the chain
+        // ('abortAction-skipped-onchain'); that guard needs a services lookup
+        // and is tracked separately, not silently half-ported here.
+        let trx = StorageReaderWriter::begin_transaction(self).await?;
+        let result = crate::storage::methods::abort_action::abort_action(
+            self,
+            &auth.identity_key,
+            args,
+            Some(&trx),
+        )
+        .await;
+        match result {
+            Ok(r) => {
+                StorageReaderWriter::commit_transaction(self, trx).await?;
+                Ok(r)
+            }
+            Err(e) => {
+                let _ = StorageReaderWriter::rollback_transaction(self, trx).await;
+                Err(e)
+            }
+        }
     }
 
     async fn create_action(
