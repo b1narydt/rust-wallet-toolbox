@@ -583,6 +583,20 @@ pub struct CreateRunResult {
 
 /// Run a createAction vector: fresh wallet, internalize funding, seed
 /// entropy, execute args.
+/// Hold the recorded vout order for replay.
+///
+/// These vectors are mainnet recordings whose `expected` block pins exact
+/// transaction bytes, and they were recorded before `randomizeOutputs` was
+/// honoured — so their outputs are numbered in build order. `randomizeOutputs`
+/// defaults to true, and a permuted vout changes the raw transaction and
+/// therefore the txid, which no regeneration may rewrite (the txids are
+/// on-chain facts). Replaying with the shuffle off reproduces what was
+/// recorded. Drop this the next time the corpus is re-recorded.
+fn pin_vout_order(args: &mut CreateActionArgs) {
+    let options = args.options.get_or_insert_with(Default::default);
+    options.randomize_outputs = bsv::wallet::types::BooleanDefaultTrue(Some(false));
+}
+
 pub async fn run_create_vector(
     services: Arc<dyn WalletServices>,
     root_key_hex: &str,
@@ -601,7 +615,8 @@ pub async fn run_create_vector(
     conformance_entropy::set_conformance_entropy(entropy_seed);
     let parsed: Result<CreateActionArgs, _> = serde_json::from_value(args_json.clone());
     let outcome = match parsed {
-        Ok(args) => {
+        Ok(mut args) => {
+            pin_vout_order(&mut args);
             let result = setup.wallet.create_action(args, None).await;
             outcome_from_create(&setup, result).await
         }
@@ -651,13 +666,14 @@ pub async fn run_sign_vector(
     conformance_entropy::set_conformance_entropy(entropy_seed);
     let mut setup_outcomes = Vec::new();
     for (i, step_args) in setup_steps.iter().enumerate() {
-        let args: CreateActionArgs = match serde_json::from_value(step_args.clone()) {
+        let mut args: CreateActionArgs = match serde_json::from_value(step_args.clone()) {
             Ok(a) => a,
             Err(e) => {
                 conformance_entropy::clear_conformance_entropy();
                 return Err(format!("setup[{i}] args failed to deserialize: {e}"));
             }
         };
+        pin_vout_order(&mut args);
         let result = setup.wallet.create_action(args, None).await;
         let outcome = outcome_from_create(&setup, result).await;
         if outcome.status == "error" {
