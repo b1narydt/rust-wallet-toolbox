@@ -48,13 +48,15 @@ pub struct WalletArgs {
     /// key on those paths. When `None`, the wallet derives and signs locally,
     /// exactly as it always has.
     ///
-    /// **This does not cover the crypto surface.** The nine `WalletInterface`
-    /// crypto methods (`get_public_key`, `encrypt`, `decrypt`, `create_hmac`,
-    /// `verify_hmac`, `create_signature`, `verify_signature`,
-    /// `reveal_counterparty_key_linkage`, `reveal_specific_key_linkage`) still
-    /// delegate to a `ProtoWallet` built from `key_deriver.root_key()`. A
-    /// caller whose root key is a throwaway must wrap the wallet and intercept
-    /// those methods itself.
+    /// **The crypto surface routes through the provider too.** When one is
+    /// set, `get_public_key`, `encrypt`, `decrypt`, `create_hmac`,
+    /// `verify_hmac`, `create_signature` and `verify_signature` derive through
+    /// it — symmetric operations derive the key remotely and then run the
+    /// cipher locally — so a caller whose root key is a throwaway does not need
+    /// to wrap the wallet. The two exceptions are
+    /// `reveal_counterparty_key_linkage` and `reveal_specific_key_linkage`,
+    /// which need the root key itself and therefore fail closed under
+    /// delegation rather than answering from the throwaway.
     pub signing_provider: Option<Arc<dyn SigningProvider>>,
     /// Storage manager providing active + optional backup persistence.
     pub storage: Arc<WalletStorageManager>,

@@ -203,6 +203,12 @@ impl Wallet {
             WalletSettingsManager::new(active_provider)
         });
 
+        // Captured before `args.chain` moves into the struct below.
+        let resolver_network = match args.chain {
+            Chain::Main => bsv::services::overlay_tools::Network::Mainnet,
+            Chain::Test => bsv::services::overlay_tools::Network::Testnet,
+        };
+
         Ok(Wallet {
             chain: args.chain,
             key_deriver: args.key_deriver,
@@ -220,7 +226,15 @@ impl Wallet {
             trust_self: Some(TrustSelf::Known),
             user_party,
             overlay_cache: OverlayCache::new(),
-            lookup_resolver: args.lookup_resolver,
+            // TS builds one from the chain when the caller supplies none
+            // (Wallet.ts: `args.lookupResolver || new LookupResolver({...})`),
+            // so discovery works on a default wallet. Leaving this None made
+            // discoverByIdentityKey/discoverByAttributes fail with "No lookup
+            // resolver configured" for every wallet built through
+            // WalletBuilder, which had no way to set it.
+            lookup_resolver: args
+                .lookup_resolver
+                .or_else(|| Some(Arc::new(LookupResolver::for_network(resolver_network)))),
             random_vals: None,
             signer,
         })
@@ -1329,7 +1343,6 @@ impl WalletInterface for Wallet {
         use bsv::transaction::beef::{Beef, BEEF_V2};
         use bsv::wallet::interfaces::OutputInclude;
         use std::collections::HashSet;
-        use std::io::Cursor;
 
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_list_outputs_args(&args)?;
@@ -1371,7 +1384,12 @@ impl WalletInterface for Wallet {
                 let known_txids: HashSet<String> = HashSet::new();
                 let storage_provider = self.storage.get_active().await.map_err(to_sdk_error)?;
 
-                // Build a single merged BEEF from all txids
+                // Build a single merged BEEF from all txids through the SDK's
+                // merge semantics (TS listOutputs merges per-txid BEEFs with
+                // Beef.mergeBeef): merge_beef dedups bumps by (height, root)
+                // and re-derives bump indices — the previous hand-rolled
+                // bump-offset concat kept duplicate bumps, and its linear
+                // txid dedup could keep a tx pointing at the wrong copy.
                 let mut merged_beef = Beef::new(BEEF_V2);
                 for txid in &unique_txids {
                     let beef_bytes_opt = crate::storage::beef::get_valid_beef_for_txid(
@@ -1384,31 +1402,20 @@ impl WalletInterface for Wallet {
                     .map_err(to_sdk_error)?;
 
                     if let Some(beef_bytes) = beef_bytes_opt {
-                        // Parse the returned BEEF and merge bumps and txs
-                        let mut cursor = Cursor::new(&beef_bytes);
-                        let parsed = Beef::from_binary(&mut cursor).map_err(|e| {
-                            to_sdk_error(crate::error::WalletError::Internal(format!(
-                                "Failed to parse BEEF for {txid}: {e}"
-                            )))
-                        })?;
-                        // Merge bumps
-                        let bump_offset = merged_beef.bumps.len();
-                        merged_beef.bumps.extend(parsed.bumps);
-                        // Merge txs, adjusting bump_index offsets
-                        for mut beef_tx in parsed.txs {
-                            if let Some(ref mut idx) = beef_tx.bump_index {
-                                *idx += bump_offset;
-                            }
-                            // Only add if not already present (dedup by txid)
-                            let tx_txid = beef_tx.txid.clone();
-                            if !merged_beef.txs.iter().any(|t| t.txid == tx_txid) {
-                                merged_beef.txs.push(beef_tx);
-                            }
-                        }
+                        merged_beef
+                            .merge_beef_from_binary(&beef_bytes)
+                            .map_err(|e| {
+                                to_sdk_error(crate::error::WalletError::Internal(format!(
+                                    "Failed to merge BEEF for {txid}: {e}"
+                                )))
+                            })?;
                     }
                 }
 
                 if !merged_beef.txs.is_empty() {
+                    // Ancestors before children on the wire (TS Beef.toBinary
+                    // sorts implicitly; the Rust SDK's does not).
+                    merged_beef.sort_txs();
                     let mut buf = Vec::new();
                     merged_beef.to_binary(&mut buf).map_err(|e| {
                         to_sdk_error(crate::error::WalletError::Internal(format!(
@@ -1701,12 +1708,33 @@ impl ContextualWallet for Wallet {
             tx: signer_result.tx,
             no_send_change: signer_result.no_send_change,
             send_with_results: signer_result.send_with_results,
-            signable_transaction: signer_result.signable_transaction.map(|st| {
-                bsv::wallet::interfaces::SignableTransaction {
-                    reference: st.reference.into_bytes(),
-                    tx: st.tx,
+            signable_transaction: match signer_result.signable_transaction {
+                Some(st) => {
+                    // The SDK's `SignableTransaction.reference` is RAW bytes
+                    // that `bytes_as_base64` re-encodes on the wire, and the
+                    // toolbox's reference is already base64 TEXT
+                    // (`random_bytes_base64(12)`, stored verbatim on the
+                    // transaction row). Handing the text's UTF-8 bytes to the
+                    // SDK double-encoded the wire value (base64 of base64) —
+                    // a TS client saw a different string than a TS toolbox
+                    // would return, and `abortAction`'s re-encoding lookup
+                    // could never match the stored row. Decode to the raw
+                    // bytes so the wire carries exactly the stored reference.
+                    use base64::Engine as _;
+                    let reference = base64::engine::general_purpose::STANDARD
+                        .decode(&st.reference)
+                        .map_err(|e| {
+                            SdkWalletError::Internal(format!(
+                                "createAction produced a non-base64 reference: {e}"
+                            ))
+                        })?;
+                    Some(bsv::wallet::interfaces::SignableTransaction {
+                        reference,
+                        tx: st.tx,
+                    })
                 }
-            }),
+                None => None,
+            },
         };
 
         // Merge result beef into BeefParty
@@ -1750,9 +1778,36 @@ impl ContextualWallet for Wallet {
         // create_action_in) — never held across signing or broadcast.
         tracing::debug!("signAction starting");
         self.validate_originator(originator).map_err(to_sdk_error)?;
-        bsv::wallet::validation::validate_sign_action_args(&args)?;
+        // Reference-parity validation (TS `validateSignActionArgs`): `spends`
+        // MAY be empty — signAction legitimately completes an action whose
+        // every input is wallet-signed (the caller supplied no inputs of its
+        // own). The vendored SDK's `validate_sign_action_args` rejects an
+        // empty map ("spends: must be at least one spend"), a rule the TS
+        // reference has never had, so the checks it does share are applied
+        // here instead of calling it.
+        if args.reference.is_empty() {
+            return Err(SdkWalletError::InvalidParameter(
+                "reference: must be non-empty".to_string(),
+            ));
+        }
+        for spend in args.spends.values() {
+            if spend.unlocking_script.is_empty() {
+                return Err(SdkWalletError::InvalidParameter(
+                    "unlocking_script: must be non-empty".to_string(),
+                ));
+            }
+        }
 
-        let reference = String::from_utf8_lossy(&args.reference).to_string();
+        // `args.reference` is the RAW bytes the wire's Base64String decoded to
+        // (SDK `bytes_as_base64`), while createAction stored the base64 TEXT as
+        // the transaction's reference. Re-encode for the storage lookup — the
+        // same bridge `storage::methods::abort_action` crosses; a lossy UTF-8
+        // read here turned the raw bytes into garbage and made a wire-level
+        // signAction unable to find the action its own createAction had built.
+        let reference = {
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.encode(&args.reference)
+        };
         let raw_options = &args.options;
         let options = raw_options.clone().unwrap_or_default();
 

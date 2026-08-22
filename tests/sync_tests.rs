@@ -15,6 +15,7 @@ mod sync_tests {
     use bsv_wallet_toolbox::storage::sqlx_impl::SqliteStorage;
     use bsv_wallet_toolbox::storage::sync::get_sync_chunk::{get_sync_chunk, GetSyncChunkArgs};
     use bsv_wallet_toolbox::storage::sync::process_sync_chunk::process_sync_chunk;
+    use bsv_wallet_toolbox::storage::sync::request_args::{RequestSyncChunkArgs, SyncChunkOffset};
     use bsv_wallet_toolbox::storage::sync::sync_map::{SyncChunk, SyncMap};
     use bsv_wallet_toolbox::storage::traits::provider::StorageProvider;
     use bsv_wallet_toolbox::storage::traits::reader::StorageReader;
@@ -111,6 +112,97 @@ mod sync_tests {
         present_and_empty!(output_baskets);
         present_and_empty!(tx_labels);
         present_and_empty!(certificates);
+    }
+
+    #[tokio::test]
+    async fn test_get_sync_chunk_rejects_unknown_identity() {
+        let storage = setup_storage().await.unwrap();
+        let identity = "02missing-sync-identity";
+        let sync_map = SyncMap::new();
+
+        let err = get_sync_chunk(
+            &storage,
+            GetSyncChunkArgs {
+                from_storage_identity_key: "storage-a".to_string(),
+                to_storage_identity_key: "storage-b".to_string(),
+                user_identity_key: identity.to_string(),
+                sync_map: &sync_map,
+                max_items: 1000,
+                max_rough_size: 10_000_000,
+                offsets: Default::default(),
+            },
+            None,
+        )
+        .await
+        .unwrap_err();
+
+        let message = err.to_string();
+        assert!(message.contains("identityKey"));
+        assert!(message.contains(identity));
+    }
+
+    #[tokio::test]
+    async fn wire_sync_offsets_are_a_positional_prefix() {
+        let storage = setup_storage().await.unwrap();
+        let identity = "02abc-positional-offsets";
+        let user_id = insert_test_user(&storage, identity).await;
+        let now = dt("2024-01-15 10:00:00");
+        StorageReaderWriter::insert_transaction(
+            &storage,
+            &Transaction {
+                created_at: now,
+                updated_at: now,
+                transaction_id: 0,
+                user_id,
+                proven_tx_id: None,
+                status: TransactionStatus::Completed,
+                reference: "offset-row".to_string(),
+                is_outgoing: true,
+                satoshis: 1,
+                description: "offset row".to_string(),
+                version: Some(1),
+                lock_time: Some(0),
+                txid: None,
+                input_beef: None,
+                raw_tx: None,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+        let args = |offsets| RequestSyncChunkArgs {
+            from_storage_identity_key: "storage-a".to_string(),
+            to_storage_identity_key: "storage-b".to_string(),
+            identity_key: identity.to_string(),
+            since: None,
+            max_items: 1000,
+            max_rough_size: 10_000_000,
+            offsets,
+        };
+
+        let stopped = bsv_wallet_toolbox::storage::traits::wallet_provider::WalletStorageProvider::get_sync_chunk(
+            &storage,
+            &args(vec![]),
+        )
+        .await
+        .unwrap();
+        assert!(
+            stopped.transactions.is_none(),
+            "an exhausted positional offset array must not default later entities to zero"
+        );
+
+        let err = bsv_wallet_toolbox::storage::traits::wallet_provider::WalletStorageProvider::get_sync_chunk(
+            &storage,
+            &args(vec![SyncChunkOffset {
+                name: "transaction".to_string(),
+                offset: 0,
+            }]),
+        )
+        .await
+        .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("provenTx"));
+        assert!(message.contains("transaction"));
     }
 
     // -----------------------------------------------------------------------
@@ -914,7 +1006,7 @@ mod sync_tests {
             user_identity_key: "02abc999".to_string(),
             sync_map: &empty_map,
             max_items: 1000,
-                max_rough_size: 10_000_000,
+            max_rough_size: 10_000_000,
             offsets: Default::default(),
         };
 
@@ -1155,15 +1247,25 @@ mod sync_tests {
         // All three timestamps are in the past relative to the local clock: if
         // the t2 merge stamps the row with "now", t3 is no longer strictly
         // newer and the third update is silently rejected.
-        process_sync_chunk(&target, chunk_with(mk_label(t1, false)), &mut sync_map, None)
-            .await
-            .unwrap();
+        process_sync_chunk(
+            &target,
+            chunk_with(mk_label(t1, false)),
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap();
         process_sync_chunk(&target, chunk_with(mk_label(t2, true)), &mut sync_map, None)
             .await
             .unwrap();
-        let third = process_sync_chunk(&target, chunk_with(mk_label(t3, false)), &mut sync_map, None)
-            .await
-            .unwrap();
+        let third = process_sync_chunk(
+            &target,
+            chunk_with(mk_label(t3, false)),
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap();
 
         let labels = target
             .find_tx_labels(
@@ -1211,7 +1313,9 @@ mod sync_tests {
             && c.proven_tx_reqs.as_ref().is_some_and(|v| v.is_empty())
     }
 
-    fn offsets_from(map: &SyncMap) -> bsv_wallet_toolbox::storage::sync::get_sync_chunk::SyncChunkOffsets {
+    fn offsets_from(
+        map: &SyncMap,
+    ) -> bsv_wallet_toolbox::storage::sync::get_sync_chunk::SyncChunkOffsets {
         bsv_wallet_toolbox::storage::sync::get_sync_chunk::SyncChunkOffsets {
             proven_tx: map.proven_tx.count,
             output_basket: map.output_basket.count,
@@ -1265,7 +1369,10 @@ mod sync_tests {
         let t3 = dt("2024-02-15 09:00:00");
 
         // Round-1 state: a transaction, two labels, one map.
-        let tx_id = source.insert_transaction(&mk_tx(user_id, t1, 0), None).await.unwrap();
+        let tx_id = source
+            .insert_transaction(&mk_tx(user_id, t1, 0), None)
+            .await
+            .unwrap();
         let mk_label = |label: &str| TxLabel {
             created_at: t1,
             updated_at: t1,
@@ -1274,8 +1381,14 @@ mod sync_tests {
             label: label.to_string(),
             is_deleted: false,
         };
-        let label1_id = source.insert_tx_label(&mk_label("cr-label-1"), None).await.unwrap();
-        let label2_id = source.insert_tx_label(&mk_label("cr-label-2"), None).await.unwrap();
+        let label1_id = source
+            .insert_tx_label(&mk_label("cr-label-1"), None)
+            .await
+            .unwrap();
+        let label2_id = source
+            .insert_tx_label(&mk_label("cr-label-2"), None)
+            .await
+            .unwrap();
         source
             .insert_tx_label_map(
                 &TxLabelMap {
@@ -1391,7 +1504,12 @@ mod sync_tests {
         // every map references a parent beyond the first chunk's budget.
         let mut tx_ids = Vec::new();
         for i in 0..30 {
-            tx_ids.push(source.insert_transaction(&mk_tx(user_id, t1, i), None).await.unwrap());
+            tx_ids.push(
+                source
+                    .insert_transaction(&mk_tx(user_id, t1, i), None)
+                    .await
+                    .unwrap(),
+            );
         }
         let label_id = source
             .insert_tx_label(
@@ -1496,7 +1614,10 @@ mod sync_tests {
         let user_id = insert_test_user(&source, "02rough").await;
         let t1 = dt("2024-01-15 10:00:00");
         for i in 0..5 {
-            source.insert_transaction(&mk_tx(user_id, t1, i), None).await.unwrap();
+            source
+                .insert_transaction(&mk_tx(user_id, t1, i), None)
+                .await
+                .unwrap();
         }
 
         let producer_map = SyncMap::new();

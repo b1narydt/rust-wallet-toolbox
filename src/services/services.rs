@@ -18,7 +18,7 @@ use crate::types::Chain;
 
 use super::chaintracker::{ChaintracksChainTracker, ChaintracksServiceClient};
 use super::providers::exchange_rates::{fetch_bsv_exchange_rate, fetch_fiat_exchange_rates};
-use super::providers::{ArcProvider, Bitails, WhatsOnChain};
+use super::providers::{ArcProvider, ArcadeProvider, Bitails, WhatsOnChain};
 use super::service_collection::ServiceCollection;
 use super::traits::{
     GetMerklePathProvider, GetRawTxProvider, GetScriptHashHistoryProvider,
@@ -91,8 +91,17 @@ impl Services {
         get_raw_tx_coll.add("WhatsOnChain", Box::new(woc_raw));
 
         // -- postBeef collection --
-        // Order matches TS: GorillaPool (if main), Taal, Bitails (if main/test), WoC
+        // Arcade is the primary broadcaster when configured, followed by the
+        // existing ARC and explorer fallbacks.
         let mut post_beef_coll = ServiceCollection::<dyn PostBeefProvider>::new("postBeef");
+
+        if let Some(ref arcade_url) = config.arcade_url {
+            if !arcade_url.is_empty() {
+                let arcade_config = config.arcade_config.clone().unwrap_or_default();
+                let arcade = ArcadeProvider::new(arcade_url, arcade_config, client.clone());
+                post_beef_coll.add("ArcadeBeef", Box::new(arcade));
+            }
+        }
 
         if let Some(ref gp_url) = config.arc_gorilla_pool_url {
             let gp_config = config.arc_gorilla_pool_config.clone().unwrap_or_default();
@@ -182,6 +191,25 @@ impl Services {
         Self::from_config(config)
     }
 
+    /// Create default services and optionally install Arcade as the primary
+    /// broadcaster using the callback token consumed by its SSE stream.
+    pub(crate) fn from_chain_with_arcade(
+        chain: Chain,
+        arcade_url: Option<String>,
+        callback_token: Option<String>,
+    ) -> Self {
+        let mut config = ServicesConfig::from(chain);
+        if let Some(url) = arcade_url.filter(|url| !url.is_empty()) {
+            let arcade_config = super::types::ArcConfig {
+                callback_token,
+                ..Default::default()
+            };
+            config.arcade_url = Some(url);
+            config.arcade_config = Some(arcade_config);
+        }
+        Self::from_config(config)
+    }
+
     /// Access the underlying config.
     pub fn config(&self) -> &ServicesConfig {
         &self.config
@@ -215,13 +243,11 @@ impl WalletServices for Services {
     }
 
     async fn get_chain_tracker(&self) -> WalletResult<Box<dyn ChainTracker>> {
-        let chaintracks_url = self.config.chaintracks_url.as_deref();
-        let service_client = ChaintracksServiceClient::new(
-            self.config.chain.clone(),
-            chaintracks_url,
-            self.client.clone(),
-        );
-        Ok(Box::new(ChaintracksChainTracker::new(service_client)))
+        // Hand out a clone of the warm tracker, which shares its root cache.
+        // Building a fresh one here gave every caller an empty cache, so
+        // `internalize_action` — the heaviest user, one root lookup per bump —
+        // re-fetched roots this instance had already resolved.
+        Ok(Box::new(self.chain_tracker.clone()))
     }
 
     async fn get_merkle_path(&self, txid: &str, use_next: bool) -> GetMerklePathResult {
@@ -1267,6 +1293,37 @@ mod beef_builder_tests {
     use bsv::transaction::transaction_input::TransactionInput;
     use std::collections::HashMap;
     use std::io::Cursor;
+
+    #[tokio::test]
+    async fn arcade_sse_defaults_install_primary_broadcaster_with_same_token() {
+        let services = Services::from_chain_with_arcade(
+            Chain::Test,
+            Some("https://arcade.example".to_string()),
+            Some("wallet-token".to_string()),
+        );
+
+        assert_eq!(
+            services.config.arcade_url.as_deref(),
+            Some("https://arcade.example")
+        );
+        assert_eq!(
+            services
+                .config
+                .arcade_config
+                .as_ref()
+                .and_then(|config| config.callback_token.as_deref()),
+            Some("wallet-token")
+        );
+
+        let providers: Vec<String> = services
+            .post_beef
+            .lock()
+            .await
+            .all_services()
+            .map(|(_, name)| name.to_string())
+            .collect();
+        assert_eq!(providers.first().map(String::as_str), Some("ArcadeBeef"));
+    }
 
     #[derive(Default)]
     struct MockTxSource {

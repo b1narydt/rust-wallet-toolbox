@@ -86,9 +86,8 @@ pub fn make_request_sync_chunk_args(
     // against a TS-backed store fail on the third chunker. This sequence is
     // `getSyncChunk.ts:41,54,71,88,105,122,139,152,165,182,199,216` verbatim.
     //
-    // Our own consumer matches offsets BY NAME (`wallet_provider.rs`), which is
-    // why Rust↔Rust never surfaced the divergence and why correcting the order
-    // cannot break it.
+    // Rust's producer consumes this array with the same positional contract,
+    // so preserving the sequence is required for both local and remote sync.
     let offsets = vec![
         SyncChunkOffset {
             name: sync_map.proven_tx.entity_name.clone(),

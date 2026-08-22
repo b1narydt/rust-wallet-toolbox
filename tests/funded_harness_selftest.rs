@@ -106,10 +106,14 @@ fn fabricate_funding() -> (FundingPayment, BTreeMap<u32, String>) {
     let bump_index = beef.merge_bump(&bump).expect("merge bump");
     let mut parent_bytes = Vec::new();
     parent.to_binary(&mut parent_bytes).expect("parent bytes");
-    beef.merge_raw_tx(&parent_bytes, Some(bump_index)).expect("merge parent");
+    beef.merge_raw_tx(&parent_bytes, Some(bump_index))
+        .expect("merge parent");
     let mut payment_bytes = Vec::new();
-    payment.to_binary(&mut payment_bytes).expect("payment bytes");
-    beef.merge_raw_tx(&payment_bytes, None).expect("merge payment");
+    payment
+        .to_binary(&mut payment_bytes)
+        .expect("payment bytes");
+    beef.merge_raw_tx(&payment_bytes, None)
+        .expect("merge payment");
 
     let atomic = beef.to_binary_atomic(&payment_txid).expect("atomic");
 
@@ -156,19 +160,37 @@ async fn same_seed_reproduces_byte_identical_transactions() {
     let (payment, roots) = fabricate_funding();
     let args = nosend_args();
 
-    let a = run_create_vector(services(&roots), ROOT_1, "seed-a", std::slice::from_ref(&payment), &args)
-        .await
-        .expect("run a");
+    let a = run_create_vector(
+        services(&roots),
+        ROOT_1,
+        "seed-a",
+        std::slice::from_ref(&payment),
+        &args,
+    )
+    .await
+    .expect("run a");
     assert_eq!(a.outcome.status, "success", "{:?}", a.outcome.message);
     assert!(a.outcome.txid.is_some());
     assert!(a.outcome.tx.is_some());
-    assert!(!a.outcome.no_send_change.is_empty(), "noSend must report change");
+    assert!(
+        !a.outcome.no_send_change.is_empty(),
+        "noSend must report change"
+    );
     assert!(!a.outcome.change.is_empty());
 
-    let b = run_create_vector(services(&roots), ROOT_1, "seed-a", std::slice::from_ref(&payment), &args)
-        .await
-        .expect("run b");
-    assert_eq!(a.outcome, b.outcome, "same seed must reproduce byte-identically");
+    let b = run_create_vector(
+        services(&roots),
+        ROOT_1,
+        "seed-a",
+        std::slice::from_ref(&payment),
+        &args,
+    )
+    .await
+    .expect("run b");
+    assert_eq!(
+        a.outcome, b.outcome,
+        "same seed must reproduce byte-identically"
+    );
 
     let c = run_create_vector(services(&roots), ROOT_1, "seed-c", &[payment], &args)
         .await
@@ -224,16 +246,20 @@ async fn sign_vector_round_trip_is_deterministic() {
             .await
             .expect("funding");
         bsv_wallet_toolbox::utility::conformance_entropy::set_conformance_entropy("sign-selftest");
-    let args: bsv::wallet::interfaces::CreateActionArgs =
-        serde_json::from_value(precursor.clone()).expect("precursor args");
-    let created = setup
-        .wallet
-        .create_action(args, None)
-        .await
-        .expect("precursor create");
+        let args: bsv::wallet::interfaces::CreateActionArgs =
+            serde_json::from_value(precursor.clone()).expect("precursor args");
+        let created = setup
+            .wallet
+            .create_action(args, None)
+            .await
+            .expect("precursor create");
         bsv_wallet_toolbox::utility::conformance_entropy::clear_conformance_entropy();
         let signable = created.signable_transaction.expect("signable");
-        let reference = String::from_utf8_lossy(&signable.reference).to_string();
+        // Raw reference bytes → the base64 text storage keys the row by.
+        let reference = {
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.encode(&signable.reference)
+        };
         (reference, signable.tx, signable.reference)
     };
     let unlock = caller_unlock_script(&signable_tx, 0, 300, &caller).await;
@@ -247,8 +273,12 @@ async fn sign_vector_round_trip_is_deterministic() {
 
     // Canonical pass twice — byte-identical outcomes required.
     let a = run_sign_vector(
-        services(&roots), ROOT_1, "sign-selftest", std::slice::from_ref(&payment),
-        std::slice::from_ref(&precursor), &sign_args,
+        services(&roots),
+        ROOT_1,
+        "sign-selftest",
+        std::slice::from_ref(&payment),
+        std::slice::from_ref(&precursor),
+        &sign_args,
     )
     .await
     .expect("run a");
@@ -262,12 +292,19 @@ async fn sign_vector_round_trip_is_deterministic() {
     assert!(a.outcome.tx.is_some());
 
     let b = run_sign_vector(
-        services(&roots), ROOT_1, "sign-selftest", &[payment],
-        &[precursor], &sign_args,
+        services(&roots),
+        ROOT_1,
+        "sign-selftest",
+        &[payment],
+        &[precursor],
+        &sign_args,
     )
     .await
     .expect("run b");
-    assert_eq!(a.outcome, b.outcome, "same seed must reproduce byte-identically");
+    assert_eq!(
+        a.outcome, b.outcome,
+        "same seed must reproduce byte-identically"
+    );
 }
 
 #[tokio::test]
@@ -283,9 +320,15 @@ async fn delayed_send_vector_must_not_broadcast() {
         "labels": ["selftest"],
         "options": {"noSend": false, "acceptDelayedBroadcast": true}
     });
-    let a = run_create_vector(services(&roots), ROOT_1, "seed-delayed", std::slice::from_ref(&payment), &args)
-        .await
-        .expect("run");
+    let a = run_create_vector(
+        services(&roots),
+        ROOT_1,
+        "seed-delayed",
+        std::slice::from_ref(&payment),
+        &args,
+    )
+    .await
+    .expect("run");
     assert_eq!(a.outcome.status, "success", "{:?}", a.outcome.message);
     assert!(a.outcome.no_send_change.is_empty());
 }
@@ -345,8 +388,12 @@ async fn sign_accept_delayed_true_does_not_broadcast_inline() {
     });
 
     let r = run_sign_vector(
-        services(&roots), ROOT_1, "delayed-sign", std::slice::from_ref(&payment),
-        std::slice::from_ref(&precursor), &sign_args,
+        services(&roots),
+        ROOT_1,
+        "delayed-sign",
+        std::slice::from_ref(&payment),
+        std::slice::from_ref(&precursor),
+        &sign_args,
     )
     .await
     .expect("run");
@@ -375,25 +422,27 @@ async fn nosend_chaining_via_no_send_change() {
         "satoshis": 100,
         "outputDescription": "chain out"
     }]);
-    let ns1_args: bsv::wallet::interfaces::CreateActionArgs = serde_json::from_value(
-        serde_json::json!({
+    let ns1_args: bsv::wallet::interfaces::CreateActionArgs =
+        serde_json::from_value(serde_json::json!({
             "description": "chain link 1",
             "outputs": out,
             "options": {"noSend": true}
-        }),
-    )
-    .expect("args");
-    let ns1 = setup.wallet.create_action(ns1_args, None).await.expect("ns1");
+        }))
+        .expect("args");
+    let ns1 = setup
+        .wallet
+        .create_action(ns1_args, None)
+        .await
+        .expect("ns1");
     assert!(!ns1.no_send_change.is_empty());
 
-    let ns2_args: bsv::wallet::interfaces::CreateActionArgs = serde_json::from_value(
-        serde_json::json!({
+    let ns2_args: bsv::wallet::interfaces::CreateActionArgs =
+        serde_json::from_value(serde_json::json!({
             "description": "chain link 2",
             "outputs": out,
             "options": {"noSend": true, "noSendChange": ns1.no_send_change}
-        }),
-    )
-    .expect("args");
+        }))
+        .expect("args");
     let ns2 = setup
         .wallet
         .create_action(ns2_args, None)

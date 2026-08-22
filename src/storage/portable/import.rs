@@ -586,7 +586,9 @@ fn remap_sync_map(source: &Value, import_map: &SyncMap) -> SyncMap {
 /// was already synced, silently duplicating rows on the next round.
 fn parse_sync_map_json(json: &str, context: &str) -> WalletResult<Value> {
     serde_json::from_str::<Value>(json).map_err(|e| {
-        WalletError::Internal(format!("BRC-38 merge: corrupt syncMap JSON in {context}: {e}"))
+        WalletError::Internal(format!(
+            "BRC-38 merge: corrupt syncMap JSON in {context}: {e}"
+        ))
     })
 }
 
@@ -728,7 +730,9 @@ mod tests {
                 url: "sqlite::memory:".to_string(),
                 ..Default::default()
             };
-            SqliteStorage::new_sqlite(config, Chain::Test).await.unwrap()
+            SqliteStorage::new_sqlite(config, Chain::Test)
+                .await
+                .unwrap()
         }
 
         #[tokio::test]
@@ -748,8 +752,7 @@ mod tests {
             let storage = storage().await;
             // A token whose transaction is already consumed makes
             // rollback_transaction fail deterministically.
-            let consumed: SqliteTrxInner =
-                std::sync::Arc::new(tokio::sync::Mutex::new(None));
+            let consumed: SqliteTrxInner = std::sync::Arc::new(tokio::sync::Mutex::new(None));
             let trx = TrxToken::new(consumed);
             let cause = WalletError::BadRequest("original failure".to_string());
             let err = fail_with_rollback(&storage, trx, "restore", cause)

@@ -296,10 +296,7 @@ mod signer_internalize_provider_tests {
             .push(BeefTx::from_tx(parent, Some(0)).expect("parent beef tx"));
         beef.txs
             .push(BeefTx::from_tx(tx, None).expect("subject beef tx"));
-        beef.atomic_txid = Some(txid.clone());
-
-        let mut beef_bytes = Vec::new();
-        beef.to_binary(&mut beef_bytes).expect("serialize beef");
+        let beef_bytes = beef.to_binary_atomic(&txid).expect("serialize atomic beef");
         (beef_bytes, txid)
     }
 

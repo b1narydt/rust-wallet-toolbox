@@ -106,6 +106,60 @@ fn test_beef_v1_unchanged() {
     assert_eq!(result, v1_beef, "V1 BEEF should be returned unchanged");
 }
 
+/// Serialize a BEEF with the Atomic frame (ATOMIC_BEEF prefix + subject txid)
+/// wrapped around the given inner version.
+fn build_atomic_framed(version: u32) -> Vec<u8> {
+    let mut beef = Beef::new(version);
+    let tx = Transaction::from_hex(
+        "01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704ffff001d0104ffffffff0100f2052a0100000043410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac00000000"
+    ).expect("Valid coinbase tx");
+    let txid = tx.id().expect("txid");
+    let beef_tx = BeefTx::from_tx(tx, None).expect("Valid beef tx");
+    beef.txs.push(beef_tx);
+    beef.to_binary_atomic(&txid)
+        .expect("Serialization should work")
+}
+
+/// Atomic-framed V2 input must come out as PLAIN V1 — the previous
+/// leading-byte sniff saw `0x01010101` (the Atomic prefix), concluded "not
+/// V2", and posted the Atomic frame straight through to ARC.
+#[test]
+fn test_atomic_framed_v2_downgrades_to_plain_v1() {
+    let atomic = build_atomic_framed(BEEF_V2);
+    assert_eq!(
+        u32::from_le_bytes([atomic[0], atomic[1], atomic[2], atomic[3]]),
+        0x01010101,
+        "Input should carry the Atomic prefix"
+    );
+
+    let result = bsv_wallet_toolbox::services::providers::arc::maybe_downgrade_beef_v2(&atomic);
+
+    let version = u32::from_le_bytes([result[0], result[1], result[2], result[3]]);
+    assert_eq!(version, BEEF_V1, "Result should be plain V1");
+    let mut cursor = std::io::Cursor::new(&result);
+    let parsed = Beef::from_binary(&mut cursor).expect("result parses");
+    assert!(
+        parsed.atomic_txid.is_none(),
+        "Atomic frame must be stripped"
+    );
+    assert_eq!(parsed.txs.len(), 1);
+}
+
+/// Atomic-framed V1 input: frame stripped, inner V1 kept.
+#[test]
+fn test_atomic_framed_v1_is_stripped_to_plain() {
+    let atomic = build_atomic_framed(BEEF_V1);
+    let result = bsv_wallet_toolbox::services::providers::arc::maybe_downgrade_beef_v2(&atomic);
+    let version = u32::from_le_bytes([result[0], result[1], result[2], result[3]]);
+    assert_eq!(version, BEEF_V1, "Result should be plain V1");
+    let mut cursor = std::io::Cursor::new(&result);
+    let parsed = Beef::from_binary(&mut cursor).expect("result parses");
+    assert!(
+        parsed.atomic_txid.is_none(),
+        "Atomic frame must be stripped"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // ARC Header Construction Tests
 // ---------------------------------------------------------------------------

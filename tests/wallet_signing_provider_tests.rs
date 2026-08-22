@@ -637,7 +637,12 @@ mod wallet_signing_provider_tests {
             .await
             .expect("deferred createAction");
         let signable = created.signable_transaction.expect("signable transaction");
-        let reference = String::from_utf8(signable.reference).expect("reference is utf8");
+        let reference = {
+            // The result carries RAW reference bytes; the storage key is the
+            // base64 text they encode to.
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.encode(&signable.reference)
+        };
         assert_eq!(provider.signs(), 0, "nothing signed yet");
 
         let pending = pending_from_signable(&reference, &signable.tx, &provider.root_key);
@@ -1657,7 +1662,14 @@ mod wallet_signing_provider_tests {
                 inputs: vec![],
                 outputs: vec![],
                 derivation_prefix: String::new(),
-                input_beef: None,
+                // The real pipeline persists the pending action with the
+                // merged inputBEEF from createAction; the signable BEEF
+                // carries exactly that ancestry (plus the unsigned subject,
+                // which the closure-pruning atomic serializer drops), so it
+                // stands in here. `input_beef: None` would make
+                // signer_sign_action's build_beef fail closed on the funding
+                // ancestor — the partial-BEEF shape rust-mpc#352 forbids.
+                input_beef: Some(signable_beef.to_vec()),
                 no_send_change_output_vouts: None,
             },
             args: deferred_create_args(),

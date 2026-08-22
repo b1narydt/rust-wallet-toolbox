@@ -160,61 +160,64 @@ pub fn build_arc_headers(config: &ArcConfig) -> HeaderMap {
     headers
 }
 
-/// BEEF V2 version marker bytes (first 4 bytes, little-endian).
-/// BEEF_V2 = 0xEFBE0002, stored as LE: [0x02, 0x00, 0xBE, 0xEF]
-const BEEF_V2_BYTES: [u8; 4] = [0x02, 0x00, 0xBE, 0xEF];
-
-/// Attempt to downgrade BEEF V2 to V1 format.
+/// Attempt to downgrade BEEF V2 to V1 format for the ARC post body.
 ///
-/// If the BEEF is V2 and all transactions have full raw data (no txid-only entries),
-/// the version bytes are changed to V1. Otherwise the original bytes are returned unchanged.
+/// TS counterpart: ARC.ts `postBeef` (wallet-toolbox), which posts a PLAIN
+/// (never Atomic-framed) BEEF and prefers V1 when nothing in the BEEF needs
+/// V2's txid-only entries.
 ///
-/// BEEF V2 differs from V1 in that each transaction has a format byte prefix:
-///   0 = raw tx without bump, 1 = raw tx with bump index, 2 = txid only.
-/// If any tx has format byte 2 (txid-only), we cannot downgrade.
+/// Decides by PARSING the BEEF and reading its version — not by sniffing
+/// leading bytes, which misclassified Atomic-framed input (`0x01010101` +
+/// subject txid before the inner version) as "not V2" and posted the atomic
+/// frame through to ARC.
+///
+///   * V2, no txid-only entries → re-serialized as plain V1.
+///   * V2 with txid-only entries → cannot downgrade; still re-framed plain
+///     if the input carried an atomic prefix.
+///   * plain V1 → returned unchanged, byte-for-byte.
+///   * Atomic-framed V1 → re-serialized plain (frame stripped).
+///   * unparseable → returned unchanged (the post will fail loudly at ARC).
 pub fn maybe_downgrade_beef_v2(beef: &[u8]) -> Vec<u8> {
-    if beef.len() < 4 {
-        return beef.to_vec();
-    }
-
-    // Check if this is V2
-    if beef[0..4] != BEEF_V2_BYTES {
-        return beef.to_vec();
-    }
-
-    // Parse the BEEF to check for txid-only entries.
-    // We use the bsv-sdk Beef parser to check reliably.
     let mut cursor = std::io::Cursor::new(beef);
-    match bsv::transaction::Beef::from_binary(&mut cursor) {
-        Ok(parsed_beef) => {
-            // Check if any tx is txid-only
-            if parsed_beef.txs.iter().any(|btx| btx.is_txid_only()) {
-                // Cannot downgrade -- has txid-only entries
-                return beef.to_vec();
-            }
-
-            // All txs have raw data, safe to downgrade.
-            // Re-serialize with V1 version.
-            let mut downgraded = parsed_beef;
-            downgraded.version = bsv::transaction::beef::BEEF_V1;
-            let mut out = Vec::new();
-            match downgraded.to_binary(&mut out) {
-                Ok(()) => {
-                    tracing::debug!(
-                        "Downgraded BEEF V2 to V1 ({} bytes -> {} bytes)",
-                        beef.len(),
-                        out.len()
-                    );
-                    out
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to serialize downgraded BEEF: {}", e);
-                    beef.to_vec()
-                }
-            }
-        }
+    let parsed_beef = match bsv::transaction::Beef::from_binary(&mut cursor) {
+        Ok(b) => b,
         Err(e) => {
             tracing::warn!("Failed to parse BEEF for V2 downgrade check: {}", e);
+            return beef.to_vec();
+        }
+    };
+
+    let was_atomic = parsed_beef.atomic_txid.is_some();
+    let has_txid_only = parsed_beef.txs.iter().any(|btx| btx.is_txid_only());
+
+    if parsed_beef.version == bsv::transaction::beef::BEEF_V1 && !was_atomic {
+        // Already the target shape — keep the exact bytes.
+        return beef.to_vec();
+    }
+    if has_txid_only && !was_atomic {
+        // V2 with txid-only entries and already plain — cannot downgrade.
+        return beef.to_vec();
+    }
+
+    let mut out_beef = parsed_beef;
+    out_beef.atomic_txid = None; // broadcast copy is plain, never Atomic-framed
+    if !has_txid_only {
+        out_beef.version = bsv::transaction::beef::BEEF_V1;
+    }
+    let mut out = Vec::new();
+    match out_beef.to_binary(&mut out) {
+        Ok(()) => {
+            tracing::debug!(
+                "Reframed BEEF for ARC ({} bytes -> {} bytes, atomic: {}, v1: {})",
+                beef.len(),
+                out.len(),
+                was_atomic,
+                !has_txid_only
+            );
+            out
+        }
+        Err(e) => {
+            tracing::warn!("Failed to serialize downgraded BEEF: {}", e);
             beef.to_vec()
         }
     }

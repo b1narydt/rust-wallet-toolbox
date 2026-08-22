@@ -26,8 +26,8 @@ use async_trait::async_trait;
 
 use bsv::primitives::private_key::PrivateKey;
 use bsv::primitives::public_key::PublicKey;
-use bsv::transaction::chain_tracker::ChainTracker;
 use bsv::transaction::beef::Beef;
+use bsv::transaction::chain_tracker::ChainTracker;
 use bsv::transaction::TransactionError;
 use bsv::wallet::interfaces::{
     CreateActionArgs, CreateActionResult, InternalizeActionArgs, InternalizeOutput, Payment,
@@ -184,6 +184,9 @@ pub enum PostMode {
     /// Replay the network response recorded when the vector was recorded
     /// (vectors whose recorded behavior includes an inline broadcast).
     Recorded(Vec<types::PostBeefResult>),
+    /// Record every posted BEEF for assertion (broadcast-encoding tests);
+    /// responds with no provider results.
+    Capture(std::sync::Mutex<Vec<Vec<u8>>>),
 }
 
 /// WalletServices for offline replay. The chain tracker answers from pinned
@@ -218,12 +221,17 @@ impl WalletServices for FixtureServices {
         tripwire("get_raw_tx")
     }
 
-    async fn post_beef(&self, _beef: &[u8], txids: &[String]) -> Vec<types::PostBeefResult> {
+    async fn post_beef(&self, beef: &[u8], txids: &[String]) -> Vec<types::PostBeefResult> {
         match &self.post {
             PostMode::Tripwire => tripwire("post_beef"),
             PostMode::Recorded(results) => {
                 let _ = txids;
                 results.clone()
+            }
+            PostMode::Capture(store) => {
+                let _ = txids;
+                store.lock().expect("capture lock").push(beef.to_vec());
+                vec![]
             }
         }
     }
@@ -331,7 +339,10 @@ pub async fn build_vector_wallet(
         .without_monitor()
         .build()
         .await?;
-    setup.storage.find_or_insert_user(&setup.identity_key).await?;
+    setup
+        .storage
+        .find_or_insert_user(&setup.identity_key)
+        .await?;
     Ok(setup)
 }
 
@@ -395,20 +406,21 @@ pub async fn change_outputs_for_txid(
     txid: &str,
 ) -> WalletResult<Vec<ChangeInfo>> {
     use bsv_wallet_toolbox::storage::find_args::{FindOutputsArgs, OutputPartial};
-    let (user, _) = setup.storage.find_or_insert_user(&setup.identity_key).await?;
+    let (user, _) = setup
+        .storage
+        .find_or_insert_user(&setup.identity_key)
+        .await?;
     let outputs = setup
         .storage
-        .find_outputs(
-            &FindOutputsArgs {
-                partial: OutputPartial {
-                    user_id: Some(user.user_id),
-                    txid: Some(txid.to_string()),
-                    change: Some(true),
-                    ..Default::default()
-                },
+        .find_outputs(&FindOutputsArgs {
+            partial: OutputPartial {
+                user_id: Some(user.user_id),
+                txid: Some(txid.to_string()),
+                change: Some(true),
                 ..Default::default()
             },
-        )
+            ..Default::default()
+        })
         .await?;
     let mut infos: Vec<ChangeInfo> = outputs
         .iter()
@@ -489,10 +501,12 @@ async fn outcome_from_create(
                     .iter()
                     .map(|s| serde_json::to_value(s).unwrap_or_default())
                     .collect(),
-                signable_reference: r
-                    .signable_transaction
-                    .as_ref()
-                    .map(|s| String::from_utf8_lossy(&s.reference).to_string()),
+                signable_reference: r.signable_transaction.as_ref().map(|s| {
+                    // The result carries RAW reference bytes; the storage key
+                    // (and the recorded corpus value) is the base64 text.
+                    use base64::Engine as _;
+                    base64::engine::general_purpose::STANDARD.encode(&s.reference)
+                }),
                 change,
                 error: None,
                 message: None,
@@ -569,6 +583,20 @@ pub struct CreateRunResult {
 
 /// Run a createAction vector: fresh wallet, internalize funding, seed
 /// entropy, execute args.
+/// Hold the recorded vout order for replay.
+///
+/// These vectors are mainnet recordings whose `expected` block pins exact
+/// transaction bytes, and they were recorded before `randomizeOutputs` was
+/// honoured — so their outputs are numbered in build order. `randomizeOutputs`
+/// defaults to true, and a permuted vout changes the raw transaction and
+/// therefore the txid, which no regeneration may rewrite (the txids are
+/// on-chain facts). Replaying with the shuffle off reproduces what was
+/// recorded. Drop this the next time the corpus is re-recorded.
+fn pin_vout_order(args: &mut CreateActionArgs) {
+    let options = args.options.get_or_insert_with(Default::default);
+    options.randomize_outputs = bsv::wallet::types::BooleanDefaultTrue(Some(false));
+}
+
 pub async fn run_create_vector(
     services: Arc<dyn WalletServices>,
     root_key_hex: &str,
@@ -587,7 +615,8 @@ pub async fn run_create_vector(
     conformance_entropy::set_conformance_entropy(entropy_seed);
     let parsed: Result<CreateActionArgs, _> = serde_json::from_value(args_json.clone());
     let outcome = match parsed {
-        Ok(args) => {
+        Ok(mut args) => {
+            pin_vout_order(&mut args);
             let result = setup.wallet.create_action(args, None).await;
             outcome_from_create(&setup, result).await
         }
@@ -637,13 +666,14 @@ pub async fn run_sign_vector(
     conformance_entropy::set_conformance_entropy(entropy_seed);
     let mut setup_outcomes = Vec::new();
     for (i, step_args) in setup_steps.iter().enumerate() {
-        let args: CreateActionArgs = match serde_json::from_value(step_args.clone()) {
+        let mut args: CreateActionArgs = match serde_json::from_value(step_args.clone()) {
             Ok(a) => a,
             Err(e) => {
                 conformance_entropy::clear_conformance_entropy();
                 return Err(format!("setup[{i}] args failed to deserialize: {e}"));
             }
         };
+        pin_vout_order(&mut args);
         let result = setup.wallet.create_action(args, None).await;
         let outcome = outcome_from_create(&setup, result).await;
         if outcome.status == "error" {
@@ -718,9 +748,15 @@ pub async fn caller_unlock_script(
 
     let template = P2PKH::from_private_key(caller_key.clone());
     let lock = LockingScript::from_binary(&p2pkh_lock(caller_key));
-    tx.sign(vin, &template, SIGHASH_ALL | SIGHASH_FORKID, source_sats, &lock)
-        .await
-        .expect("caller input sign");
+    tx.sign(
+        vin,
+        &template,
+        SIGHASH_ALL | SIGHASH_FORKID,
+        source_sats,
+        &lock,
+    )
+    .await
+    .expect("caller input sign");
     tx.inputs[vin]
         .unlocking_script
         .as_ref()

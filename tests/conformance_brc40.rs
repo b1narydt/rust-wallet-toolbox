@@ -2,7 +2,7 @@
 //!
 //! Consumes the vendored corpus embedded at compile time from
 //! `conformance/vectors/sync/brc40-user-state.json` (pinned via
-//! `conformance/SOURCE` to bsv-blockchain/ts-stack @ 1920a9c1).
+//! `conformance/SOURCE` to bsv-blockchain/ts-stack @ 8b074a06).
 //!
 //! Dispatcher contract (mirrors the Go runner in
 //! go-wallet-toolbox/pkg/internal/storage/repo/syncrepo/brc40_conformance_test.go
@@ -60,6 +60,8 @@ const USER_KEY: &str = "02cccc00000000000000000000000000000000000000000000000000
 #[derive(Deserialize)]
 struct VectorFile {
     id: String,
+    parity_class: String,
+    skip_reason: Option<String>,
     vectors: Vec<Vector>,
 }
 
@@ -70,6 +72,8 @@ struct Vector {
     expected: Expected,
     #[serde(default)]
     skip: bool,
+    #[serde(default)]
+    notes: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -117,6 +121,20 @@ fn vectors_for(channel: &str) -> Vec<Vector> {
         .collect()
 }
 
+/// The upstream corpus can govern a runtime-only assertion at file level.
+/// The vector itself identifies when that inherited classification applies;
+/// avoid pinning a vector ID or a per-vector skip count in this runner.
+fn governed_by_file_classification(file: &VectorFile, vector: &Vector) -> bool {
+    file.parity_class == "intended"
+        && file
+            .skip_reason
+            .as_deref()
+            .is_some_and(|reason| !reason.is_empty())
+        && vector.notes.as_deref().is_some_and(|notes| {
+            notes.contains("governed by the file-level intended classification")
+        })
+}
+
 // ---------------------------------------------------------------------------
 // Fixture helpers
 // ---------------------------------------------------------------------------
@@ -162,10 +180,10 @@ fn status(v: &Value) -> TransactionStatus {
 
 fn empty_chunk() -> SyncChunk {
     SyncChunk {
-        from_storage_identity_key: "02aaaa00000000000000000000000000000000000000000000000000000000aaaa"
-            .to_string(),
-        to_storage_identity_key: "02bbbb00000000000000000000000000000000000000000000000000000000bbbb"
-            .to_string(),
+        from_storage_identity_key:
+            "02aaaa00000000000000000000000000000000000000000000000000000000aaaa".to_string(),
+        to_storage_identity_key:
+            "02bbbb00000000000000000000000000000000000000000000000000000000bbbb".to_string(),
         user_identity_key: USER_KEY.to_string(),
         user: None,
         proven_txs: None,
@@ -255,7 +273,11 @@ fn output_row(row: &Value, user_id: i64) -> Output {
     }
 }
 
-async fn find_tx_by_reference(storage: &SqliteStorage, user_id: i64, reference: &str) -> Transaction {
+async fn find_tx_by_reference(
+    storage: &SqliteStorage,
+    user_id: i64,
+    reference: &str,
+) -> Transaction {
     let rows = storage
         .find_transactions(
             &FindTransactionsArgs {
@@ -278,26 +300,30 @@ async fn find_tx_by_reference(storage: &SqliteStorage, user_id: i64, reference: 
 // Corpus shape
 // ---------------------------------------------------------------------------
 
-/// 24 vectors across 4 channels; exactly one is corpus-skipped
-/// (sync.brc40.request.error.3 — needs a seeded producer user table, skipped
-/// by the upstream dispatcher itself). A refresh that changes these numbers
+/// 24 vectors across 4 channels. Upstream classifies the file as intended
+/// because runtime producer assertions require seeded state; individual
+/// vectors no longer carry `skip: true`. A refresh that changes this shape
 /// fails here and the per-channel counts below must be re-verified.
 #[test]
 fn corpus_shape() {
     let f = load_corpus();
     assert_eq!(f.vectors.len(), 24, "vector count changed on refresh");
+    assert_eq!(f.parity_class, "intended");
+    assert!(
+        f.skip_reason
+            .as_deref()
+            .is_some_and(|reason| !reason.is_empty()),
+        "intended file classification must explain the governed skip"
+    );
     let count = |c: &str| f.vectors.iter().filter(|v| v.input.channel == c).count();
     assert_eq!(count("brc40/requestSyncChunk"), 9);
     assert_eq!(count("brc40/syncChunk"), 5);
     assert_eq!(count("brc40/mergeExisting"), 6);
     assert_eq!(count("brc40/flow"), 4);
-    let skipped: Vec<&str> = f
-        .vectors
-        .iter()
-        .filter(|v| v.skip)
-        .map(|v| v.id.as_str())
-        .collect();
-    assert_eq!(skipped, vec!["sync.brc40.request.error.3"]);
+    assert!(
+        f.vectors.iter().all(|v| !v.skip),
+        "per-vector skips returned; re-check the upstream classification"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -306,17 +332,20 @@ fn corpus_shape() {
 
 #[test]
 fn request_sync_chunk_channel() {
-    let vectors = vectors_for("brc40/requestSyncChunk");
+    let file = load_corpus();
+    let vectors: Vec<&Vector> = file
+        .vectors
+        .iter()
+        .filter(|v| v.input.channel == "brc40/requestSyncChunk")
+        .collect();
     assert_eq!(vectors.len(), 9);
     let mut executed = 0usize;
+    let mut governed = 0usize;
     let mut failures: Vec<String> = Vec::new();
 
     for v in &vectors {
-        if v.skip {
-            assert_eq!(
-                v.id, "sync.brc40.request.error.3",
-                "only the corpus's own skip flag may skip a vector"
-            );
+        if governed_by_file_classification(&file, v) {
+            governed += 1;
             continue;
         }
         executed += 1;
@@ -333,7 +362,12 @@ fn request_sync_chunk_channel() {
         }
     }
 
-    assert_eq!(executed, 8, "8 of 9 request vectors must execute");
+    assert!(governed > 0, "file-level classification governs no vector");
+    assert_eq!(
+        executed + governed,
+        vectors.len(),
+        "every request vector must execute or be governed by upstream metadata"
+    );
     assert!(
         failures.is_empty(),
         "requestSyncChunk divergences:\n{}",
@@ -432,7 +466,28 @@ fn request_args_for(identity_key: &str) -> RequestSyncChunkArgs {
         since: None,
         max_rough_size: 10_000_000,
         max_items: 1000,
-        offsets: vec![],
+        offsets: [
+            "provenTx",
+            "outputBasket",
+            "outputTag",
+            "txLabel",
+            "transaction",
+            "output",
+            "txLabelMap",
+            "outputTagMap",
+            "certificate",
+            "certificateField",
+            "commission",
+            "provenTxReq",
+        ]
+        .into_iter()
+        .map(
+            |name| bsv_wallet_toolbox::storage::sync::request_args::SyncChunkOffset {
+                name: name.to_string(),
+                offset: 0,
+            },
+        )
+        .collect(),
     }
 }
 
@@ -920,7 +975,10 @@ async fn flow_stale_regression(v: &Vector, failures: &mut Vec<String>) {
     }
 
     let final_state = v.expected.final_state.as_ref().expect("finalState");
-    for want in final_state["transactions"].as_array().expect("transactions") {
+    for want in final_state["transactions"]
+        .as_array()
+        .expect("transactions")
+    {
         let reference = format!("vector-tx-{}", i(want, "transactionId"));
         let got = find_tx_by_reference(&storage, user_id, &reference).await;
         if got.status != status(want) {
@@ -980,15 +1038,17 @@ async fn flow_since_inclusive(v: &Vector, failures: &mut Vec<String>) {
 
     let mut tx = tx_row(boundary, user_id);
     tx.transaction_id = 0;
-    storage.insert_transaction(&tx, None).await.expect("seed tx");
+    storage
+        .insert_transaction(&tx, None)
+        .await
+        .expect("seed tx");
 
     let mut args = request_args_for(USER_KEY);
     args.since = Some(parse_iso(&since));
-    let chunk = bsv_wallet_toolbox::storage::traits::WalletStorageProvider::get_sync_chunk(
-        &storage, &args,
-    )
-    .await
-    .unwrap_or_else(|e| panic!("{}: get_sync_chunk failed: {e}", v.id));
+    let chunk =
+        bsv_wallet_toolbox::storage::traits::WalletStorageProvider::get_sync_chunk(&storage, &args)
+            .await
+            .unwrap_or_else(|e| panic!("{}: get_sync_chunk failed: {e}", v.id));
 
     let got = chunk.transactions.as_deref().unwrap_or_default();
     if !got.iter().any(|t| t.reference == tx.reference) {

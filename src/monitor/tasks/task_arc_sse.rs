@@ -10,6 +10,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::error::WalletError;
@@ -31,21 +33,38 @@ const TERMINAL_STATUSES: &[ProvenTxReqStatus] = &[
 
 /// Task that receives and processes real-time ARC transaction status via SSE.
 ///
-/// Consumes events from an ArcSseClient mpsc channel. If no callback_token is
-/// configured, the task is a no-op (trigger always returns false).
+/// Consumes events from an ArcSseClient mpsc channel. Both a callback token and
+/// an Arcade base URL are required; with either missing the task stays dormant
+/// (trigger always returns false), which is TS's behaviour too
+/// (TaskArcadeSSE.asyncSetup: "no arcadeUrl configured; SSE disabled").
 pub struct TaskArcSse {
     storage: Arc<WalletStorageManager>,
     _services: Arc<dyn WalletServices>,
     /// Callback token for ARC SSE streaming.
     callback_token: Option<String>,
+    /// Base URL of the Arcade instance serving `/events`.
+    arcade_url: Option<String>,
     /// Optional callback when transaction status changes.
     on_tx_status_changed: Option<AsyncCallback<(String, String)>>,
-    /// The ARC SSE client (created during async_setup if token is configured).
-    sse_client: Option<ArcSseClient>,
+    /// Cancels the active connection loop during replacement or shutdown.
+    sse_cancel: Option<CancellationToken>,
+    /// Lets setup wait until the prior connection loop has stopped.
+    sse_handle: Option<JoinHandle<()>>,
     /// Receiver for SSE events from the client.
     sse_receiver: Option<mpsc::Receiver<ArcSseEvent>>,
     /// Buffer of pending events drained from the receiver.
     pending_events: Vec<ArcSseEvent>,
+}
+
+impl Drop for TaskArcSse {
+    fn drop(&mut self) {
+        if let Some(cancel) = self.sse_cancel.take() {
+            cancel.cancel();
+        }
+        if let Some(handle) = self.sse_handle.take() {
+            handle.abort();
+        }
+    }
 }
 
 impl TaskArcSse {
@@ -54,17 +73,25 @@ impl TaskArcSse {
         storage: Arc<WalletStorageManager>,
         services: Arc<dyn WalletServices>,
         callback_token: Option<String>,
+        arcade_url: Option<String>,
         on_tx_status_changed: Option<AsyncCallback<(String, String)>>,
     ) -> Self {
         Self {
             storage,
             _services: services,
             callback_token,
+            arcade_url,
             on_tx_status_changed,
-            sse_client: None,
+            sse_cancel: None,
+            sse_handle: None,
             sse_receiver: None,
             pending_events: Vec::new(),
         }
+    }
+
+    async fn stop_sse_connection(&mut self) {
+        self.sse_receiver = None;
+        cancel_and_await_sse_loop(&mut self.sse_cancel, &mut self.sse_handle).await;
     }
 
     /// Process a single SSE status event.
@@ -260,6 +287,8 @@ impl WalletMonitorTask for TaskArcSse {
     }
 
     async fn async_setup(&mut self) -> Result<(), WalletError> {
+        self.stop_sse_connection().await;
+
         // Inherit whatever the default setup does (currently:
         // `make_available()` on `storage_manager()`). Delegating
         // instead of hand-copying means this task automatically picks
@@ -276,23 +305,28 @@ impl WalletMonitorTask for TaskArcSse {
             }
         };
 
-        // For now, SSE client setup requires an arc_url from the services layer.
-        // If it cannot be obtained, the task remains dormant.
-        // The ArcSseClient is created but actual connection depends on runtime config.
-        info!(
-            "[TaskArcSse] setting up -- token={}...",
-            &callback_token[..callback_token.len().min(8)]
-        );
+        let arcade_url = match &self.arcade_url {
+            Some(u) if !u.is_empty() => u.clone(),
+            _ => {
+                info!("[TaskArcSse] no arcadeUrl configured -- SSE disabled");
+                return Ok(());
+            }
+        };
+
+        info!("[TaskArcSse] setting up SSE for arcadeUrl={arcade_url}");
 
         let options = ArcSseClientOptions {
-            base_url: String::new(), // Will be configured from services at runtime
+            base_url: arcade_url,
             callback_token,
             arc_api_key: None,
             last_event_id: None,
         };
 
-        let (client, receiver) = ArcSseClient::new(options);
-        self.sse_client = Some(client);
+        // The reconnect loop owns the client while this monitor task retains
+        // the receiver, cancellation token, and join handle for its lifecycle.
+        let (mut client, receiver) = ArcSseClient::new(options);
+        self.sse_cancel = Some(client.cancel_handle());
+        self.sse_handle = Some(tokio::spawn(async move { client.connect().await }));
         self.sse_receiver = Some(receiver);
 
         Ok(())
@@ -327,9 +361,22 @@ impl WalletMonitorTask for TaskArcSse {
     }
 }
 
+async fn cancel_and_await_sse_loop(
+    cancel: &mut Option<CancellationToken>,
+    handle: &mut Option<JoinHandle<()>>,
+) {
+    if let Some(cancel) = cancel.take() {
+        cancel.cancel();
+    }
+    if let Some(handle) = handle.take() {
+        let _ = handle.await;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     #[test]
     fn test_terminal_statuses() {
@@ -352,5 +399,25 @@ mod tests {
         // means trigger returns false.
         let events: Vec<ArcSseEvent> = Vec::new();
         assert!(events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn replacing_connection_cancels_and_awaits_old_loop() {
+        let token = CancellationToken::new();
+        let child_token = token.clone();
+        let exited = Arc::new(AtomicBool::new(false));
+        let task_exited = Arc::clone(&exited);
+        let join = tokio::spawn(async move {
+            child_token.cancelled().await;
+            task_exited.store(true, Ordering::SeqCst);
+        });
+        let mut cancel = Some(token);
+        let mut handle = Some(join);
+
+        cancel_and_await_sse_loop(&mut cancel, &mut handle).await;
+
+        assert!(cancel.is_none());
+        assert!(handle.is_none());
+        assert!(exited.load(Ordering::SeqCst));
     }
 }

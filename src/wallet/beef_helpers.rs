@@ -50,16 +50,35 @@ pub fn verify_returned_txid_only(
             }
         }
 
-        // Try to find the full transaction in the wallet's beef
+        // Try to find the full transaction in the wallet's beef and merge
+        // ONLY that transaction's entry (TS `beef.mergeBeefTx(btx)`), with
+        // its bump when it has one. Merging the whole party beef here — the
+        // previous behavior — leaked every transaction the wallet's
+        // BeefParty had ever accumulated into the returned BEEF.
         if let Some(full_btx) = wallet_beef.beef.find_txid(txid) {
-            if !full_btx.is_txid_only() {
-                // Merge the full transaction data from wallet_beef into beef
-                // We do this by merging the whole wallet beef (merge_beef handles dedup)
-                if let Err(e) = beef.merge_beef(&wallet_beef.beef) {
-                    return Err(WalletError::Internal(format!(
-                        "unable to merge txid {txid} into beef: {e}"
-                    )));
-                }
+            if let Some(ref full_tx) = full_btx.tx {
+                let merged_bump_index = match full_btx.bump_index {
+                    Some(bi) => {
+                        let bump = wallet_beef.beef.bumps.get(bi).ok_or_else(|| {
+                            WalletError::Internal(format!(
+                                "wallet beef entry {txid} names bump {bi} which does not exist"
+                            ))
+                        })?;
+                        Some(beef.merge_bump(bump).map_err(|e| {
+                            WalletError::Internal(format!(
+                                "unable to merge bump for txid {txid} into beef: {e}"
+                            ))
+                        })?)
+                    }
+                    None => None,
+                };
+                let mut raw = Vec::new();
+                full_tx.to_binary(&mut raw).map_err(|e| {
+                    WalletError::Internal(format!("unable to serialize txid {txid}: {e}"))
+                })?;
+                beef.merge_raw_tx(&raw, merged_bump_index).map_err(|e| {
+                    WalletError::Internal(format!("unable to merge txid {txid} into beef: {e}"))
+                })?;
                 continue;
             }
         }
@@ -166,22 +185,106 @@ pub fn verify_returned_txid_only_beef(
 /// * `beef` - The wallet's BeefParty to query.
 /// * `new_known_txids` - Optional additional txids to add as txid-only.
 pub fn get_known_txids(beef: &mut BeefParty, new_known_txids: Option<&[String]>) -> Vec<String> {
-    // Merge new txids as txid-only entries
     if let Some(txids) = new_known_txids {
         for txid in txids {
-            // Add as txid-only if not already present
-            if beef.beef.find_txid(txid).is_none() {
-                beef.beef
-                    .txs
-                    .push(bsv::transaction::beef_tx::BeefTx::from_txid(txid.clone()));
-            }
+            beef.beef.merge_txid_only(txid);
         }
     }
+    // `sort_txs().valid` is the reference's answer, not an approximation of
+    // it: proven transactions, those chaining back to one, and the input-less
+    // txid-only entries the caller declared (TS `partitionTxs` marks all three
+    // valid). It also excludes the `notValid` partition — full entries whose
+    // input chain is broken — which the previous hand-rolled filter had no way
+    // to see, so this wallet could advertise a txid it could not actually
+    // vouch for.
+    beef.beef.sort_txs().valid
+}
 
-    // Sort transactions in dependency order using Kahn's algorithm (SDK 0.1.6)
-    // matching TS behavior which calls sortTxs() before collecting txids.
-    beef.beef.sort_txs();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bsv::script::locking_script::LockingScript;
+    use bsv::transaction::beef::BEEF_V2;
+    use bsv::transaction::transaction::Transaction;
+    use bsv::transaction::transaction_output::TransactionOutput;
 
-    // Collect all txids in dependency order.
-    beef.beef.txs.iter().map(|btx| btx.txid.clone()).collect()
+    fn simple_tx(sats: u64) -> Transaction {
+        let mut tx = Transaction::new();
+        tx.add_output(TransactionOutput {
+            satoshis: Some(sats),
+            locking_script: LockingScript::from_binary(&[0x51]),
+            change: false,
+        });
+        tx
+    }
+
+    fn party_with(txs: &[&Transaction]) -> BeefParty {
+        let mut party = BeefParty::new(["test"]);
+        for tx in txs {
+            let mut raw = Vec::new();
+            tx.to_binary(&mut raw).unwrap();
+            party.beef.merge_raw_tx(&raw, None).unwrap();
+        }
+        party
+    }
+
+    /// Resolving a txid-only entry merges ONLY that transaction from the
+    /// wallet's BeefParty — never the party's whole accumulated beef.
+    #[test]
+    fn resolves_txid_only_without_leaking_the_party_beef() {
+        let wanted = simple_tx(100);
+        let unrelated = simple_tx(200);
+        let wanted_txid = wanted.id().unwrap();
+        let unrelated_txid = unrelated.id().unwrap();
+        let party = party_with(&[&wanted, &unrelated]);
+
+        let mut beef = Beef::new(BEEF_V2);
+        beef.txs.push(bsv::transaction::beef_tx::BeefTx::from_txid(
+            wanted_txid.clone(),
+        ));
+
+        verify_returned_txid_only(&mut beef, &party, false, None).expect("resolves");
+
+        let resolved = beef.find_txid(&wanted_txid).expect("wanted present");
+        assert!(!resolved.is_txid_only(), "wanted resolved to a full tx");
+        assert!(
+            beef.find_txid(&unrelated_txid).is_none(),
+            "unrelated party transaction must NOT leak into the returned BEEF"
+        );
+    }
+
+    /// A txid-only entry the party cannot resolve still errors, naming it.
+    #[test]
+    fn unresolvable_txid_only_errors() {
+        let party = party_with(&[]);
+        let missing = "ab".repeat(32);
+        let mut beef = Beef::new(BEEF_V2);
+        beef.txs.push(bsv::transaction::beef_tx::BeefTx::from_txid(
+            missing.clone(),
+        ));
+
+        let err = verify_returned_txid_only(&mut beef, &party, false, None)
+            .expect_err("must not accept an unresolvable txid-only entry");
+        assert!(err.to_string().contains(&missing));
+    }
+
+    /// TS parity (partitionTxs): a caller-declared, input-less txid-only
+    /// entry is in the reference's `valid` set and IS advertised — dropping
+    /// it silently un-declared the caller's knownTxids and defeated trimming.
+    #[test]
+    fn get_known_txids_advertises_caller_declared_txid_only_entries() {
+        let full = simple_tx(300);
+        let full_txid = full.id().unwrap();
+        let mut party = party_with(&[&full]);
+        let claimed = "cd".repeat(32);
+
+        let known = get_known_txids(&mut party, Some(std::slice::from_ref(&claimed)));
+
+        assert!(known.contains(&full_txid), "full tx txid is known");
+        assert!(
+            known.contains(&claimed),
+            "a caller-declared input-less txid-only entry is in TS's `valid` \
+             set and must be advertised — dropping it un-declares knownTxids"
+        );
+    }
 }

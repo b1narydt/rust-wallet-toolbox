@@ -112,8 +112,7 @@ const CREATEACTION: &str = include_str!("../conformance/vectors/wallet/brc100/cr
 const SIGNACTION: &str = include_str!("../conformance/vectors/wallet/brc100/signaction.json");
 const INTERNALIZE: &str =
     include_str!("../conformance/vectors/wallet/brc100/internalizeaction.json");
-const RELINQUISH: &str =
-    include_str!("../conformance/vectors/wallet/brc100/relinquishoutput.json");
+const RELINQUISH: &str = include_str!("../conformance/vectors/wallet/brc100/relinquishoutput.json");
 
 /// Vectors whose SETUP writes storage rows directly instead of arriving at
 /// the state through BRC-100 calls. The assertions stay interface-level; a
@@ -500,7 +499,9 @@ async fn seed_spendable_change(
         });
     }
     let mut funding_raw = Vec::new();
-    funding.to_binary(&mut funding_raw).expect("serialize funding tx");
+    funding
+        .to_binary(&mut funding_raw)
+        .expect("serialize funding tx");
     let funding_txid = funding.id().expect("funding txid");
 
     let tx_id = storage
@@ -718,7 +719,10 @@ async fn createaction_conformance() {
         run_createaction_vector(&backend, v, &mut failures).await;
     }
 
-    assert_eq!(executed, 90, "every vector must execute — no silent filtering");
+    assert_eq!(
+        executed, 90,
+        "every vector must execute — no silent filtering"
+    );
     assert!(
         failures.is_empty(),
         "{} of 90 createAction vectors diverged:\n{}",
@@ -781,7 +785,10 @@ async fn run_createaction_vector(
     let args: CreateActionArgs = match serde_json::from_value(neutralized) {
         Ok(a) => a,
         Err(e) => {
-            failures.push(format!("{}: neutralized args failed to deserialize: {e}", v.id));
+            failures.push(format!(
+                "{}: neutralized args failed to deserialize: {e}",
+                v.id
+            ));
             return;
         }
     };
@@ -977,7 +984,8 @@ async fn seed_pending_action(w: &BackendWallet, caller_inputs: usize) -> String 
     beef.txs
         .push(BeefTx::from_tx(source, Some(0)).expect("beef tx"));
     let mut input_beef = Vec::new();
-    beef.to_binary(&mut input_beef).expect("serialize inputBEEF");
+    beef.to_binary(&mut input_beef)
+        .expect("serialize inputBEEF");
 
     // The corpus placeholder spends carry a 72-byte unlocking script; the
     // declared length must match for the deferred action to accept them.
@@ -1041,7 +1049,10 @@ async fn signaction_conformance() {
         run_signaction_vector(&backend, v, &mut failures).await;
     }
 
-    assert_eq!(executed, 8, "every vector must execute — no silent filtering");
+    assert_eq!(
+        executed, 8,
+        "every vector must execute — no silent filtering"
+    );
     assert_known_divergences("signaction", &failures, KNOWN_SIGNACTION_DIVERGENCES);
 }
 
@@ -1167,7 +1178,10 @@ async fn run_signaction_vector(
     // spliced in verbatim.
     if return_txid_only {
         if result.tx.is_some() {
-            failures.push(format!("{}: returnTXIDOnly=true but result.tx present", v.id));
+            failures.push(format!(
+                "{}: returnTXIDOnly=true but result.tx present",
+                v.id
+            ));
         }
     } else {
         let Some(beef_bytes) = result.tx.clone() else {
@@ -1297,7 +1311,9 @@ fn build_internalize_beef(outputs: &Value, receiver_root_hex: &str) -> Vec<u8> {
             let rem = &o["paymentRemittance"];
             let prefix = rem["derivationPrefix"].as_str().expect("derivationPrefix");
             let suffix = rem["derivationSuffix"].as_str().expect("derivationSuffix");
-            let sender_pub_hex = rem["senderIdentityKey"].as_str().expect("senderIdentityKey");
+            let sender_pub_hex = rem["senderIdentityKey"]
+                .as_str()
+                .expect("senderIdentityKey");
             // The corpus's sender identity is G — privkey 1. The lock must be
             // built exactly as that sender would.
             let sender_priv = PrivateKey::from_hex(
@@ -1347,10 +1363,7 @@ fn build_internalize_beef(outputs: &Value, receiver_root_hex: &str) -> Vec<u8> {
     beef.bumps.push(bump);
     beef.txs
         .push(BeefTx::from_tx(source, Some(0)).expect("beef tx"));
-    beef.atomic_txid = Some(txid);
-    let mut bytes = Vec::new();
-    beef.to_binary(&mut bytes).expect("serialize beef");
-    bytes
+    beef.to_binary_atomic(&txid).expect("serialize atomic beef")
 }
 
 /// internalizeaction.3 ("mixed internalization") supplies BOTH a wallet
@@ -1396,7 +1409,10 @@ async fn internalizeaction_conformance() {
         run_internalize_vector(&backend, v, &mut failures).await;
     }
 
-    assert_eq!(executed, 10, "every vector must execute — no silent filtering");
+    assert_eq!(
+        executed, 10,
+        "every vector must execute — no silent filtering"
+    );
     assert_known_divergences(
         "internalizeaction",
         &failures,
@@ -1546,7 +1562,10 @@ async fn relinquishoutput_conformance() {
         run_relinquish_vector(&backend, v, &mut failures).await;
     }
 
-    assert_eq!(executed, 8, "every vector must execute — no silent filtering");
+    assert_eq!(
+        executed, 8,
+        "every vector must execute — no silent filtering"
+    );
     assert!(
         failures.is_empty(),
         "{} of 8 relinquishOutput vectors diverged:\n{}",
@@ -1654,6 +1673,232 @@ async fn run_relinquish_vector(
                 failures.push(format!("{}: relinquished=false, want true", v.id));
             }
         }
-        Err(e) => failures.push(format!("{}: expected relinquished=true, got error: {e}", v.id)),
+        Err(e) => failures.push(format!(
+            "{}: expected relinquished=true, got error: {e}",
+            v.id
+        )),
     }
+}
+
+// ---------------------------------------------------------------------------
+// rust-mpc#300 action-arc seams — TS-reference parity pins
+//
+// The atlas-certifier conformance suite drives the enterprise box's BRC-100
+// surface with the flow below (deferred noSend probe → empty-spends
+// signAction → listActions by label → abortAction by the returned
+// reference). Three of its reds were THIS crate's divergences from the TS
+// reference (@bsv/wallet-toolbox + @bsv/sdk):
+//
+// 1. `validateSignActionArgs` has no "at least one spend" rule — empty
+//    `spends` legitimately completes an action whose inputs are all
+//    wallet-signed. The vendored Rust SDK invented one.
+// 2. `signableTransaction.reference` is base64 TEXT on the wire (TS types it
+//    Base64String). Handing the text's UTF-8 bytes to the SDK's
+//    `bytes_as_base64` field double-encoded the wire value, and
+//    `abortAction`'s re-encoding lookup could then never find the row.
+// 3. A listActions row must carry a txid; the unsigned tx's computed id (the
+//    value TS itself computes for noSendChange outpoints) is persisted at
+//    createAction so an 'unsigned' row is never txid-less.
+// ---------------------------------------------------------------------------
+
+/// One deferred noSend action shaped like the atlas conformance probe.
+async fn deferred_nosend_probe(w: &BackendWallet) -> bsv::wallet::interfaces::CreateActionResult {
+    let label_hex: String = "atlas conformance"
+        .as_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let args: CreateActionArgs = serde_json::from_value(serde_json::json!({
+        "description": "atlas conformance action probe",
+        "labels": ["atlas conformance"],
+        "outputs": [{
+            "satoshis": 1,
+            "lockingScript": format!("006a{label_hex}"),
+            "outputDescription": "conformance action probe",
+            "tags": ["atlas conformance"],
+        }],
+        "options": {
+            "noSend": true,
+            "signAndProcess": false,
+            "randomizeOutputs": false,
+        },
+    }))
+    .expect("probe args");
+    w.setup
+        .wallet
+        .create_action(args, None)
+        .await
+        .expect("deferred noSend createAction")
+}
+
+/// The wire value of the reference is the STORED reference (no double
+/// encoding), and signAction with EMPTY spends completes the wallet-signed
+/// action — both exactly as the TS reference behaves.
+#[tokio::test]
+async fn empty_spends_sign_action_completes_a_wallet_signed_deferred_action() {
+    let w = LocalRootKeyBackend
+        .funded_wallet(&"6a".repeat(32), 2, 50_000)
+        .await;
+    let created = deferred_nosend_probe(&w).await;
+    let signable = created
+        .signable_transaction
+        .expect("deferred createAction returns signableTransaction");
+
+    // Wire parity: serde encodes the reference bytes back to base64, and that
+    // string must BE the stored reference text (TS Base64String round-trip).
+    let wire = serde_json::to_value(&signable).expect("serialize signable");
+    let wire_reference = wire["reference"]
+        .as_str()
+        .expect("reference string")
+        .to_string();
+    let rows = w
+        .setup
+        .storage
+        .find_transactions(
+            &bsv_wallet_toolbox::storage::find_args::FindTransactionsArgs {
+                partial: bsv_wallet_toolbox::storage::find_args::TransactionPartial {
+                    reference: Some(wire_reference.clone()),
+                    ..Default::default()
+                },
+                no_raw_tx: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("find by wire reference");
+    assert_eq!(
+        rows.len(),
+        1,
+        "the wire reference must be the stored reference — a double-encoded \
+         wire value can never find its own action"
+    );
+
+    // TS validateSignActionArgs imposes NO minimum on spends: the wallet
+    // signs its own funding inputs.
+    let args: SignActionArgs = serde_json::from_value(serde_json::json!({
+        "reference": wire_reference,
+        "spends": {},
+        "options": { "noSend": true },
+    }))
+    .expect("signAction args");
+    let signed = w
+        .setup
+        .wallet
+        .sign_action(args, None)
+        .await
+        .expect("signAction with empty spends must complete a wallet-signed action");
+    let txid = signed.txid.expect("signAction returns txid");
+    assert_eq!(txid.len(), 64);
+    let beef = signed.tx.expect("signAction returns AtomicBEEF");
+    let tx = subject_tx(&beef);
+    let mut raw = Vec::new();
+    tx.to_binary(&mut raw).expect("serialize signed tx");
+    assert_eq!(txid_hex(&raw), txid, "returned txid hashes the returned tx");
+    assert_eq!(w.services.posted_count(), 0, "noSend must stay unbroadcast");
+}
+
+/// abortAction must find the action by the very reference createAction
+/// returned — the typed round-trip the double encoding broke.
+#[tokio::test]
+async fn abort_action_finds_the_action_by_the_reference_create_action_returned() {
+    let w = LocalRootKeyBackend
+        .funded_wallet(&"6b".repeat(32), 2, 50_000)
+        .await;
+    let created = deferred_nosend_probe(&w).await;
+    let signable = created
+        .signable_transaction
+        .expect("deferred createAction returns signableTransaction");
+
+    let aborted = w
+        .setup
+        .wallet
+        .abort_action(
+            bsv::wallet::interfaces::AbortActionArgs {
+                reference: signable.reference.clone(),
+            },
+            None,
+        )
+        .await
+        .expect("abortAction by the returned reference");
+    assert!(aborted.aborted);
+}
+
+/// listActions rows always satisfy the BRC-100 row contract: a deferred
+/// action lists with the UNSIGNED transaction's 64-hex txid while status is
+/// 'unsigned', and with the final txid once signAction completes it.
+#[tokio::test]
+async fn list_actions_reports_a_real_txid_for_a_deferred_action() {
+    let w = LocalRootKeyBackend
+        .funded_wallet(&"6c".repeat(32), 2, 50_000)
+        .await;
+    let created = deferred_nosend_probe(&w).await;
+    let signable = created
+        .signable_transaction
+        .expect("deferred createAction returns signableTransaction");
+    let unsigned_tx = subject_tx(&signable.tx);
+    let mut unsigned_raw = Vec::new();
+    unsigned_tx
+        .to_binary(&mut unsigned_raw)
+        .expect("serialize unsigned tx");
+    let unsigned_txid = txid_hex(&unsigned_raw);
+
+    let list_args = || -> bsv::wallet::interfaces::ListActionsArgs {
+        serde_json::from_value(serde_json::json!({
+            "labels": ["atlas conformance"],
+            "labelQueryMode": "any",
+            "includeLabels": true,
+            "limit": 100,
+        }))
+        .expect("listActions args")
+    };
+    let listed = w
+        .setup
+        .wallet
+        .list_actions(list_args(), None)
+        .await
+        .expect("listActions");
+    let row = listed
+        .actions
+        .iter()
+        .find(|a| a.description == "atlas conformance action probe")
+        .expect("the labeled probe must appear under its label");
+    assert_eq!(
+        row.txid, unsigned_txid,
+        "an 'unsigned' row carries the unsigned transaction's computed txid \
+         (64 hex), never an empty string"
+    );
+    assert_eq!(row.txid.len(), 64);
+    assert!(row.txid.chars().all(|c| c.is_ascii_hexdigit()));
+
+    // Completing the action replaces the provisional txid with the final one.
+    let wire = serde_json::to_value(&signable).expect("serialize signable");
+    let args: SignActionArgs = serde_json::from_value(serde_json::json!({
+        "reference": wire["reference"],
+        "spends": {},
+        "options": { "noSend": true },
+    }))
+    .expect("signAction args");
+    let signed = w
+        .setup
+        .wallet
+        .sign_action(args, None)
+        .await
+        .expect("signAction");
+    let final_txid = signed.txid.expect("txid");
+
+    let listed = w
+        .setup
+        .wallet
+        .list_actions(list_args(), None)
+        .await
+        .expect("listActions after sign");
+    let row = listed
+        .actions
+        .iter()
+        .find(|a| a.description == "atlas conformance action probe")
+        .expect("the probe still lists after signing");
+    assert_eq!(
+        row.txid, final_txid,
+        "the final txid replaces the provisional one"
+    );
 }

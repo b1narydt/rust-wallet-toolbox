@@ -632,10 +632,13 @@ pub async fn storage_internalize_action<S: StorageReaderWriter + ?Sized>(
 ///   * bumps whose leaves disagree on the merkle root for a block height.
 ///   * any collected merkle root the chain tracker rejects.
 async fn verify_atomic_beef(ab: &Beef, chain_tracker: &dyn ChainTracker) -> WalletResult<()> {
-    let invalid = || WalletError::InvalidParameter {
+    // Every rejection is an InvalidParameter on `tx` (the AtomicBEEF the
+    // caller handed in), but each failure mode names exactly what is wrong
+    // and which txid/bump/height offends — a bare "not a valid AtomicBEEF"
+    // gave an integrator nothing to fix.
+    let invalid = |why: String| WalletError::InvalidParameter {
         parameter: "tx".to_string(),
-        must_be: "a valid AtomicBEEF (every transaction proven or chaining to a proven ancestor)"
-            .to_string(),
+        must_be: format!("a valid AtomicBEEF: {why}"),
     };
 
     // Txids whose validity has been established. Seeded with bump-proven txids.
@@ -643,14 +646,29 @@ async fn verify_atomic_beef(ab: &Beef, chain_tracker: &dyn ChainTracker) -> Wall
     // Collected merkle roots per block height, to confirm against the tracker.
     let mut roots: HashMap<u32, String> = HashMap::new();
 
+    // (0) No duplicate txids: two entries for one txid make which-copy-wins
+    //     parser-dependent, so a verifier must reject rather than choose.
+    let mut seen_txids: HashSet<&str> = HashSet::new();
+    for btx in &ab.txs {
+        if !seen_txids.insert(btx.txid.as_str()) {
+            return Err(invalid(format!(
+                "transaction {} appears more than once",
+                btx.txid
+            )));
+        }
+    }
+
     // (1) `txid-only` transactions are not permitted (allowTxidOnly = false).
-    if ab.txs.iter().any(|btx| btx.is_txid_only()) {
-        return Err(invalid());
+    if let Some(btx) = ab.txs.iter().find(|btx| btx.is_txid_only()) {
+        return Err(invalid(format!(
+            "transaction {} is txid-only (internalize requires full transactions)",
+            btx.txid
+        )));
     }
 
     // (2) Record every txid proven by a bump leaf and confirm each bump's root
     //     is internally consistent for its block height.
-    for bump in &ab.bumps {
+    for (bump_idx, bump) in ab.bumps.iter().enumerate() {
         let Some(level0) = bump.path.first() else {
             continue;
         };
@@ -663,12 +681,20 @@ async fn verify_atomic_beef(ab: &Beef, chain_tracker: &dyn ChainTracker) -> Wall
             };
             valid_txids.insert(hash.clone());
             let root = bump.compute_root(Some(hash)).map_err(|e| {
-                WalletError::Internal(format!("Failed to compute merkle root: {e}"))
+                WalletError::Internal(format!(
+                    "Failed to compute merkle root of bump {bump_idx} (height {}) for txid {hash}: {e}",
+                    bump.block_height
+                ))
             })?;
             match roots.entry(bump.block_height) {
                 Entry::Occupied(existing) => {
                     if existing.get() != &root {
-                        return Err(invalid());
+                        return Err(invalid(format!(
+                            "bumps disagree on the merkle root for height {}: {} vs {} (txid {hash})",
+                            bump.block_height,
+                            existing.get(),
+                            root
+                        )));
                     }
                 }
                 Entry::Vacant(slot) => {
@@ -681,14 +707,23 @@ async fn verify_atomic_beef(ab: &Beef, chain_tracker: &dyn ChainTracker) -> Wall
     // (3) Every transaction that claims a bump must actually be a leaf of it.
     for btx in &ab.txs {
         if let Some(bump_idx) = btx.bump_index {
-            let bump = ab.bumps.get(bump_idx).ok_or_else(invalid)?;
+            let bump = ab.bumps.get(bump_idx).ok_or_else(|| {
+                invalid(format!(
+                    "transaction {} names bump index {bump_idx}, but the BEEF carries only {} bumps",
+                    btx.txid,
+                    ab.bumps.len()
+                ))
+            })?;
             let proven = bump.path.first().is_some_and(|level0| {
                 level0
                     .iter()
                     .any(|l| l.hash.as_deref() == Some(btx.txid.as_str()))
             });
             if !proven {
-                return Err(invalid());
+                return Err(invalid(format!(
+                    "transaction {} names bump index {bump_idx} (height {}) but is not one of its leaves",
+                    btx.txid, bump.block_height
+                )));
             }
             valid_txids.insert(btx.txid.clone());
         }
@@ -715,8 +750,18 @@ async fn verify_atomic_beef(ab: &Beef, chain_tracker: &dyn ChainTracker) -> Wall
             break;
         }
     }
-    if ab.txs.iter().any(|btx| !valid_txids.contains(&btx.txid)) {
-        return Err(invalid());
+    if let Some(btx) = ab.txs.iter().find(|btx| !valid_txids.contains(&btx.txid)) {
+        let missing: Vec<&str> = btx
+            .input_txids
+            .iter()
+            .filter(|i| !valid_txids.contains(*i))
+            .map(|s| s.as_str())
+            .collect();
+        return Err(invalid(format!(
+            "transaction {} does not chain to a proven ancestor (unresolved inputs: {})",
+            btx.txid,
+            missing.join(", ")
+        )));
     }
 
     // (5) SPV: confirm every collected merkle root against the chain tracker.
@@ -724,9 +769,15 @@ async fn verify_atomic_beef(ab: &Beef, chain_tracker: &dyn ChainTracker) -> Wall
         let ok = chain_tracker
             .is_valid_root_for_height(root, *height)
             .await
-            .map_err(|e| WalletError::Internal(format!("Chain tracker error: {e}")))?;
+            .map_err(|e| {
+                WalletError::Internal(format!(
+                    "Chain tracker error verifying root {root} at height {height}: {e}"
+                ))
+            })?;
         if !ok {
-            return Err(invalid());
+            return Err(invalid(format!(
+                "chain tracker rejects merkle root {root} for height {height}"
+            )));
         }
     }
 
@@ -1116,10 +1167,9 @@ mod tests {
             .push(BeefTx::from_tx(parent, Some(0)).expect("parent beef tx"));
         beef.txs
             .push(BeefTx::from_tx(child, None).expect("child beef tx"));
-        beef.atomic_txid = Some(child_txid.clone());
-
-        let mut beef_bytes = Vec::new();
-        beef.to_binary(&mut beef_bytes).expect("serialize beef");
+        let beef_bytes = beef
+            .to_binary_atomic(&child_txid)
+            .expect("serialize atomic beef");
 
         (beef_bytes, child_txid)
     }
@@ -1441,11 +1491,7 @@ mod tests {
         let beef_tx = BeefTx::from_tx(tx, None).expect("create beef tx");
         let mut beef = Beef::new(bsv::transaction::beef::BEEF_V1);
         beef.txs.push(beef_tx);
-        beef.atomic_txid = Some(txid);
-
-        let mut beef_bytes = Vec::new();
-        beef.to_binary(&mut beef_bytes).expect("serialize beef");
-        beef_bytes
+        beef.to_binary_atomic(&txid).expect("serialize atomic beef")
     }
 
     /// A proofless / dangling AtomicBEEF (an unproven tx whose input does not
@@ -1561,5 +1607,159 @@ mod tests {
         assert_eq!(custom_outputs.len(), 1);
         assert_eq!(change_outputs[0].output_type, "P2PKH");
         assert_eq!(custom_outputs[0].output_type, "custom");
+    }
+
+    // -----------------------------------------------------------------------
+    // verify_atomic_beef failure modes: each rejection names the offending
+    // txid / bump / height (rust-mpc#352 P3-b).
+    // -----------------------------------------------------------------------
+
+    /// Chain tracker that rejects every root.
+    struct RejectingChainTracker;
+
+    #[async_trait]
+    impl ChainTracker for RejectingChainTracker {
+        async fn is_valid_root_for_height(
+            &self,
+            _root: &str,
+            _height: u32,
+        ) -> Result<bool, TransactionError> {
+            Ok(false)
+        }
+    }
+
+    fn vab_simple_tx(sats: u64) -> BsvTransaction {
+        let mut tx = BsvTransaction::new();
+        tx.add_output(TransactionOutput {
+            satoshis: Some(sats),
+            locking_script: LockingScript::from_binary(&[0x51]),
+            change: false,
+        });
+        tx
+    }
+
+    fn vab_bump_for(txid: &str, height: u32) -> bsv::transaction::merkle_path::MerklePath {
+        bsv::transaction::merkle_path::MerklePath {
+            block_height: height,
+            path: vec![vec![bsv::transaction::merkle_path::MerklePathLeaf {
+                offset: 0,
+                hash: Some(txid.to_string()),
+                txid: true,
+                duplicate: false,
+            }]],
+        }
+    }
+
+    fn vab_err(result: WalletResult<()>) -> String {
+        result.expect_err("must reject").to_string()
+    }
+
+    #[tokio::test]
+    async fn verify_atomic_beef_rejects_duplicate_txid_naming_it() {
+        let tx = vab_simple_tx(100);
+        let txid = tx.id().unwrap();
+        let mut beef = Beef::new(bsv::transaction::beef::BEEF_V2);
+        let btx = bsv::transaction::beef_tx::BeefTx::from_tx(tx, None).unwrap();
+        beef.txs.push(btx.clone());
+        beef.txs.push(btx);
+
+        let msg = vab_err(verify_atomic_beef(&beef, &MockChainTracker).await);
+        assert!(msg.contains("more than once"), "got: {msg}");
+        assert!(msg.contains(&txid), "must name the txid, got: {msg}");
+    }
+
+    #[tokio::test]
+    async fn verify_atomic_beef_rejects_txid_only_naming_it() {
+        let missing = "ab".repeat(32);
+        let mut beef = Beef::new(bsv::transaction::beef::BEEF_V2);
+        beef.txs.push(bsv::transaction::beef_tx::BeefTx::from_txid(
+            missing.clone(),
+        ));
+
+        let msg = vab_err(verify_atomic_beef(&beef, &MockChainTracker).await);
+        assert!(msg.contains("txid-only"), "got: {msg}");
+        assert!(msg.contains(&missing), "must name the txid, got: {msg}");
+    }
+
+    #[tokio::test]
+    async fn verify_atomic_beef_rejects_dangling_input_naming_both_txids() {
+        let parent = vab_simple_tx(200);
+        let parent_txid = parent.id().unwrap();
+        let mut child = BsvTransaction::new();
+        child.inputs.push(TransactionInput {
+            source_transaction: None,
+            source_txid: Some(parent_txid.clone()),
+            source_output_index: 0,
+            unlocking_script: Some(bsv::script::UnlockingScript::from_binary(&[0x51])),
+            sequence: 0xffffffff,
+        });
+        child.add_output(TransactionOutput {
+            satoshis: Some(100),
+            locking_script: LockingScript::from_binary(&[0x51]),
+            change: false,
+        });
+        let child_txid = child.id().unwrap();
+        let mut beef = Beef::new(bsv::transaction::beef::BEEF_V2);
+        beef.txs
+            .push(bsv::transaction::beef_tx::BeefTx::from_tx(child, None).unwrap());
+
+        let msg = vab_err(verify_atomic_beef(&beef, &MockChainTracker).await);
+        assert!(
+            msg.contains(&child_txid),
+            "must name the dependent, got: {msg}"
+        );
+        assert!(
+            msg.contains(&parent_txid),
+            "must name the unresolved input, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn verify_atomic_beef_rejects_out_of_range_bump_index() {
+        let tx = vab_simple_tx(300);
+        let txid = tx.id().unwrap();
+        let mut beef = Beef::new(bsv::transaction::beef::BEEF_V2);
+        let mut btx = bsv::transaction::beef_tx::BeefTx::from_tx(tx, None).unwrap();
+        btx.bump_index = Some(3);
+        beef.txs.push(btx);
+
+        let msg = vab_err(verify_atomic_beef(&beef, &MockChainTracker).await);
+        assert!(msg.contains("bump index 3"), "got: {msg}");
+        assert!(msg.contains(&txid), "must name the txid, got: {msg}");
+    }
+
+    #[tokio::test]
+    async fn verify_atomic_beef_rejects_non_leaf_bump_claim() {
+        let tx = vab_simple_tx(400);
+        let txid = tx.id().unwrap();
+        let other = "cd".repeat(32);
+        let mut beef = Beef::new(bsv::transaction::beef::BEEF_V2);
+        beef.bumps.push(vab_bump_for(&other, 800100));
+        let mut btx = bsv::transaction::beef_tx::BeefTx::from_tx(tx, None).unwrap();
+        btx.bump_index = Some(0);
+        beef.txs.push(btx);
+
+        let msg = vab_err(verify_atomic_beef(&beef, &MockChainTracker).await);
+        assert!(msg.contains("not one of its leaves"), "got: {msg}");
+        assert!(msg.contains(&txid), "must name the txid, got: {msg}");
+    }
+
+    #[tokio::test]
+    async fn verify_atomic_beef_rejects_tracker_refused_root_naming_height() {
+        let tx = vab_simple_tx(500);
+        let txid = tx.id().unwrap();
+        let mut beef = Beef::new(bsv::transaction::beef::BEEF_V2);
+        beef.bumps.push(vab_bump_for(&txid, 800200));
+        let btx = bsv::transaction::beef_tx::BeefTx::from_tx(tx, Some(0)).unwrap();
+        beef.txs.push(btx);
+
+        // Sanity: the same shape passes with an accepting tracker.
+        verify_atomic_beef(&beef, &MockChainTracker)
+            .await
+            .expect("accepting tracker passes");
+
+        let msg = vab_err(verify_atomic_beef(&beef, &RejectingChainTracker).await);
+        assert!(msg.contains("chain tracker rejects"), "got: {msg}");
+        assert!(msg.contains("800200"), "must name the height, got: {msg}");
     }
 }

@@ -408,8 +408,7 @@ async fn merge_ts_export_remaps_ids_and_sync_maps() {
 #[tokio::test]
 async fn merge_fails_loudly_on_corrupt_stored_sync_map() {
     let document = parse_brc38_json(&fixture_string("brc38-ts-export.json")).unwrap();
-    let original: Value =
-        serde_json::from_str(&fixture_string("brc38-ts-export.json")).unwrap();
+    let original: Value = serde_json::from_str(&fixture_string("brc38-ts-export.json")).unwrap();
     let target = empty_storage().await;
 
     let now = chrono::Utc::now().naive_utc();
@@ -613,7 +612,10 @@ async fn restore_failure_rolls_back_and_surfaces_the_original_error() {
     );
 
     // Rollback left the target fully empty...
-    assert_eq!(target.count_users(&Default::default(), None).await.unwrap(), 0);
+    assert_eq!(
+        target.count_users(&Default::default(), None).await.unwrap(),
+        0
+    );
     assert_eq!(
         target
             .count_proven_txs(&Default::default(), None)

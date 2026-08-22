@@ -63,6 +63,54 @@ fn random_bytes_base64(count: usize) -> String {
     base64::engine::general_purpose::STANDARD.encode(&bytes)
 }
 
+/// A random source that repeats `random_vals` when supplied, else draws fresh
+/// entropy.
+///
+/// Port of TS `repeatableRandom` (actionPlanning.ts). Supplied values cycle
+/// (shift-then-push) rather than being consumed, so a short list still serves a
+/// long shuffle. Fresh draws go through `conformance_entropy` so a seeded
+/// recording/replay session reproduces the same permutation.
+fn repeatable_random(random_vals: Option<&[f64]>) -> impl FnMut() -> f64 + '_ {
+    let mut vals: std::collections::VecDeque<f64> =
+        random_vals.unwrap_or(&[]).iter().copied().collect();
+    move || match vals.pop_front() {
+        Some(v) => {
+            vals.push_back(v);
+            v
+        }
+        None => {
+            let mut bytes = [0u8; 4];
+            crate::utility::conformance_entropy::fill_random(&mut bytes);
+            u32::from_be_bytes(bytes) as f64 / 4294967296.0
+        }
+    }
+}
+
+/// The permutation of `0..len` to assign as vouts.
+///
+/// Port of TS `randomizeOutputVouts` (actionPlanning.ts): a Fisher-Yates
+/// shuffle walked from the top down, assigning `vouts[i]` to the i-th output.
+/// Only the vout VALUES move — the output array keeps its order (caller
+/// outputs, then change), which is what lets the signer match storage's
+/// `outputs[i]` to `args.outputs[i]` (GHSA-36f9-7rg5-cpf8).
+fn randomized_vouts(len: usize, random_vals: Option<&[f64]>) -> WalletResult<Vec<u32>> {
+    if random_vals.is_some_and(|values| values.iter().any(|value| !(0.0..1.0).contains(value))) {
+        return Err(WalletError::InvalidParameter {
+            parameter: "randomVals".to_string(),
+            must_be: "values in the range [0, 1)".to_string(),
+        });
+    }
+    let mut next_random = repeatable_random(random_vals);
+    let mut vouts: Vec<u32> = (0..len as u32).collect();
+    for current in (1..=len).rev() {
+        // Production entropy and validated injected values are both in [0, 1),
+        // which makes the Fisher-Yates index calculation safe without a clamp.
+        let random_index = (next_random() * current as f64).floor() as usize;
+        vouts.swap(current - 1, random_index);
+    }
+    Ok(vouts)
+}
+
 /// Create a new transaction in storage.
 ///
 /// Validates inputs, creates Transaction record, processes labels,
@@ -114,11 +162,17 @@ pub async fn storage_create_action<S: StorageReaderWriter + ?Sized>(
     }
 }
 
-/// Merge BEEF data from allocated change inputs into the result's input_beef.
+/// Merge BEEF data from allocated inputs into the result's input_beef.
 ///
-/// The signer needs BEEF proof data for ALL inputs (both user-provided and
-/// storage-allocated change). This function walks the allocated change inputs,
-/// fetches their BEEF from storage, and merges everything into a single BEEF.
+/// The signer needs BEEF proof data for ALL inputs — storage-allocated change
+/// AND caller-named (`providedBy: you`) inputs alike; gating on
+/// `providedBy == storage` was the rust-mpc#352 defect (a wallet-minted
+/// output spent by outpoint contributed no ancestor, so the eventual Atomic
+/// BEEF violated the BRC-95 closure). This function walks every input,
+/// fetches its BEEF from storage when the assembled BEEF does not already
+/// carry it, and merges everything into a single BEEF. Fail closed: an input
+/// whose ancestry is neither in the caller's inputBEEF nor producible from
+/// storage is an error naming the txid — never a silently partial BEEF.
 ///
 /// This must be called AFTER storage_create_action and AFTER the db transaction
 /// is committed, so the committed data is readable.
@@ -144,25 +198,33 @@ pub async fn merge_input_beef(
         }
     }
 
-    // Merge BEEF for each storage-provided input's source transaction.
+    // Merge BEEF for every input's source transaction not already present.
     // Use TrustSelf::No to include full raw_tx + merkle proofs — the remote
-    // client's signer needs complete BEEF data. Matches TS: trustSelf: undefined
-    let known_txids: HashSet<String> = HashSet::new();
+    // client's signer needs complete BEEF data (#326 posture; matches TS
+    // trustSelf: undefined).
+    let mut known_txids: HashSet<String> = HashSet::new();
     for input in &result.inputs {
-        if input.provided_by == StorageProvidedBy::Storage {
-            let txid = &input.source_txid;
-            if !txid.is_empty() && beef.find_txid(txid).is_none() {
-                if let Ok(Some(tx_beef_bytes)) =
-                    get_valid_beef_for_storage_reader(storage, txid, TrustSelf::No, &known_txids)
-                        .await
-                {
-                    beef.merge_beef_from_binary(&tx_beef_bytes).map_err(|e| {
+        let txid = &input.source_txid;
+        if !txid.is_empty() && beef.find_txid(txid).is_none() {
+            let tx_beef_bytes =
+                get_valid_beef_for_storage_reader(storage, txid, TrustSelf::No, &known_txids)
+                    .await
+                    .map_err(|e| {
+                        WalletError::Internal(format!("Failed to fetch BEEF for input {txid}: {e}"))
+                    })?
+                    .ok_or_else(|| {
                         WalletError::Internal(format!(
-                            "Failed to merge BEEF for storage input {txid}: {e}"
+                            "No BEEF ancestry available for input {txid}: not in the provided \
+                             inputBEEF and storage cannot produce its transaction (fail closed \
+                             rather than return a partial BEEF)"
                         ))
                     })?;
-                }
-            }
+
+            beef.merge_beef_from_binary(&tx_beef_bytes).map_err(|e| {
+                WalletError::Internal(format!("Failed to merge BEEF for input {txid}: {e}"))
+            })?;
+
+            known_txids.insert(txid.clone());
         }
     }
 
@@ -459,10 +521,15 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         ..Default::default()
     };
     let mut available_change_outputs = storage.find_outputs(&change_find_args, trx_opt).await?;
-    // TS reference uses `spendable = true` as the primary gate for UTXO availability
-    // (the find_outputs query already filters on spendable=true). Filtering on
-    // spent_by.is_none() incorrectly excluded UTXOs released after failed transactions
-    // (where spent_by was set to 0 rather than NULL due to OutputPartial limitations).
+    // `spendable = true` is the availability gate, matching the TS reference
+    // (the find_outputs query above already filters on it).
+    //
+    // The original reason given for not also filtering `spent_by IS NULL` —
+    // that a released output kept `spent_by = 0` because `OutputPartial` could
+    // not express NULL — no longer holds: `update.rs` maps a written 0 back to
+    // NULL. The filter stays off because `spendable` is the gate TS uses, not
+    // because the column is untrustworthy.
+    //
     // Sort by satoshis ascending (prefer smaller)
     available_change_outputs.sort_by_key(|a| a.satoshis);
 
@@ -552,8 +619,11 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         target_net_count: Some(target_net_count),
     };
 
-    let change_result =
-        generate_change_sdk_with_no_send(&change_args, &no_send_change_available, &available_change)?;
+    let change_result = generate_change_sdk_with_no_send(
+        &change_args,
+        &no_send_change_available,
+        &available_change,
+    )?;
 
     // --- Allocate change inputs in storage ---
     // Mark allocated change UTXOs as spent
@@ -582,8 +652,19 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
     // --- Generate derivation prefix for this transaction ---
     let derivation_prefix = random_bytes_base64(16);
 
-    // --- Create user output records ---
-    let mut output_records: Vec<StorageCreateTransactionSdkOutput> = Vec::new();
+    // --- Build every new output, then assign vouts, then persist ---
+    //
+    // Outputs are built before any is written so `randomizeOutputs` can permute
+    // the vout values across the whole set — caller outputs and change
+    // together. The array itself stays in contract order (caller outputs in
+    // their original order, then change), because the signer matches
+    // `outputs[i]` to `args.outputs[i]` by position.
+    struct PendingOutput {
+        row: Output,
+        record: StorageCreateTransactionSdkOutput,
+        is_change: bool,
+    }
+    let mut pending: Vec<PendingOutput> = Vec::new();
     let mut vout: u32 = 0;
 
     for output_spec in &args.outputs {
@@ -626,26 +707,27 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             script_offset: None,
             locking_script: Some(script_bytes.clone()),
         };
-        let _output_id = storage.insert_output(&new_output, trx_opt).await?;
-
-        output_records.push(StorageCreateTransactionSdkOutput {
-            vout,
-            satoshis: output_spec.satoshis,
-            locking_script: output_spec.locking_script.clone(),
-            provided_by: StorageProvidedBy::You,
-            purpose: None,
-            basket: output_spec.basket.clone(),
-            tags: output_spec.tags.clone(),
-            output_description: Some(output_spec.output_description.clone()),
-            derivation_suffix: None,
-            custom_instructions: output_spec.custom_instructions.clone(),
+        pending.push(PendingOutput {
+            row: new_output,
+            record: StorageCreateTransactionSdkOutput {
+                vout,
+                satoshis: output_spec.satoshis,
+                locking_script: output_spec.locking_script.clone(),
+                provided_by: StorageProvidedBy::You,
+                purpose: None,
+                basket: output_spec.basket.clone(),
+                tags: output_spec.tags.clone(),
+                output_description: Some(output_spec.output_description.clone()),
+                derivation_suffix: None,
+                custom_instructions: output_spec.custom_instructions.clone(),
+            },
+            is_change: false,
         });
 
         vout += 1;
     }
 
     // --- Create change output records ---
-    let mut change_vouts: Vec<u32> = Vec::new();
     for change_output in change_result.change_outputs.iter() {
         let derivation_suffix = random_bytes_base64(16);
         let change_vout = vout;
@@ -677,23 +759,47 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             script_offset: None,
             locking_script: None, // Set when transaction is signed
         };
-        let _output_id = storage.insert_output(&new_output, trx_opt).await?;
-
-        output_records.push(StorageCreateTransactionSdkOutput {
-            vout: change_vout,
-            satoshis: change_output.satoshis,
-            locking_script: String::new(), // Computed during signing
-            provided_by: StorageProvidedBy::Storage,
-            purpose: Some("change".to_string()),
-            basket: Some("default".to_string()),
-            tags: vec![],
-            output_description: Some(String::new()),
-            derivation_suffix: Some(derivation_suffix),
-            custom_instructions: None,
+        pending.push(PendingOutput {
+            row: new_output,
+            record: StorageCreateTransactionSdkOutput {
+                vout: change_vout,
+                satoshis: change_output.satoshis,
+                locking_script: String::new(), // Computed during signing
+                provided_by: StorageProvidedBy::Storage,
+                purpose: Some("change".to_string()),
+                basket: Some("default".to_string()),
+                tags: vec![],
+                output_description: Some(String::new()),
+                derivation_suffix: Some(derivation_suffix),
+                custom_instructions: None,
+            },
+            is_change: true,
         });
 
-        change_vouts.push(change_vout);
         vout += 1;
+    }
+
+    // Assign the vouts, then write. `randomizeOutputs` defaults to true, as in
+    // TS; before this the flag was accepted, defaulted, threaded through three
+    // layers and never acted on, so change was always the trailing vout — the
+    // standing privacy leak the option exists to close.
+    if args.options.randomize_outputs.0.unwrap_or(true) && pending.len() > 1 {
+        let vouts = randomized_vouts(pending.len(), args.random_vals.as_deref())?;
+        for (index, p) in pending.iter_mut().enumerate() {
+            p.row.vout = vouts[index] as i32;
+            p.record.vout = vouts[index];
+        }
+    }
+
+    let mut output_records: Vec<StorageCreateTransactionSdkOutput> =
+        Vec::with_capacity(pending.len());
+    let mut change_vouts: Vec<u32> = Vec::new();
+    for p in pending {
+        let _output_id = storage.insert_output(&p.row, trx_opt).await?;
+        if p.is_change {
+            change_vouts.push(p.record.vout);
+        }
+        output_records.push(p.record);
     }
 
     // --- Build change input records ---
@@ -1087,9 +1193,127 @@ mod tests {
 
         // Should have user output + change outputs
         assert!(!outputs.is_empty(), "should have at least 1 output");
-        // First output should be the user's output
-        let user_output = outputs.iter().find(|o| o.vout == 0).expect("vout 0");
+        // The caller's output is identified by not being change: its vout is
+        // whatever the `randomizeOutputs` permutation assigned, so looking it
+        // up by vout 0 would only hold while outputs were numbered in build
+        // order.
+        let user_output = outputs
+            .iter()
+            .find(|o| !o.change)
+            .expect("the caller's output");
         assert_eq!(user_output.satoshis, 2_000);
+    }
+
+    /// `randomizeOutputs` is on by default and actually moves the vouts.
+    ///
+    /// Change used to be the trailing vout on every action, which tells an
+    /// observer exactly which output is the payment.
+    #[tokio::test]
+    async fn create_action_randomizes_vouts_by_default() {
+        let mut change_was_not_last = false;
+
+        // The permutation is random; over 20 actions on a 2-output shape the
+        // chance of never once moving change off the end is 2^-20.
+        for _ in 0..20 {
+            let (storage, user_id, _basket_id) = setup_test_storage().await;
+            let args = StorageCreateActionArgs {
+                description: "randomize test".to_string(),
+                inputs: vec![],
+                outputs: vec![StorageCreateActionOutput {
+                    locking_script: "76a914000000000000000000000000000000000000000088ac"
+                        .to_string(),
+                    satoshis: 2_000,
+                    output_description: "payment".to_string(),
+                    basket: None,
+                    custom_instructions: None,
+                    tags: vec![],
+                }],
+                lock_time: 0,
+                version: 1,
+                labels: vec![],
+                options: StorageCreateActionOptions::default(),
+                input_beef: None,
+                is_new_tx: true,
+                is_sign_action: false,
+                is_no_send: false,
+                is_delayed: false,
+                is_send_with: false,
+                is_remix_change: false,
+                is_test_werr_review_actions: None,
+                include_all_source_transactions: false,
+                random_vals: None,
+            };
+            let result = storage_create_action(&storage, user_id, &args, None)
+                .await
+                .expect("create action");
+            if result.outputs.len() < 2 {
+                continue;
+            }
+            let change_vout = result
+                .outputs
+                .iter()
+                .find(|o| o.purpose.as_deref() == Some("change"))
+                .expect("a change output")
+                .vout;
+            let max_vout = result.outputs.iter().map(|o| o.vout).max().unwrap();
+            if change_vout != max_vout {
+                change_was_not_last = true;
+                break;
+            }
+        }
+
+        assert!(
+            change_was_not_last,
+            "change landed on the last vout in all 20 actions -- vouts are not being randomized"
+        );
+    }
+
+    #[test]
+    fn randomized_vouts_is_always_a_permutation() {
+        for len in 1..12usize {
+            let vouts = randomized_vouts(len, None).unwrap();
+            let mut sorted = vouts.clone();
+            sorted.sort_unstable();
+            assert_eq!(
+                sorted,
+                (0..len as u32).collect::<Vec<_>>(),
+                "every vout must appear exactly once (len={len}, got {vouts:?})"
+            );
+        }
+    }
+
+    /// Cross-implementation pin: the expected values are the output of the
+    /// verbatim TS `randomizeOutputVouts` (ts-stack wallet-toolbox 2.10.2,
+    /// `storage/methods/actionPlanning.ts`) run under node on the same inputs.
+    /// A divergence here means the two wallets would assign different vouts to
+    /// the same action.
+    #[test]
+    fn randomized_vouts_matches_the_ts_shuffle() {
+        assert_eq!(randomized_vouts(4, Some(&[0.0])).unwrap(), vec![1, 2, 3, 0]);
+        assert_eq!(
+            randomized_vouts(6, Some(&[0.999_999])).unwrap(),
+            vec![0, 1, 2, 3, 4, 5],
+            "a value just under 1 always selects current-1, so every swap is a no-op"
+        );
+        assert_eq!(
+            randomized_vouts(5, Some(&[0.5])).unwrap(),
+            vec![0, 3, 1, 4, 2]
+        );
+        assert_eq!(
+            randomized_vouts(3, Some(&[0.1, 0.9])).unwrap(),
+            vec![2, 1, 0],
+            "supplied values cycle rather than being consumed"
+        );
+    }
+
+    #[test]
+    fn randomized_vouts_rejects_injected_values_outside_the_entropy_range() {
+        let err = randomized_vouts(2, Some(&[1.0])).unwrap_err();
+        assert!(matches!(
+            err,
+            WalletError::InvalidParameter { parameter, must_be }
+                if parameter == "randomVals" && must_be.contains("[0, 1)")
+        ));
     }
 
     #[tokio::test]

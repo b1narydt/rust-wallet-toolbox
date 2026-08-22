@@ -5,6 +5,167 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+TS-parity batch. The reference is **ts-stack `packages/wallet/wallet-toolbox`
+2.10.2** — `bsv-blockchain/wallet-toolbox` was archived on 2026-06-12, so the
+live TS toolbox, not the 2.4.0 line this port was written against, is what
+parity now means.
+
+### Fixed
+
+- **`randomizeOutputs` did nothing.** Accepted, validated, defaulted to true and
+  threaded through three layers without being acted on, so change was the
+  trailing vout of every action — the inference the option exists to prevent.
+  Now a port of TS `randomizeOutputVouts` (`actionPlanning.ts`), permuting the
+  vout values while the output array keeps its contract order so the signer can
+  still match `outputs[i]` to `args.outputs[i]`. `random_vals` is honoured as TS
+  honours it; the test expectations are the verbatim TS function's output.
+- **`abort_action` was not atomic.** It ran as separate autocommit statements,
+  so an abort that released the inputs and then failed left a signable action
+  whose coins the funder had already re-lent. TS wraps the same sequence in a
+  transaction; so does this now.
+- **`purge_data` never purged spent outputs** — the spent branch named the Rust
+  field `spent_by` rather than the column `spentBy` and failed with "no such
+  column", so the outputs table only grew.
+- **`get_chain_tracker` returned a cold tracker every call**, discarding the
+  root cache that `internalize_action` — one root lookup per bump — depends on.
+- **The ARC SSE client dialed an endpoint nothing serves** (`/v1/tx/status/stream`
+  with a header token) instead of Arcade's `/events?callbackToken=`, and nothing
+  ever called `connect()`: the task built a client with an empty base URL, so no
+  status event could arrive. Both halves fixed and wired.
+- **Overlay discovery was unreachable** through `WalletBuilder`, which hardcoded
+  `lookup_resolver: None` with no setter, so `discoverByIdentityKey` /
+  `discoverByAttributes` always failed. The wallet now defaults a resolver from
+  its chain, as TS does.
+
+### Added
+
+- `WalletBuilder::lookup_resolver` to point discovery at a private overlay, and
+  `WalletBuilder::arcade_sse` (base URL + callback token) to enable SSE status
+  streaming; `MonitorBuilder::arcade_url` alongside the existing
+  `callback_token`.
+
+### Changed
+
+- Comments corrected where they described behaviour the code no longer has: the
+  signing-provider doc on the crypto surface, the change-selection filter
+  rationale, and a test doc that claimed to be surfacing an already-fixed
+  double-spend bug.
+
+## [0.8.2] - 2026-08-21
+
+The BEEF the wallet hands back is now the BRC-95 closure it claims to be, and
+the BRC-100 action arc matches the TS toolbox on the wire. Found by the ATLAS
+customer-zero conformance suite against the enterprise box (rust-mpc#300) and
+the live revocation-does-not-stick incident (rust-mpc#352). Every fix is a
+parity fix against `@bsv/sdk` 2.3.1 / `@bsv/wallet-toolbox`; nothing here is
+new behaviour of our own.
+
+### Fixed
+
+- **Ancestor BEEF was fetched only for storage-provided inputs.** A
+  caller-named input (`providedBy: you` — e.g. a wallet-minted PushDrop token
+  spent by outpoint) contributed no ancestor transaction, so the Atomic BEEF
+  returned by `createAction`/`signAction` violated the closure and no
+  cosigner could verify a revocation spend (rust-mpc#352). Every input txid
+  not already in the assembled BEEF is now fetched through the storage
+  ancestor walk with `TrustSelf::No`, failing closed with the txid named —
+  the storage-side mirror previously swallowed both errors and misses.
+- **`build_beef` ignored `source_transaction` graphs.** It merged the flat
+  raw tx where TS recurses `beef.mergeTransaction`; a genuine carried
+  `source_transaction` (computed txid matches the input) is now walked
+  until a merkle path or an in-BEEF ancestor terminates the branch. A branch
+  ending with neither is an error naming the txid. The synthetic
+  output-padded stubs the signer fabricates for sighash are recognised by
+  their mismatching txid and never merged (rust-wallet-toolbox#48 tracks
+  deleting the fabrication).
+- **`serialize_beef_atomic` is the port of TS `Beef.toBinaryAtomic`** —
+  dependency closure only, unrelated transactions dropped, unreferenced
+  bumps pruned and re-indexed, ancestors before dependents. Byte-exact
+  against the TS-golden corpus (11/11). The Rust SDK's `to_binary_atomic`
+  truncated after the subject without sorting, so an ancestor merged after
+  the subject was silently dropped from the closure.
+- **The network saw Atomic-framed bytes.** `createAction`/`signAction` posted
+  the client-return Atomic frame to `post_beef`; TS posts a plain sorted
+  BEEF. The signer now builds a plain dependency-sorted broadcast copy; the
+  result returned to the caller stays Atomic. `maybe_downgrade_beef_v2`
+  decides by parsing the version instead of sniffing leading bytes — the
+  sniff saw the Atomic prefix, concluded "not V2", and passed the frame
+  straight through to ARC.
+- **Bump duplication and ordering in every assembler.** The storage
+  hydration walk pushed one raw bump per proven tx (two parents proven in
+  one block → two identical bumps) and serialised in collection order;
+  `listOutputs` `EntireTransactions` hand-rolled its merge with
+  index-offset bump concatenation; the monitor's broadcast rebuild put the
+  subject before its parents. All three now go through the SDK's
+  `merge_bump` (dedup by height + root) / `merge_beef` and `sort_txs()`
+  before serialising.
+- **`verify_returned_txid_only` merged the whole `BeefParty`** into the
+  returned BEEF — every transaction the party had ever accumulated leaked to
+  the caller. Exactly the one requested transaction and its bump are merged
+  now, as TS `Wallet.ts` does.
+- **`get_known_txids` matches TS `partitionTxs`.** Caller-declared txid-only
+  entries ARE advertised as known (the previous exclusion silently
+  un-declared caller `knownTxids` and defeated counterparty trimming). The
+  remaining gap — TS's `notValid` partition — waits on `bsv-sdk`'s
+  `SortResult` (bsv-rust-sdk#44).
+- **`verify_atomic_beef` rejections name the offender.** Duplicate txid
+  (new check), txid-only entry, per-height bump-root disagreement, bump
+  index out of range, non-leaf bump claim, dangling input / cycle residue,
+  root compute failure, chain-tracker error and tracker-rejected root each
+  carry their own message with the txid / bump / height. No check weakened.
+- **`signAction` refused empty `spends`.** TS `validateSignActionArgs` has no
+  minimum — an action whose every input is wallet-signed is legitimately
+  completed by `signAction`. The reference-parity checks are applied
+  directly (reference non-empty; each provided spend's unlocking script
+  non-empty).
+- **The wire reference was base64-of-base64.** The SDK's
+  `SignableTransaction.reference` holds raw bytes re-encoded by serde; the
+  toolbox reference is already base64 text. A TS client saw a different
+  string than a TS toolbox returns, and `abortAction` could never find the
+  action its own `createAction` built. The text is decoded into the raw
+  bytes the field is defined to hold.
+- **A deferred `createAction` row listed with an empty txid** until
+  `processAction`. The unsigned transaction's txid (the value TS computes
+  at the same point for `noSendChange`) is persisted on the row when the
+  signable transaction is built; `process_action` overwrites it with the
+  final txid.
+
+### Added
+
+- **`storage::beef::get_beef_for_transaction`** — the port of TS
+  `getBeefForTransaction`, returning the complete BEEF for a txid hydrated
+  from storage's own rows (`TrustSelf::No`), failing closed with the txid
+  named. This is the entry point monitor-off / one-shot processes need (the
+  live rust-mpc#352 environment was exactly that).
+- **TS-golden BEEF conformance corpus** at `conformance/vectors/beef/`
+  (BRC-62/74/95/96; generated by `@bsv/sdk` 2.3.1, normative, vendored
+  generator included) and `tests/conformance_beef_vectors.rs`.
+  `SURPRISES.json` records where TS diverges from a naive spec reading.
+- **`tests/regen_funded_expected_beef.rs`** — the regeneration harness that
+  first proves status / txid / rawTx / change derivations / error message
+  byte-identical to the recording and the new BEEF a strict superset of
+  the old, then rewrites `expected.tx`. 96 of 98 funded vectors were
+  regenerated this way; the deltas are sort-only (refuter-verified against
+  pinned mainnet roots).
+
+### Changed
+
+- Consumes `bsv-sdk` 0.5.2 (basket names validate to reference parity —
+  hyphens et al. accepted; `Beef` brought to TS parity, bsv-rust-sdk#44).
+- **`serialize_beef_atomic` delegates to the SDK's `Beef::to_binary_atomic`**,
+  now the port of TS `toBinaryAtomic` (closure, prune, re-index, sort). The
+  toolbox's own closure walk is deleted; the function stays as the single
+  seam for the Atomic client-return shape, because the SDK's plain
+  `to_binary` — like TS — never emits the Atomic prefix on its own.
+  `sortTxs` order differs from the former walk's, so the 96 funded-corpus
+  `expected.tx` fields were regenerated through
+  `tests/regen_funded_expected_beef.rs` (transaction set, raw bytes, bumps,
+  txids, signatures all proven unchanged) and every regenerated vector was
+  cross-checked byte-equal against `@bsv/sdk` 2.3.1 `toBinaryAtomic` of the
+  same pre-sort graph (105/105).
+
 ## [0.8.1] - 2026-08-19
 
 ### Fixed
