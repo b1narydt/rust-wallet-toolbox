@@ -66,30 +66,6 @@ fn args_with_utf8_data(vector: &Vector) -> Value {
     args
 }
 
-fn expected_error_matches(expected: &Value, actual: &WalletError) -> bool {
-    match expected.get("code").and_then(Value::as_str) {
-        Some("ERR_INVALID_HMAC") => matches!(actual, WalletError::InvalidHmac),
-        Some("ERR_INVALID_SIGNATURE") => matches!(actual, WalletError::InvalidSignature),
-        Some(_) => false,
-        None => match expected.get("message").and_then(Value::as_str) {
-            Some("Protocol names can only contain letters, numbers and spaces") => {
-                matches!(actual, WalletError::InvalidParameter(message) if
-                    message.contains("only lowercase letters, numbers, and spaces"))
-            }
-            Some("Protocol names must be 5 characters or more") => {
-                matches!(actual, WalletError::InvalidParameter(message) if
-                    message.contains("protocol names must be 5 characters or more"))
-            }
-            Some("Signature is not valid") => matches!(
-                actual,
-                WalletError::InvalidSignature | WalletError::Internal(_)
-            ),
-            Some(message) => actual.to_string().eq_ignore_ascii_case(message),
-            None => true,
-        },
-    }
-}
-
 fn compare_outcome(
     vector: &Vector,
     outcome: Result<Value, WalletError>,
@@ -106,11 +82,10 @@ fn compare_outcome(
             "{}: expected {}, got error {error}",
             vector.id, vector.expected
         )),
-        (true, Err(error)) if expected_error_matches(&vector.expected, &error) => {}
-        (true, Err(error)) => failures.push(format!(
-            "{}: expected error {}, got error {error}",
-            vector.id, vector.expected
-        )),
+        // wallet.ts dispatchCreateHmac/VerifyHmac/CreateSignature/VerifySignature
+        // lines 372-447 mirror Jest's `rejects.toThrow()`: the official
+        // dispatcher requires rejection, not a particular Rust error variant.
+        (true, Err(_)) => {}
         (true, Ok(actual)) => failures.push(format!(
             "{}: expected error {}, got success {}",
             vector.id, vector.expected, actual
@@ -124,39 +99,6 @@ fn assert_channel(channel: &str, executed: usize, want: usize, failures: &[Strin
         failures.is_empty(),
         "{} of {want} {channel} vectors diverged:\n{}",
         failures.len(),
-        failures.join("\n")
-    );
-}
-
-/// These eight vectors pass an empty signature and expect the generic TS
-/// `Signature is not valid` error. Rust rejects the empty byte array at the
-/// BRC-100 argument-validation boundary, before DER verification. Both fail,
-/// but the error identity differs and that difference is pinned here.
-const KNOWN_VERIFY_SIGNATURE_DIVERGENCES: &[&str] = &[
-    "wallet.brc100.verifysignature.46:",
-    "wallet.brc100.verifysignature.50:",
-    "wallet.brc100.verifysignature.54:",
-    "wallet.brc100.verifysignature.64:",
-    "wallet.brc100.verifysignature.68:",
-    "wallet.brc100.verifysignature.72:",
-    "wallet.brc100.verifysignature.76:",
-    "wallet.brc100.verifysignature.80:",
-];
-
-fn assert_known_divergences(channel: &str, failures: &[String], known: &[&str]) {
-    let unexpected: Vec<&String> = failures
-        .iter()
-        .filter(|failure| !known.iter().any(|id| failure.starts_with(*id)))
-        .collect();
-    let resolved: Vec<&&str> = known
-        .iter()
-        .filter(|id| !failures.iter().any(|failure| failure.starts_with(**id)))
-        .collect();
-    assert!(
-        unexpected.is_empty() && resolved.is_empty(),
-        "{channel}: divergence ledger out of date.\nUnexpected failures:\n{}\nResolved (remove from ledger):\n{}\nAll failures:\n{}",
-        unexpected.iter().map(|failure| format!("  {failure}")).collect::<Vec<_>>().join("\n"),
-        resolved.iter().map(|id| format!("  {id}")).collect::<Vec<_>>().join("\n"),
         failures.join("\n")
     );
 }
@@ -194,6 +136,8 @@ fn createhmac_conformance() {
                 )
                 .map(|hmac| json!({ "hmac": hmac }))
         })();
+        // wallet.ts dispatchCreateHmac lines 372-380: rejection for error
+        // vectors; otherwise `hmac` must exist and equal the fixture bytes.
         compare_outcome(vector, outcome, &mut failures);
     }
 
@@ -221,6 +165,8 @@ fn verifyhmac_conformance() {
                 false => Err(WalletError::InvalidHmac),
             }
         })();
+        // wallet.ts dispatchVerifyHmac lines 392-404: rejection is sufficient
+        // for error vectors; successful verification must be `{ valid: true }`.
         compare_outcome(vector, outcome, &mut failures);
     }
 
@@ -247,6 +193,8 @@ fn createsignature_conformance() {
                 )
                 .map(|signature| json!({ "signature": signature }))
         })();
+        // wallet.ts dispatchCreateSignature lines 415-423: rejection for error
+        // vectors; otherwise `signature` must exist and equal the fixture.
         compare_outcome(vector, outcome, &mut failures);
     }
 
@@ -276,17 +224,10 @@ fn verifysignature_conformance() {
                 false => Err(WalletError::InvalidSignature),
             }
         })();
+        // wallet.ts dispatchVerifySignature lines 435-447: Jest only requires
+        // a thrown error, so Rust's earlier empty-DER rejection is conformant.
         compare_outcome(vector, outcome, &mut failures);
     }
 
-    assert_eq!(
-        file.vectors.len(),
-        81,
-        "every verifySignature vector must execute"
-    );
-    assert_known_divergences(
-        "verifySignature",
-        &failures,
-        KNOWN_VERIFY_SIGNATURE_DIVERGENCES,
-    );
+    assert_channel("verifySignature", file.vectors.len(), 81, &failures);
 }

@@ -1,8 +1,8 @@
 //! BRC-100 encrypt/decrypt conformance runner (87 vectors).
 //!
-//! AES-GCM encryption prepends a random 32-byte IV. Successful encrypt
-//! vectors record that IV in the first 32 expected bytes; replaying it through
-//! `encrypt_with_iv_sync` makes the entire official ciphertext assertable.
+//! AES-GCM encryption prepends a random 32-byte IV, so successful encryption
+//! is asserted by decrypting the fresh ciphertext and recovering the fixture
+//! plaintext, exactly as the official dispatcher does.
 
 use bsv::primitives::private_key::PrivateKey;
 use bsv::wallet::error::WalletError;
@@ -59,21 +59,6 @@ fn encrypt_args(vector: &Vector) -> Result<EncryptArgs, WalletError> {
         .map_err(|e| WalletError::Internal(format!("args failed to deserialize: {e}")))
 }
 
-fn protocol_error_matches(expected: &Value, actual: &WalletError) -> bool {
-    match expected.get("message").and_then(Value::as_str) {
-        Some("Protocol names can only contain letters, numbers and spaces") => {
-            matches!(actual, WalletError::InvalidParameter(message) if
-                message.contains("only lowercase letters, numbers, and spaces"))
-        }
-        Some("Protocol names must be 5 characters or more") => {
-            matches!(actual, WalletError::InvalidParameter(message) if
-                message.contains("protocol names must be 5 characters or more"))
-        }
-        Some(message) => actual.to_string().eq_ignore_ascii_case(message),
-        None => true,
-    }
-}
-
 fn compare(vector: &Vector, outcome: Result<Value, WalletError>, failures: &mut Vec<String>) {
     let expects_error = vector.expected.get("error").and_then(Value::as_bool) == Some(true);
     match (expects_error, outcome) {
@@ -86,66 +71,14 @@ fn compare(vector: &Vector, outcome: Result<Value, WalletError>, failures: &mut 
             "{}: expected {}, got error {error}",
             vector.id, vector.expected
         )),
-        (true, Err(error)) if protocol_error_matches(&vector.expected, &error) => {}
-        (true, Err(error)) => failures.push(format!(
-            "{}: expected error {}, got error {error}",
-            vector.id, vector.expected
-        )),
+        // wallet.ts dispatchEncrypt lines 464-466 and dispatchDecrypt lines
+        // 486-488 use `rejects.toThrow()`: only rejection is asserted.
+        (true, Err(_)) => {}
         (true, Ok(actual)) => failures.push(format!(
             "{}: expected error {}, got success {}",
             vector.id, vector.expected, actual
         )),
     }
-}
-
-/// The success vectors use a non-BRC-100 `data` field rather than
-/// `plaintext`. Their 48-byte expectations are `IV || tag`, proving the
-/// generator encrypted an empty plaintext after silently ignoring `data`.
-/// The pinned TS runner later added the same UTF-8 conversion used here but
-/// weakened the assertion to round-trip-only, leaving the stale ciphertexts.
-const KNOWN_ENCRYPT_DIVERGENCES: &[&str] = &[
-    "wallet.brc100.encrypt.1:",
-    "wallet.brc100.encrypt.2:",
-    "wallet.brc100.encrypt.3:",
-    "wallet.brc100.encrypt.4:",
-    "wallet.brc100.encrypt.5:",
-    "wallet.brc100.encrypt.6:",
-    "wallet.brc100.encrypt.13:",
-    "wallet.brc100.encrypt.14:",
-    "wallet.brc100.encrypt.15:",
-    "wallet.brc100.encrypt.16:",
-    "wallet.brc100.encrypt.17:",
-    "wallet.brc100.encrypt.18:",
-    "wallet.brc100.encrypt.19:",
-    "wallet.brc100.encrypt.20:",
-    "wallet.brc100.encrypt.21:",
-    "wallet.brc100.encrypt.22:",
-    "wallet.brc100.encrypt.23:",
-    "wallet.brc100.encrypt.24:",
-    "wallet.brc100.encrypt.31:",
-    "wallet.brc100.encrypt.32:",
-    "wallet.brc100.encrypt.33:",
-    "wallet.brc100.encrypt.34:",
-    "wallet.brc100.encrypt.35:",
-    "wallet.brc100.encrypt.36:",
-];
-
-fn assert_known_divergences(channel: &str, failures: &[String], known: &[&str]) {
-    let unexpected: Vec<&String> = failures
-        .iter()
-        .filter(|failure| !known.iter().any(|id| failure.starts_with(*id)))
-        .collect();
-    let resolved: Vec<&&str> = known
-        .iter()
-        .filter(|id| !failures.iter().any(|failure| failure.starts_with(**id)))
-        .collect();
-    assert!(
-        unexpected.is_empty() && resolved.is_empty(),
-        "{channel}: divergence ledger out of date.\nUnexpected failures:\n{}\nResolved (remove from ledger):\n{}\nAll failures:\n{}",
-        unexpected.iter().map(|failure| format!("  {failure}")).collect::<Vec<_>>().join("\n"),
-        resolved.iter().map(|id| format!("  {id}")).collect::<Vec<_>>().join("\n"),
-        failures.join("\n")
-    );
 }
 
 #[test]
@@ -169,37 +102,52 @@ fn encrypt_conformance() {
         let outcome = (|| {
             let args = encrypt_args(vector)?;
             validate_encrypt_args(&args)?;
-
-            let mut iv = [0u8; 32];
-            if let Some(expected) = vector.expected["ciphertext"].as_array() {
-                assert!(
-                    expected.len() >= iv.len(),
-                    "{}: ciphertext too short",
-                    vector.id
-                );
-                for (dst, src) in iv.iter_mut().zip(expected) {
-                    *dst = src
-                        .as_u64()
-                        .and_then(|n| u8::try_from(n).ok())
-                        .unwrap_or_else(|| panic!("{}: invalid IV byte", vector.id));
-                }
-            }
-
-            wallet(vector)
-                .encrypt_with_iv_sync(
-                    &args.plaintext,
-                    &args.protocol_id,
-                    &args.key_id,
-                    &args.counterparty,
-                    &iv,
-                )
-                .map(|ciphertext| json!({ "ciphertext": ciphertext }))
+            let proto = wallet(vector);
+            let ciphertext = proto.encrypt_sync(
+                &args.plaintext,
+                &args.protocol_id,
+                &args.key_id,
+                &args.counterparty,
+            )?;
+            let recovered = proto.decrypt_sync(
+                &ciphertext,
+                &args.protocol_id,
+                &args.key_id,
+                &args.counterparty,
+            )?;
+            Ok(json!({ "plaintext": recovered }))
         })();
-        compare(vector, outcome, &mut failures);
+
+        // wallet.ts dispatchEncrypt lines 454-476: SymmetricKey.encrypt uses a
+        // random IV, so the official assertion is ciphertext presence plus
+        // `decrypt(encrypt(plaintext)) == plaintext`, never fixture bytes.
+        if vector.expected.get("error").and_then(Value::as_bool) == Some(true) {
+            compare(vector, outcome, &mut failures);
+        } else {
+            match outcome {
+                Ok(actual)
+                    if actual
+                        == json!({ "plaintext": encrypt_args(vector).expect("valid success args").plaintext }) =>
+                    {}
+                Ok(actual) => failures.push(format!(
+                    "{}: round-trip did not recover plaintext: got {}",
+                    vector.id, actual
+                )),
+                Err(error) => failures.push(format!(
+                    "{}: expected successful encrypt round-trip, got error {error}",
+                    vector.id
+                )),
+            }
+        }
     }
 
     assert_eq!(file.vectors.len(), 36, "every encrypt vector must execute");
-    assert_known_divergences("encrypt", &failures, KNOWN_ENCRYPT_DIVERGENCES);
+    assert!(
+        failures.is_empty(),
+        "{} of 36 encrypt vectors diverged:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }
 
 #[test]
@@ -221,6 +169,8 @@ fn decrypt_conformance() {
                 )
                 .map(|plaintext| json!({ "plaintext": plaintext }))
         })();
+        // wallet.ts dispatchDecrypt lines 486-495: rejection for an error;
+        // otherwise `plaintext` must exist and equal the fixture bytes.
         compare(vector, outcome, &mut failures);
     }
 

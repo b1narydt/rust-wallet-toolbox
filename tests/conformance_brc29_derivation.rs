@@ -77,6 +77,9 @@ fn payment_derivation_conformance() {
         })();
 
         match outcome {
+            // wallet.ts dispatchPaymentDerivation lines 991-1000 invokes the
+            // real ProtoWallet derivation and asserts exact `publicKey` when
+            // the fixture provides it; all 27 fixtures do.
             Ok(actual) if actual == vector.expected.public_key => {}
             Ok(actual) => failures.push(format!(
                 "{}: expected {}, got {actual}",

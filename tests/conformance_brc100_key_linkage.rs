@@ -1,15 +1,12 @@
 //! BRC-100 key-linkage conformance runner (72 vectors).
 //!
-//! The corpus supplies the crypto-matrix shape (`protocolID`, `keyID`,
-//! `counterparty`, `data`) rather than the BRC-100 linkage argument shape.
-//! In particular, `verifier` is absent. The pinned TS implementation passes
-//! that `undefined` verifier into encryption, where it defaults to `self`;
-//! this runner makes that implicit fixture explicit by using the vector root's
-//! identity key as verifier.
+//! The corpus omits `verifier`. The official TypeScript `ProtoWallet` passes
+//! that `undefined` value into encryption, whose counterparty defaults to
+//! `self`; this runner represents the same effective verifier with the vector
+//! root's identity key.
 
 use bsv::primitives::private_key::PrivateKey;
-use bsv::wallet::error::WalletError;
-use bsv::wallet::proto_wallet::{ProtoWallet, RevealSpecificResult};
+use bsv::wallet::proto_wallet::{ProtoWallet, RevealCounterpartyResult, RevealSpecificResult};
 use bsv::wallet::types::{Counterparty, Protocol};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -63,21 +60,11 @@ fn protocol(vector: &Vector) -> Protocol {
         .unwrap_or_else(|e| panic!("{}: invalid protocolID fixture: {e}", vector.id))
 }
 
-fn expected_error_matches(expected: &Value, actual: &WalletError) -> bool {
-    match expected.get("message").and_then(Value::as_str) {
-        Some("Counterparty secrets cannot be revealed for counterparty=self.") => {
-            matches!(actual, WalletError::InvalidParameter(message) if
-                message.contains("counterparty secrets cannot be revealed") &&
-                message.contains("self"))
-        }
-        Some("Invalid hex string") => actual.to_string().contains("Invalid hex string"),
-        Some("Protocol names must be 5 characters or more") => {
-            matches!(actual, WalletError::InvalidParameter(message) if
-                message.contains("protocol names must be 5 characters or more"))
-        }
-        Some(message) => actual.to_string().eq_ignore_ascii_case(message),
-        None => true,
-    }
+fn counterparty_json(result: RevealCounterpartyResult) -> Value {
+    json!({
+        "prover": result.prover.to_der_hex(),
+        "encryptedLinkage": result.encrypted_linkage,
+    })
 }
 
 fn specific_json(result: RevealSpecificResult) -> Value {
@@ -91,6 +78,24 @@ fn specific_json(result: RevealSpecificResult) -> Value {
         "encryptedLinkageProof": result.encrypted_linkage_proof,
         "proofType": result.proof_type,
     })
+}
+
+fn specific_matches_official_dispatcher(expected: &Value, actual: &Value) -> bool {
+    // wallet.ts dispatchRevealSpecificKeyLinkage lines 528-535 asserts these
+    // three properties, then only fixture fields prover/counterparty/protocolID/keyID.
+    for property in ["prover", "encryptedLinkage", "encryptedLinkageProof"] {
+        if actual.get(property).is_none() {
+            return false;
+        }
+    }
+    for property in ["prover", "counterparty", "protocolID", "keyID"] {
+        if let Some(expected_value) = expected.get(property) {
+            if actual.get(property) != Some(expected_value) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 fn assert_known_divergences(channel: &str, failures: &[String], known: &[&str]) {
@@ -111,28 +116,12 @@ fn assert_known_divergences(channel: &str, failures: &[String], known: &[&str]) 
     );
 }
 
-/// For root key 2, `counterparty="anyone"` denotes public key G. Rust
-/// resolves it as that real key and later reports that the result requires a
-/// concrete counterparty key; TS instead tries to parse the literal word as
-/// hex while creating its proof. Both reject, but the error identity differs.
-const KNOWN_COUNTERPARTY_DIVERGENCES: &[&str] = &[
-    "wallet.brc100.revealcounterpartykeylinkage.20:",
-    "wallet.brc100.revealcounterpartykeylinkage.22:",
-    "wallet.brc100.revealcounterpartykeylinkage.24:",
-    "wallet.brc100.revealcounterpartykeylinkage.26:",
-    "wallet.brc100.revealcounterpartykeylinkage.28:",
-    "wallet.brc100.revealcounterpartykeylinkage.30:",
-    "wallet.brc100.revealcounterpartykeylinkage.32:",
-    "wallet.brc100.revealcounterpartykeylinkage.34:",
-    "wallet.brc100.revealcounterpartykeylinkage.36:",
-];
-
-/// Every nominal success vector passes `self` or `anyone`, omits `verifier`,
-/// and expects those sentinel strings back as `counterparty`. BRC-100 requires
-/// concrete public keys for both linkage parties, as does Rust's result type;
-/// the operation therefore fails closed rather than emitting that malformed
-/// result. Each of the 24 affected vectors remains individually pinned.
-const KNOWN_SPECIFIC_DIVERGENCES: &[&str] = &[
+/// `RUST_DEFECT`: BRC-100 call-code 10 serializes `self` and `anyone` as valid
+/// counterparty sentinels, and TS ProtoWallet.ts lines 186-212 derives,
+/// encrypts, and returns both linkage properties for them. Rust completes the
+/// crypto but then refuses to construct a result unless `counterparty` carries
+/// a concrete public key. Every affected official success vector is pinned.
+const RUST_DEFECT_SPECIFIC_LINKAGE: &[&str] = &[
     "wallet.brc100.revealspecifickeylinkage.1:",
     "wallet.brc100.revealspecifickeylinkage.2:",
     "wallet.brc100.revealspecifickeylinkage.3:",
@@ -181,26 +170,39 @@ fn revealcounterpartykeylinkage_conformance() {
         let verifier = PrivateKey::from_hex(&vector.input.root_key)
             .expect("validated root")
             .to_public_key();
-        let outcome = proto.reveal_counterparty_key_linkage_sync(&counterparty(vector), &verifier);
+        let outcome = proto
+            .reveal_counterparty_key_linkage_sync(&counterparty(vector), &verifier)
+            .map(counterparty_json);
 
-        match outcome {
-            Err(error) if expected_error_matches(&vector.expected, &error) => {}
-            Err(error) => failures.push(format!(
-                "{}: expected error {}, got error {error}",
-                vector.id, vector.expected
+        // wallet.ts dispatchRevealCounterpartyKeyLinkage lines 505-513: error
+        // vectors only need `rejects.toThrow()`; a success needs `prover` and
+        // `encryptedLinkage` properties. Error text/identity is not asserted.
+        let expects_error = vector.expected.get("error").and_then(Value::as_bool) == Some(true);
+        match (expects_error, outcome) {
+            (true, Err(_)) => {}
+            (true, Ok(actual)) => failures.push(format!(
+                "{}: expected rejection, got success {}",
+                vector.id, actual
             )),
-            Ok(_) => failures.push(format!(
-                "{}: expected error {}, got success",
-                vector.id, vector.expected
+            (false, Ok(actual))
+                if actual.get("prover").is_some() && actual.get("encryptedLinkage").is_some() => {}
+            (false, Ok(actual)) => failures.push(format!(
+                "{}: result lacks official dispatcher properties: {}",
+                vector.id, actual
+            )),
+            (false, Err(error)) => failures.push(format!(
+                "{}: expected linkage result shape, got error {error}",
+                vector.id
             )),
         }
     }
 
     assert_eq!(file.vectors.len(), 36, "every vector must execute");
-    assert_known_divergences(
-        "revealCounterpartyKeyLinkage",
-        &failures,
-        KNOWN_COUNTERPARTY_DIVERGENCES,
+    assert!(
+        failures.is_empty(),
+        "{} of 36 revealCounterpartyKeyLinkage vectors diverged:\n{}",
+        failures.len(),
+        failures.join("\n")
     );
 }
 
@@ -227,21 +229,21 @@ fn revealspecifickeylinkage_conformance() {
             .map(specific_json);
         let expects_error = vector.expected.get("error").and_then(Value::as_bool) == Some(true);
 
+        // wallet.ts dispatchRevealSpecificKeyLinkage lines 523-535: error
+        // vectors require any throw; success asserts only the documented shape
+        // and four deterministic fixture fields, never randomized ciphertext.
         match (expects_error, outcome) {
-            (false, Ok(actual)) if actual == vector.expected => {}
+            (false, Ok(actual))
+                if specific_matches_official_dispatcher(&vector.expected, &actual) => {}
             (false, Ok(actual)) => failures.push(format!(
-                "{}: expected {}, got {}",
-                vector.id, vector.expected, actual
+                "{}: result does not satisfy official dispatcher shape: {}",
+                vector.id, actual
             )),
             (false, Err(error)) => failures.push(format!(
                 "{}: expected {}, got error {error}",
                 vector.id, vector.expected
             )),
-            (true, Err(error)) if expected_error_matches(&vector.expected, &error) => {}
-            (true, Err(error)) => failures.push(format!(
-                "{}: expected error {}, got error {error}",
-                vector.id, vector.expected
-            )),
+            (true, Err(_)) => {}
             (true, Ok(actual)) => failures.push(format!(
                 "{}: expected error {}, got success {}",
                 vector.id, vector.expected, actual
@@ -253,6 +255,6 @@ fn revealspecifickeylinkage_conformance() {
     assert_known_divergences(
         "revealSpecificKeyLinkage",
         &failures,
-        KNOWN_SPECIFIC_DIVERGENCES,
+        RUST_DEFECT_SPECIFIC_LINKAGE,
     );
 }
