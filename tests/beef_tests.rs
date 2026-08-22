@@ -152,6 +152,143 @@ mod beef_tests {
     }
 
     // -----------------------------------------------------------------------
+    // Test 3b: bumps proving the same (height, root) are deduplicated via
+    //          merge_bump, and the serialized BEEF is dependency-sorted
+    //          (ancestors before children) — rust-mpc#352 P2-b.
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_beef_dedups_same_block_bumps_and_sorts() {
+        use bsv::script::locking_script::LockingScript;
+        use bsv::transaction::beef::Beef;
+        use bsv::transaction::merkle_path::{MerklePath, MerklePathLeaf};
+        use bsv::transaction::transaction::Transaction as BsvTx;
+        use bsv::transaction::transaction_input::TransactionInput;
+        use bsv::transaction::transaction_output::TransactionOutput;
+
+        let storage = setup_storage().await.unwrap();
+        let user_id = insert_test_user(&storage, "02beef3b").await;
+        let now = dt("2024-01-15 11:30:00");
+
+        // Two distinct parents, proven in the SAME block (2-leaf tree).
+        let mk_parent = |sats: u64| {
+            let mut tx = BsvTx::new();
+            tx.add_output(TransactionOutput {
+                satoshis: Some(sats),
+                locking_script: LockingScript::from_binary(&[0x51]),
+                change: false,
+            });
+            tx
+        };
+        let parent1 = mk_parent(1000);
+        let parent2 = mk_parent(2000);
+        let (p1_txid, p2_txid) = (parent1.id().unwrap(), parent2.id().unwrap());
+
+        // One 2-leaf tree: both parents are leaves; both ProvenTx rows carry
+        // a bump for the same (height, root).
+        let leaf = |offset: u64, hash: &str| MerklePathLeaf {
+            offset,
+            hash: Some(hash.to_string()),
+            txid: true,
+            duplicate: false,
+        };
+        let bump = MerklePath {
+            block_height: 800001,
+            path: vec![vec![leaf(0, &p1_txid), leaf(1, &p2_txid)]],
+        };
+        let root = bump.compute_root(None).unwrap();
+        let mut bump_bytes = Vec::new();
+        bump.to_binary(&mut bump_bytes).unwrap();
+
+        for (txid, tx) in [(&p1_txid, &parent1), (&p2_txid, &parent2)] {
+            let mut raw = Vec::new();
+            tx.to_binary(&mut raw).unwrap();
+            storage
+                .insert_proven_tx(
+                    &ProvenTx {
+                        created_at: now,
+                        updated_at: now,
+                        proven_tx_id: 0,
+                        txid: txid.to_string(),
+                        height: 800001,
+                        index: 0,
+                        merkle_path: bump_bytes.clone(),
+                        raw_tx: raw,
+                        block_hash: String::new(),
+                        merkle_root: root.clone(),
+                    },
+                    None,
+                )
+                .await
+                .unwrap();
+        }
+
+        // Unproven child spending both parents.
+        let mut child = BsvTx::new();
+        for txid in [&p1_txid, &p2_txid] {
+            child.inputs.push(TransactionInput {
+                source_transaction: None,
+                source_txid: Some(txid.to_string()),
+                source_output_index: 0,
+                unlocking_script: Some(
+                    bsv::script::unlocking_script::UnlockingScript::from_binary(&[0x51]),
+                ),
+                sequence: 0xffffffff,
+            });
+        }
+        child.add_output(TransactionOutput {
+            satoshis: Some(2900),
+            locking_script: LockingScript::from_binary(&[0x51]),
+            change: false,
+        });
+        let child_txid = child.id().unwrap();
+        let mut child_raw = Vec::new();
+        child.to_binary(&mut child_raw).unwrap();
+        storage
+            .insert_transaction(
+                &Transaction {
+                    created_at: now,
+                    updated_at: now,
+                    transaction_id: 0,
+                    user_id,
+                    proven_tx_id: None,
+                    status: TransactionStatus::Unproven,
+                    reference: "beef3b".to_string(),
+                    is_outgoing: true,
+                    satoshis: 0,
+                    description: "child".to_string(),
+                    version: Some(1),
+                    lock_time: Some(0),
+                    txid: Some(child_txid.clone()),
+                    input_beef: None,
+                    raw_tx: Some(child_raw),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        let bytes = get_valid_beef_for_txid(&storage, &child_txid, TrustSelf::No, &HashSet::new())
+            .await
+            .unwrap()
+            .expect("BEEF produced");
+        let mut cursor = std::io::Cursor::new(&bytes);
+        let beef = Beef::from_binary(&mut cursor).unwrap();
+
+        // ONE bump for the shared (height, root), not one per proven parent.
+        assert_eq!(
+            beef.bumps.len(),
+            1,
+            "identical (height, root) bumps must be merged"
+        );
+
+        // Dependency order: both parents serialize before the child.
+        let pos = |t: &str| beef.txs.iter().position(|b| b.txid == t).unwrap();
+        assert!(pos(&p1_txid) < pos(&child_txid));
+        assert!(pos(&p2_txid) < pos(&child_txid));
+    }
+
+    // -----------------------------------------------------------------------
     // Test 4: Transaction with input_beef merges ancestor proofs into output
     // -----------------------------------------------------------------------
 

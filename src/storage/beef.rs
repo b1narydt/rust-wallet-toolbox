@@ -306,6 +306,18 @@ async fn collect_tx_recursive(
 }
 
 /// Build a BEEF from collected transactions and return serialized bytes.
+///
+/// Assembles through the SDK's merge semantics (the shapes TS
+/// `getBeefForTransaction` produces by building on a `Beef`):
+///   * bumps go through `merge_bump`, which dedups identical bumps by
+///     (block height, computed root) and combines their leaves — raw
+///     `bumps.push` emitted one bump per proven tx even when they proved
+///     the same block;
+///   * transactions go through `merge_raw_tx` / txid-only presence checks,
+///     so a tx also carried by a stored inputBEEF cannot appear twice;
+///   * `sort_txs()` runs before serializing (TS `Beef.toBinary` sorts
+///     implicitly; the Rust SDK's does not), so ancestors precede children
+///     on the wire.
 fn build_beef_from_collected(collected: Vec<CollectedTx>) -> WalletResult<Option<Vec<u8>>> {
     if collected.is_empty() {
         return Ok(None);
@@ -315,21 +327,11 @@ fn build_beef_from_collected(collected: Vec<CollectedTx>) -> WalletResult<Option
 
     for ctx in &collected {
         if ctx.txid_only {
-            beef.txs.push(BeefTx {
-                tx: None,
-                txid: ctx.txid.clone(),
-                bump_index: None,
-                input_txids: Vec::new(),
-            });
+            if beef.find_txid(&ctx.txid).is_none() {
+                beef.txs.push(BeefTx::from_txid(ctx.txid.clone()));
+            }
             continue;
         }
-
-        let bsv_tx = {
-            let mut cursor = Cursor::new(&ctx.raw_tx);
-            BsvTransaction::from_binary(&mut cursor).map_err(|e| {
-                WalletError::Internal(format!("Failed to parse raw_tx for {}: {}", ctx.txid, e))
-            })?
-        };
 
         let bump_index = if let Some(ref mp_bytes) = ctx.merkle_path {
             let mp = {
@@ -341,17 +343,17 @@ fn build_beef_from_collected(collected: Vec<CollectedTx>) -> WalletResult<Option
                     ))
                 })?
             };
-            let idx = beef.bumps.len();
-            beef.bumps.push(mp);
+            let idx = beef.merge_bump(&mp).map_err(|e| {
+                WalletError::Internal(format!("Failed to merge bump for {}: {}", ctx.txid, e))
+            })?;
             Some(idx)
         } else {
             None
         };
 
-        let beef_tx = BeefTx::from_tx(bsv_tx, bump_index).map_err(|e| {
-            WalletError::Internal(format!("Failed to create BeefTx for {}: {}", ctx.txid, e))
+        beef.merge_raw_tx(&ctx.raw_tx, bump_index).map_err(|e| {
+            WalletError::Internal(format!("Failed to merge raw_tx for {}: {}", ctx.txid, e))
         })?;
-        beef.txs.push(beef_tx);
 
         // Merge stored inputBEEF (ancestor proof chains for this transaction's inputs)
         if let Some(ref ib) = ctx.input_beef {
@@ -363,6 +365,10 @@ fn build_beef_from_collected(collected: Vec<CollectedTx>) -> WalletResult<Option
             })?;
         }
     }
+
+    // Ancestors before children on the wire (the SDK's plain to_binary does
+    // not sort, unlike TS).
+    beef.sort_txs();
 
     let mut buf = Vec::new();
     beef.to_binary(&mut buf)
