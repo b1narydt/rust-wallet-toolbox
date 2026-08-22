@@ -34,6 +34,7 @@ pub type LastEventIdChangedCallback = Box<dyn Fn(&str) + Send + Sync>;
 /// Supports reconnection with exponential backoff and event ID tracking.
 pub struct ArcSseClient {
     base_url: String,
+    display_url: String,
     callback_token: String,
     arc_api_key: Option<String>,
     last_event_id: Option<String>,
@@ -48,8 +49,10 @@ impl ArcSseClient {
     /// Returns the client and a receiver that will receive ArcSseEvent messages.
     pub fn new(options: ArcSseClientOptions) -> (Self, mpsc::Receiver<ArcSseEvent>) {
         let (tx, rx) = mpsc::channel(100);
+        let base_url = options.base_url.trim_end_matches('/').to_string();
         let client = Self {
-            base_url: options.base_url.trim_end_matches('/').to_string(),
+            display_url: format!("{base_url}/events?callbackToken=<redacted>"),
+            base_url,
             callback_token: options.callback_token,
             arc_api_key: options.arc_api_key,
             last_event_id: options.last_event_id,
@@ -104,6 +107,24 @@ impl ArcSseClient {
         )
     }
 
+    /// The stream endpoint safe to include in logs.
+    pub fn display_url(&self) -> &str {
+        &self.display_url
+    }
+
+    fn redact_error(&self, error: &str) -> String {
+        let redacted = error.replace(&self.stream_url(), &self.display_url);
+        if self.callback_token.is_empty() {
+            return redacted;
+        }
+        redacted
+            .replace(
+                &percent_encode_query_value(&self.callback_token),
+                "<redacted>",
+            )
+            .replace(&self.callback_token, "<redacted>")
+    }
+
     pub async fn connect(&mut self) {
         let url = self.stream_url();
         let mut backoff_secs: u64 = 1;
@@ -128,7 +149,7 @@ impl ArcSseClient {
 
             tracing::info!(
                 "[ArcSSE] Connecting to {} (Last-Event-ID: {:?})",
-                url,
+                self.display_url,
                 self.last_event_id
             );
 
@@ -187,7 +208,7 @@ impl ArcSseClient {
                                 }
                             }
                             Some(Err(e)) => {
-                                tracing::warn!("[ArcSSE] Error: {}", e);
+                                tracing::warn!("[ArcSSE] Error: {}", self.redact_error(&e.to_string()));
                                 es.close();
                                 break;
                             }
@@ -272,6 +293,21 @@ mod tests {
             c.stream_url(),
             "https://arcade.example/events?callbackToken=a%2Bb%2Fc%3D"
         );
+    }
+
+    #[test]
+    fn display_url_and_errors_redact_callback_token() {
+        let c = client_with("https://arcade.example", "a+b/c=");
+        assert_eq!(
+            c.display_url(),
+            "https://arcade.example/events?callbackToken=<redacted>"
+        );
+
+        let error = format!("request failed for {}; token=a+b/c=", c.stream_url());
+        let redacted = c.redact_error(&error);
+        assert!(!redacted.contains("a+b/c="));
+        assert!(!redacted.contains("a%2Bb%2Fc%3D"));
+        assert!(redacted.contains("callbackToken=<redacted>"));
     }
 
     #[test]
