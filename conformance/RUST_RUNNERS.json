@@ -7,6 +7,30 @@
     "runner": "tests/conformance_brc100_actions.rs",
     "skipped_ids": []
   },
+  "vectors/wallet/brc100/createhmac.json": {
+    "runner": "tests/conformance_brc100_crypto.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/createsignature.json": {
+    "runner": "tests/conformance_brc100_crypto.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/decrypt.json": {
+    "runner": "tests/conformance_brc100_cipher.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/encrypt.json": {
+    "runner": "tests/conformance_brc100_cipher.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/getheaderforheight.json": {
+    "runner": "tests/conformance_brc100_info.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/getheight.json": {
+    "runner": "tests/conformance_brc100_info.rs",
+    "skipped_ids": []
+  },
   "vectors/wallet/brc100/getnetwork.json": {
     "runner": "tests/conformance_brc100_read.rs",
     "skipped_ids": []
@@ -15,8 +39,16 @@
     "runner": "tests/conformance_getpublickey.rs",
     "skipped_ids": []
   },
+  "vectors/wallet/brc100/getversion.json": {
+    "runner": "tests/conformance_brc100_info.rs",
+    "skipped_ids": []
+  },
   "vectors/wallet/brc100/internalizeaction.json": {
     "runner": "tests/conformance_brc100_actions.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/isauthenticated.json": {
+    "runner": "tests/conformance_brc100_info.rs",
     "skipped_ids": []
   },
   "vectors/wallet/brc100/listactions.json": {
@@ -35,8 +67,32 @@
     "runner": "tests/conformance_brc100_actions.rs",
     "skipped_ids": []
   },
+  "vectors/wallet/brc100/revealcounterpartykeylinkage.json": {
+    "runner": "tests/conformance_brc100_key_linkage.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/revealspecifickeylinkage.json": {
+    "runner": "tests/conformance_brc100_key_linkage.rs",
+    "skipped_ids": []
+  },
   "vectors/wallet/brc100/signaction.json": {
     "runner": "tests/conformance_brc100_actions.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/verifyhmac.json": {
+    "runner": "tests/conformance_brc100_crypto.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/verifysignature.json": {
+    "runner": "tests/conformance_brc100_crypto.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc100/waitforauthentication.json": {
+    "runner": "tests/conformance_brc100_info.rs",
+    "skipped_ids": []
+  },
+  "vectors/wallet/brc29/payment-derivation.json": {
+    "runner": "tests/conformance_brc29_derivation.rs",
     "skipped_ids": []
   },
   "vectors/wallet/storage/adapter-conformance.json": {

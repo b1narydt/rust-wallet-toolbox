@@ -27,15 +27,20 @@ vendor or assert.
 | Vectors | Runner |
 |---|---|
 | `vectors/wallet/brc100/getpublickey.json` (201) | `tests/conformance_getpublickey.rs` — BRC-42/43 key derivation |
+| `vectors/wallet/brc100/{createhmac,verifyhmac,createsignature,verifysignature}.json` (223) | `tests/conformance_brc100_crypto.rs` — signatures and HMACs |
+| `vectors/wallet/brc100/{encrypt,decrypt}.json` (87) | `tests/conformance_brc100_cipher.rs` — AES-GCM encryption and decryption |
+| `vectors/wallet/brc100/{revealcounterpartykeylinkage,revealspecifickeylinkage}.json` (72) | `tests/conformance_brc100_key_linkage.rs` — BRC-69 linkage revelation |
+| `vectors/wallet/brc29/payment-derivation.json` (27) | `tests/conformance_brc29_derivation.rs` — BRC-29/BRC-42 payment keys |
+| `vectors/wallet/brc100/{getheaderforheight,getheight,getversion,isauthenticated,waitforauthentication}.json` (28) | `tests/conformance_brc100_info.rs` — authentication and chain-info surface |
 | `vectors/sync/brc40-user-state.json` (24) | `tests/conformance_brc40.rs` — BRC-40 sync semantics |
 | `vectors/wallet/brc100/{createaction,signaction,internalizeaction,relinquishoutput}.json` (90+8+10+8) | `tests/conformance_brc100_actions.rs` — action/write surface. The upstream reference never executed these channels; see the runner header for the executable characterization of the synthetic expected values and the pinned divergences. |
 | `vectors/wallet/brc100/createaction-funded.json` + `signaction-funded.json` | `tests/conformance_brc100_funded.rs` — byte-for-byte offline replay of vectors **recorded** against a real faucet-funded wallet on mainnet (see below) |
 | `vectors/wallet/brc100/{listoutputs,listactions,provecertificate,getnetwork}.json` (144+16+8+5) | `tests/conformance_brc100_read.rs` — read surface |
 | `vectors/wallet/storage/adapter-conformance.json` (18) | `tests/conformance_storage_adapter.rs` — storage adapter contract |
 
-The newly vendored pure-function BRC-100 and BRC-29 files intentionally have
-no Rust runners in this change. `COVERAGE.md` records them as vendored but
-unasserted so runner work cannot be mistaken for completed coverage.
+The vendored pure-function BRC-100 and BRC-29 files are all asserted by the
+grouped runners above. Known reference divergences are pinned per vector in
+the runner source; none of these files has a governed skip.
 
 Each runner asserts the exact number of vectors loaded and executed, names the
 vector `id` in every failure, and runs error vectors as first-class assertions
