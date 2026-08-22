@@ -1363,10 +1363,7 @@ fn build_internalize_beef(outputs: &Value, receiver_root_hex: &str) -> Vec<u8> {
     beef.bumps.push(bump);
     beef.txs
         .push(BeefTx::from_tx(source, Some(0)).expect("beef tx"));
-    beef.atomic_txid = Some(txid);
-    let mut bytes = Vec::new();
-    beef.to_binary(&mut bytes).expect("serialize beef");
-    bytes
+    beef.to_binary_atomic(&txid).expect("serialize atomic beef")
 }
 
 /// internalizeaction.3 ("mixed internalization") supplies BOTH a wallet

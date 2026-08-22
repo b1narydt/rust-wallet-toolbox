@@ -1167,10 +1167,9 @@ mod tests {
             .push(BeefTx::from_tx(parent, Some(0)).expect("parent beef tx"));
         beef.txs
             .push(BeefTx::from_tx(child, None).expect("child beef tx"));
-        beef.atomic_txid = Some(child_txid.clone());
-
-        let mut beef_bytes = Vec::new();
-        beef.to_binary(&mut beef_bytes).expect("serialize beef");
+        let beef_bytes = beef
+            .to_binary_atomic(&child_txid)
+            .expect("serialize atomic beef");
 
         (beef_bytes, child_txid)
     }
@@ -1492,11 +1491,7 @@ mod tests {
         let beef_tx = BeefTx::from_tx(tx, None).expect("create beef tx");
         let mut beef = Beef::new(bsv::transaction::beef::BEEF_V1);
         beef.txs.push(beef_tx);
-        beef.atomic_txid = Some(txid);
-
-        let mut beef_bytes = Vec::new();
-        beef.to_binary(&mut beef_bytes).expect("serialize beef");
-        beef_bytes
+        beef.to_binary_atomic(&txid).expect("serialize atomic beef")
     }
 
     /// A proofless / dangling AtomicBEEF (an unproven tx whose input does not

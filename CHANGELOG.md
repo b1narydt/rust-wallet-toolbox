@@ -105,7 +105,18 @@ new behaviour of our own.
 ### Changed
 
 - Consumes `bsv-sdk` 0.5.2 (basket names validate to reference parity —
-  hyphens et al. accepted).
+  hyphens et al. accepted; `Beef` brought to TS parity, bsv-rust-sdk#44).
+- **`serialize_beef_atomic` delegates to the SDK's `Beef::to_binary_atomic`**,
+  now the port of TS `toBinaryAtomic` (closure, prune, re-index, sort). The
+  toolbox's own closure walk is deleted; the function stays as the single
+  seam for the Atomic client-return shape, because the SDK's plain
+  `to_binary` — like TS — never emits the Atomic prefix on its own.
+  `sortTxs` order differs from the former walk's, so the 96 funded-corpus
+  `expected.tx` fields were regenerated through
+  `tests/regen_funded_expected_beef.rs` (transaction set, raw bytes, bumps,
+  txids, signatures all proven unchanged) and every regenerated vector was
+  cross-checked byte-equal against `@bsv/sdk` 2.3.1 `toBinaryAtomic` of the
+  same pre-sort graph (105/105).
 
 ## [0.8.1] - 2026-08-19
 

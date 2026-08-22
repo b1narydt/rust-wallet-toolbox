@@ -37,9 +37,12 @@ mod regen {
     };
 
     const NOTE: &str = "2026-08-21: expected.tx regenerated — BEEF-only byte change \
-        (rust-mpc#352: ancestor BEEF for caller-named inputs + dependency-sorted atomic \
-        serialization); status/txid/rawTx/change/signatures verified unchanged and the \
-        new BEEF verified a superset of the recorded one before rewriting.";
+        (bsv-sdk 0.5.2 / bsv-rust-sdk#44: Atomic serialization delegated to the SDK's \
+        TS-parity toBinaryAtomic, whose sortTxs order differs from the toolbox's former \
+        closure walk; same transaction set, same bumps, TS-canonical order — every \
+        vector cross-checked byte-equal against @bsv/sdk 2.3.1 toBinaryAtomic of the \
+        previously recorded bytes); status/txid/rawTx/change/signatures verified \
+        unchanged and the new BEEF verified a superset of the recorded one before rewriting.";
 
     fn parse_beef(hex: &str, context: &str) -> Beef {
         let bytes = from_hex(hex);

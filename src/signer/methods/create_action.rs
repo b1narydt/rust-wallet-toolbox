@@ -555,86 +555,20 @@ fn merge_input_ancestry(
 
 /// Serialize a Beef as Atomic BEEF bytes targeting a specific txid.
 ///
-/// Port of TS `Beef.toBinaryAtomic` (@bsv/sdk Beef.ts) — BRC-95 semantics,
-/// byte-verified against the TS-golden vectors
-/// (conformance/vectors/beef/beef_atomic_closure.json + beef_spend_closure.json):
-///   * the emitted BEEF is the subject's DEPENDENCY CLOSURE only —
-///     transactions unrelated to the subject are dropped;
-///   * bumps not referenced by a retained transaction are pruned, and
-///     retained bump indices are re-derived;
-///   * ancestors precede dependents (the TS SDK's `toBinary` sorts
-///     implicitly; the Rust SDK's `to_binary_atomic` instead truncates after
-///     the subject in insertion order, which both keeps unrelated txs and
-///     can silently drop late-merged ancestors — so the closure is computed
-///     here, not delegated).
-///
-/// TODO(bsv-sdk): upstream this as the conformant `Beef::to_binary_atomic`;
-/// the SDK's current truncate-after-subject behavior is nonconformant with
-/// the normative TS output.
+/// Delegates to the SDK's `Beef::to_binary_atomic`, which since bsv-sdk 0.5.2
+/// is the port of TS `Beef.toBinaryAtomic` (@bsv/sdk Beef.ts) — BRC-95
+/// semantics: the emitted BEEF is the subject's dependency closure only,
+/// unreferenced bumps are pruned and retained indices re-derived, and
+/// ancestors precede dependents. Byte-verified against the TS-golden vectors
+/// (conformance/vectors/beef/beef_atomic_closure.json +
+/// beef_spend_closure.json) in both crates. This wrapper stays as the
+/// toolbox's single seam for the Atomic client-return shape, so callers never
+/// reach for the plain `to_binary` (which, per TS, never emits the Atomic
+/// prefix — `atomic_txid` on a parsed `Beef` is a record of what was read,
+/// not a serialization instruction).
 pub fn serialize_beef_atomic(beef: &Beef, txid: &str) -> WalletResult<Vec<u8>> {
-    use std::collections::HashSet;
-
-    if beef.find_txid(txid).is_none() {
-        return Err(WalletError::Internal(format!(
-            "Failed to serialize Atomic BEEF: {txid} does not exist in this Beef"
-        )));
-    }
-
-    // Dependency closure of the subject over the txs present in this BEEF.
-    let mut closure: HashSet<&str> = HashSet::new();
-    let mut frontier: Vec<&str> = vec![txid];
-    while let Some(t) = frontier.pop() {
-        if !closure.insert(t) {
-            continue;
-        }
-        if let Some(btx) = beef.find_txid(t) {
-            for input_txid in &btx.input_txids {
-                if beef.find_txid(input_txid).is_some() {
-                    frontier.push(input_txid.as_str());
-                }
-            }
-        }
-    }
-
-    // Rebuild: closure txs in dependency order, referenced bumps re-indexed
-    // in first-use order.
-    let mut sorted = beef.clone();
-    sorted.sort_txs();
-
-    let mut atomic = Beef::new(beef.version);
-    atomic.atomic_txid = Some(txid.to_string());
-    let mut bump_map: Vec<Option<usize>> = vec![None; beef.bumps.len()];
-    for btx in &sorted.txs {
-        if !closure.contains(btx.txid.as_str()) {
-            continue;
-        }
-        let mut new_btx = btx.clone();
-        if let Some(old_idx) = btx.bump_index {
-            let slot = bump_map.get_mut(old_idx).ok_or_else(|| {
-                WalletError::Internal(format!(
-                    "Failed to serialize Atomic BEEF: {} names bump {old_idx} which does not exist",
-                    btx.txid
-                ))
-            })?;
-            let new_idx = match slot {
-                Some(i) => *i,
-                None => {
-                    let i = atomic.bumps.len();
-                    atomic.bumps.push(sorted.bumps[old_idx].clone());
-                    *slot = Some(i);
-                    i
-                }
-            };
-            new_btx.bump_index = Some(new_idx);
-        }
-        atomic.txs.push(new_btx);
-    }
-
-    let mut buf = Vec::new();
-    atomic
-        .to_binary(&mut buf)
-        .map_err(|e| WalletError::Internal(format!("Failed to serialize Atomic BEEF: {e}")))?;
-    Ok(buf)
+    beef.to_binary_atomic(txid)
+        .map_err(|e| WalletError::Internal(format!("Failed to serialize Atomic BEEF: {e}")))
 }
 
 /// Serialize the BROADCAST copy of a Beef: plain (never Atomic-framed),

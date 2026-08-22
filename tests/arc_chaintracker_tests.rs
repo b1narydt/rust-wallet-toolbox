@@ -116,10 +116,8 @@ fn build_atomic_framed(version: u32) -> Vec<u8> {
     let txid = tx.id().expect("txid");
     let beef_tx = BeefTx::from_tx(tx, None).expect("Valid beef tx");
     beef.txs.push(beef_tx);
-    beef.atomic_txid = Some(txid);
-    let mut buf = Vec::new();
-    beef.to_binary(&mut buf).expect("Serialization should work");
-    buf
+    beef.to_binary_atomic(&txid)
+        .expect("Serialization should work")
 }
 
 /// Atomic-framed V2 input must come out as PLAIN V1 — the previous
