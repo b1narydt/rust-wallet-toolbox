@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-22
+
+Minor rather than patch: this release consumes **bsv-sdk 0.6.0**, which changed
+`RevealSpecificKeyLinkageResult.counterparty` from `PublicKey` to `Counterparty`
+so it can carry the `self`/`anyone` sentinels the reference has always allowed.
+That type crosses this crate's public API. Also repins
+`bsv-messagebox-client 0.3.0` / `authsocket 0.3.0`.
+
+### Added
+
+- **The official BSV conformance corpus is vendored, refreshed, and asserted.**
+  Vectors come from `bsv-blockchain/ts-stack` (the same corpus go-wallet-toolbox
+  uses), refreshed from a three-month-old pin to `8b074a06` and extended by 14
+  files. `conformance/scripts/refresh-vectors.sh` makes the refresh repeatable
+  and `conformance/COVERAGE.md` is a generated ledger listing every upstream
+  vector file — including the ones this crate does not cover. **968 of 6,681
+  upstream vectors asserted.** Runners mirror the official dispatcher's
+  assertion semantics rather than inventing stricter ones; the two vectors that
+  remain divergent are recorded with evidence in `conformance/DIVERGENCES.md`.
+
+  The corpus paid for itself on arrival: 24 `revealSpecificKeyLinkage` vectors
+  exposed a real defect in the Rust SDK, fixed in bsv-sdk 0.6.0.
+
+
 TS-parity batch. The reference is **ts-stack `packages/wallet/wallet-toolbox`
 2.10.2** — `bsv-blockchain/wallet-toolbox` was archived on 2026-06-12, so the
 live TS toolbox, not the 2.4.0 line this port was written against, is what
