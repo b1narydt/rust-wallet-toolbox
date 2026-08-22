@@ -430,7 +430,16 @@ pub async fn signer_create_action(
 ///
 /// Constructs a Beef by:
 /// 1. Merging input_beef if available (contains source txs with proofs)
-/// 2. Merging the signed/unsigned transaction via merge_raw_tx
+/// 2. Recursively merging every input's `source_transaction` graph not
+///    already represented (the TS `mergeTransaction` recursion — flat
+///    `merge_raw_tx` alone ignored `tx.inputs[*].source_transaction` and
+///    produced BEEFs that violated the BRC-95 closure, rust-mpc#352)
+/// 3. Merging the signed/unsigned transaction itself via merge_raw_tx
+///
+/// Fails closed: an input whose source transaction is neither in the BEEF
+/// nor carried (genuinely — see `merge_input_ancestry`) on the input errors
+/// naming the txid. This is defence-in-depth behind `merge_input_beef_signer`,
+/// which is responsible for making `input_beef` cover every input.
 pub(crate) fn build_beef(
     tx: &bsv::transaction::transaction::Transaction,
     input_beef: &Option<Vec<u8>>,
@@ -443,6 +452,10 @@ pub(crate) fn build_beef(
         }
     }
 
+    // Ancestors first, subject last, so dependency order holds without a
+    // sort and `to_binary_atomic`'s truncation-after-subject keeps them.
+    merge_input_ancestry(&mut beef, tx)?;
+
     let mut raw_tx = Vec::new();
     tx.to_binary(&mut raw_tx)
         .map_err(|e| WalletError::Internal(format!("Failed to serialize tx: {e}")))?;
@@ -452,9 +465,87 @@ pub(crate) fn build_beef(
     Ok(beef)
 }
 
+/// Recursively merge the `source_transaction` graph of `tx`'s inputs into
+/// `beef` (port of TS `Beef.mergeTransaction`'s graph walk).
+///
+/// For each input: if its source txid is already represented in the BEEF,
+/// done. Otherwise the input must carry a genuine `source_transaction` —
+/// one whose computed txid matches the input's `source_txid`; the synthetic
+/// output-padded stubs `complete_signed_transaction` fabricates for signing
+/// hash their own (wrong) txid and are deliberately NOT merged, because a
+/// stub cannot satisfy the closure. A genuine source with a `merkle_path`
+/// terminates its branch (bump merged alongside); one without recurses into
+/// its own inputs first. A branch ending with neither a usable source nor
+/// BEEF representation is an error naming the txid — fail closed, never a
+/// partial BEEF.
+fn merge_input_ancestry(
+    beef: &mut Beef,
+    tx: &bsv::transaction::transaction::Transaction,
+) -> WalletResult<()> {
+    for input in &tx.inputs {
+        let Some(source_txid) = input.source_txid.as_ref().filter(|t| !t.is_empty()) else {
+            continue;
+        };
+        if beef.find_txid(source_txid).is_some() {
+            continue;
+        }
+
+        let genuine_source = input
+            .source_transaction
+            .as_deref()
+            .filter(|src| src.id().is_ok_and(|computed| computed == *source_txid));
+        let Some(src) = genuine_source else {
+            return Err(WalletError::Internal(format!(
+                "BEEF closure incomplete: input source transaction {source_txid} is not in \
+                 the assembled BEEF and the input carries no source transaction for it \
+                 (fail closed rather than return a partial BEEF)"
+            )));
+        };
+
+        let mut src_bytes = Vec::new();
+        src.to_binary(&mut src_bytes).map_err(|e| {
+            WalletError::Internal(format!(
+                "Failed to serialize source transaction {source_txid}: {e}"
+            ))
+        })?;
+
+        if let Some(ref merkle_path) = src.merkle_path {
+            // Proven ancestor: merge its bump and terminate this branch.
+            let bump_index = beef.merge_bump(merkle_path).map_err(|e| {
+                WalletError::Internal(format!(
+                    "Failed to merge merkle path for source transaction {source_txid}: {e}"
+                ))
+            })?;
+            beef.merge_raw_tx(&src_bytes, Some(bump_index))
+                .map_err(|e| {
+                    WalletError::Internal(format!(
+                        "Failed to merge source transaction {source_txid}: {e}"
+                    ))
+                })?;
+        } else {
+            // Unproven ancestor: its own ancestry first, then itself.
+            merge_input_ancestry(beef, src)?;
+            beef.merge_raw_tx(&src_bytes, None).map_err(|e| {
+                WalletError::Internal(format!(
+                    "Failed to merge source transaction {source_txid}: {e}"
+                ))
+            })?;
+        }
+    }
+    Ok(())
+}
+
 /// Serialize a Beef as Atomic BEEF bytes targeting a specific txid.
+///
+/// Sorts a copy into dependency order first: the TS SDK's `toBinary` sorts
+/// implicitly, but the Rust SDK's `to_binary_atomic` truncates everything
+/// after the subject WITHOUT sorting — any ancestor sitting after the
+/// subject in insertion order would be silently dropped from the closure.
 pub(crate) fn serialize_beef_atomic(beef: &Beef, txid: &str) -> WalletResult<Vec<u8>> {
-    beef.to_binary_atomic(txid)
+    let mut sorted = beef.clone();
+    sorted.sort_txs();
+    sorted
+        .to_binary_atomic(txid)
         .map_err(|e| WalletError::Internal(format!("Failed to serialize Atomic BEEF: {e}")))
 }
 
@@ -604,6 +695,136 @@ pub(crate) async fn merge_input_beef_signer(
 #[cfg(test)]
 mod tests {
     use bsv::wallet::types::BooleanDefaultFalse;
+
+    mod build_beef_ancestry {
+        use crate::signer::methods::create_action::{build_beef, serialize_beef_atomic};
+        use bsv::script::locking_script::LockingScript;
+        use bsv::transaction::transaction::Transaction;
+        use bsv::transaction::transaction_input::TransactionInput;
+        use bsv::transaction::transaction_output::TransactionOutput;
+        use bsv::transaction::Beef;
+
+        fn simple_tx(satoshis: u64) -> Transaction {
+            let mut tx = Transaction::new();
+            tx.add_output(TransactionOutput {
+                satoshis: Some(satoshis),
+                locking_script: LockingScript::from_binary(&[0x51]),
+                change: false,
+            });
+            tx
+        }
+
+        fn spend_of(parent: &Transaction, carry_source: bool) -> Transaction {
+            let mut tx = Transaction::new();
+            tx.inputs.push(TransactionInput {
+                source_transaction: carry_source.then(|| Box::new(parent.clone())),
+                source_txid: Some(parent.id().unwrap()),
+                source_output_index: 0,
+                unlocking_script: Some(
+                    bsv::script::unlocking_script::UnlockingScript::from_binary(&[0x51]),
+                ),
+                sequence: 0xffffffff,
+            });
+            tx.add_output(TransactionOutput {
+                satoshis: Some(1),
+                locking_script: LockingScript::from_binary(&[0x51]),
+                change: false,
+            });
+            tx
+        }
+
+        /// A source_transaction carried on the input must be merged into the
+        /// BEEF (the TS mergeTransaction recursion), grandparents included.
+        #[test]
+        fn merges_carried_source_transaction_graph() {
+            let grandparent = simple_tx(3);
+            let mut parent = spend_of(&grandparent, true);
+            parent.outputs[0].satoshis = Some(2);
+            let child = spend_of(&parent, true);
+
+            let beef = build_beef(&child, &None).expect("build_beef");
+            for tx in [&grandparent, &parent, &child] {
+                let txid = tx.id().unwrap();
+                let btx = beef
+                    .find_txid(&txid)
+                    .unwrap_or_else(|| panic!("{txid} missing from beef"));
+                assert!(!btx.is_txid_only(), "{txid} must be a full transaction");
+            }
+
+            // And the atomic serialization keeps the whole closure.
+            let atomic = serialize_beef_atomic(&beef, &child.id().unwrap()).unwrap();
+            let mut cursor = std::io::Cursor::new(&atomic);
+            let parsed = Beef::from_binary(&mut cursor).unwrap();
+            assert!(parsed.find_txid(&grandparent.id().unwrap()).is_some());
+            assert!(parsed.find_txid(&parent.id().unwrap()).is_some());
+        }
+
+        /// An input whose source is neither in the BEEF nor carried on the
+        /// input fails closed, naming the txid.
+        #[test]
+        fn missing_ancestry_errors_naming_the_txid() {
+            let parent = simple_tx(2);
+            let child = spend_of(&parent, false);
+            let parent_txid = parent.id().unwrap();
+
+            let err = build_beef(&child, &None).expect_err("must fail closed");
+            assert!(
+                err.to_string().contains(&parent_txid),
+                "error must name the missing txid, got: {err}"
+            );
+        }
+
+        /// The synthetic output-padded source stubs that
+        /// complete_signed_transaction fabricates (whose computed txid does
+        /// not match the input's source_txid) must not be merged — and since
+        /// they cannot satisfy the closure, the build fails closed.
+        #[test]
+        fn synthetic_source_stub_is_not_merged() {
+            let parent = simple_tx(2);
+            let mut child = spend_of(&parent, false);
+            // Fabricate the stub the signer builds: right output shape,
+            // wrong txid.
+            let mut stub = Transaction::new();
+            stub.add_output(TransactionOutput {
+                satoshis: Some(2),
+                locking_script: LockingScript::from_binary(&[0x51]),
+                change: false,
+            });
+            stub.add_output(TransactionOutput {
+                satoshis: Some(0),
+                locking_script: LockingScript::from_binary(&[]),
+                change: false,
+            });
+            child.inputs[0].source_transaction = Some(Box::new(stub.clone()));
+            let parent_txid = parent.id().unwrap();
+            assert_ne!(stub.id().unwrap(), parent_txid);
+
+            let err = build_beef(&child, &None).expect_err("stub must not satisfy closure");
+            assert!(
+                err.to_string().contains(&parent_txid),
+                "error must name the real missing txid, got: {err}"
+            );
+        }
+
+        /// Sources already present in the input BEEF are not re-merged and
+        /// do not require a carried source_transaction.
+        #[test]
+        fn source_in_input_beef_is_sufficient() {
+            let parent = simple_tx(2);
+            let child = spend_of(&parent, false);
+
+            let mut input_beef = Beef::new(bsv::transaction::beef::BEEF_V1);
+            let mut parent_bytes = Vec::new();
+            parent.to_binary(&mut parent_bytes).unwrap();
+            input_beef.merge_raw_tx(&parent_bytes, None).unwrap();
+            let mut ib_bytes = Vec::new();
+            input_beef.to_binary(&mut ib_bytes).unwrap();
+
+            let beef = build_beef(&child, &Some(ib_bytes)).expect("build_beef");
+            assert!(beef.find_txid(&parent.id().unwrap()).is_some());
+            assert!(beef.find_txid(&child.id().unwrap()).is_some());
+        }
+    }
 
     #[test]
     fn test_return_txid_only_controls_tx_field() {
