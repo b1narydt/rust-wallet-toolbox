@@ -160,8 +160,8 @@ mod regen {
         })
     }
 
-    fn funding_for<'a>(
-        file: &'a FundedFile,
+    fn funding_for(
+        file: &FundedFile,
         vector: &crate::funded_common::FundedVector,
     ) -> Vec<crate::funded_common::FundingPayment> {
         match file.funding_sets.get(&vector.input.funding_set) {
