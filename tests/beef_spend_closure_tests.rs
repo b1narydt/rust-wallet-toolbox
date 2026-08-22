@@ -259,4 +259,120 @@ mod beef_spend_closure {
             "error must name the txid, got: {err}"
         );
     }
+
+    /// listOutputs(include=EntireTransactions) assembly (rust-mpc#352 P2-c):
+    /// per-txid BEEFs merge through the SDK's merge_beef — bumps deduped by
+    /// (height, root), no duplicate txids — and the wire order is
+    /// dependency-sorted. Two minted tokens share their whole funding
+    /// ancestry, so the hand-rolled bump-offset concat would have emitted
+    /// duplicate bumps and relied on linear dedup.
+    #[tokio::test]
+    async fn list_outputs_entire_transactions_is_spec_clean() {
+        use bsv::wallet::interfaces::{ListOutputsArgs, OutputInclude};
+        use std::collections::HashSet as StdHashSet;
+
+        let setup = funded_wallet().await;
+
+        for i in 0..2u32 {
+            let args: CreateActionArgs = serde_json::from_value(serde_json::json!({
+                "description": format!("mint token {i}"),
+                "outputs": [{
+                    "lockingScript": "5187",
+                    "satoshis": 800 + i,
+                    "outputDescription": "listoutputs token",
+                    "basket": "regression 352"
+                }]
+            }))
+            .expect("mint args");
+            let r = setup
+                .wallet
+                .create_action(args, None)
+                .await
+                .expect("mint createAction");
+            // A delayed action rests at Unprocessed until the monitor's
+            // broadcast queue picks it up, and listOutputs only lists outputs
+            // of broadcast-eligible parents. The monitor is off in this
+            // offline harness, so stand in for TaskSendWaiting's transition.
+            let txid = r.txid.expect("mint txid");
+            let rows = setup
+                .storage
+                .find_transactions(
+                    &bsv_wallet_toolbox::storage::find_args::FindTransactionsArgs {
+                        partial: bsv_wallet_toolbox::storage::find_args::TransactionPartial {
+                            txid: Some(txid),
+                            ..Default::default()
+                        },
+                        no_raw_tx: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("find mint tx");
+            setup
+                .storage
+                .update_transaction(
+                    rows[0].transaction_id,
+                    &bsv_wallet_toolbox::storage::find_args::TransactionPartial {
+                        status: Some(bsv_wallet_toolbox::status::TransactionStatus::Sending),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("flip mint status");
+        }
+
+        let list_args: ListOutputsArgs = serde_json::from_value(serde_json::json!({
+            "basket": "regression 352",
+            "include": "entire transactions"
+        }))
+        .expect("list args");
+        assert!(matches!(
+            list_args.include,
+            Some(OutputInclude::EntireTransactions)
+        ));
+        let result = setup
+            .wallet
+            .list_outputs(list_args, None)
+            .await
+            .expect("listOutputs");
+        assert_eq!(result.outputs.len(), 2, "both tokens listed");
+
+        let beef_bytes = result.beef.expect("EntireTransactions returns beef");
+        let mut cursor = std::io::Cursor::new(&beef_bytes);
+        let beef = Beef::from_binary(&mut cursor).expect("beef parses");
+
+        // No duplicate txids.
+        let mut seen: StdHashSet<&str> = StdHashSet::new();
+        for btx in &beef.txs {
+            assert!(seen.insert(btx.txid.as_str()), "duplicate tx {}", btx.txid);
+        }
+        // No duplicate bumps: (height, root) pairs are unique.
+        let mut roots: StdHashSet<(u32, String)> = StdHashSet::new();
+        for bump in &beef.bumps {
+            let root = bump.compute_root(None).expect("root");
+            assert!(
+                roots.insert((bump.block_height, root)),
+                "duplicate bump for height {}",
+                bump.block_height
+            );
+        }
+        // Both token txs present, closure holds, and ancestors precede
+        // children on the wire.
+        for output in &result.outputs {
+            let txid = output.outpoint.split('.').next().unwrap();
+            assert!(beef.find_txid(txid).is_some(), "token tx {txid} in beef");
+        }
+        assert_closure(&beef, "listOutputs BEEF");
+        for (i, btx) in beef.txs.iter().enumerate() {
+            for input_txid in &btx.input_txids {
+                if let Some(pos) = beef.txs.iter().position(|t| &t.txid == input_txid) {
+                    assert!(
+                        pos < i,
+                        "ancestor {input_txid} serialized after dependent {}",
+                        btx.txid
+                    );
+                }
+            }
+        }
+    }
 }

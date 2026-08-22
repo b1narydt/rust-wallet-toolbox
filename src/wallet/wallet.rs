@@ -1329,7 +1329,6 @@ impl WalletInterface for Wallet {
         use bsv::transaction::beef::{Beef, BEEF_V2};
         use bsv::wallet::interfaces::OutputInclude;
         use std::collections::HashSet;
-        use std::io::Cursor;
 
         self.validate_originator(originator).map_err(to_sdk_error)?;
         bsv::wallet::validation::validate_list_outputs_args(&args)?;
@@ -1371,7 +1370,12 @@ impl WalletInterface for Wallet {
                 let known_txids: HashSet<String> = HashSet::new();
                 let storage_provider = self.storage.get_active().await.map_err(to_sdk_error)?;
 
-                // Build a single merged BEEF from all txids
+                // Build a single merged BEEF from all txids through the SDK's
+                // merge semantics (TS listOutputs merges per-txid BEEFs with
+                // Beef.mergeBeef): merge_beef dedups bumps by (height, root)
+                // and re-derives bump indices — the previous hand-rolled
+                // bump-offset concat kept duplicate bumps, and its linear
+                // txid dedup could keep a tx pointing at the wrong copy.
                 let mut merged_beef = Beef::new(BEEF_V2);
                 for txid in &unique_txids {
                     let beef_bytes_opt = crate::storage::beef::get_valid_beef_for_txid(
@@ -1384,31 +1388,20 @@ impl WalletInterface for Wallet {
                     .map_err(to_sdk_error)?;
 
                     if let Some(beef_bytes) = beef_bytes_opt {
-                        // Parse the returned BEEF and merge bumps and txs
-                        let mut cursor = Cursor::new(&beef_bytes);
-                        let parsed = Beef::from_binary(&mut cursor).map_err(|e| {
-                            to_sdk_error(crate::error::WalletError::Internal(format!(
-                                "Failed to parse BEEF for {txid}: {e}"
-                            )))
-                        })?;
-                        // Merge bumps
-                        let bump_offset = merged_beef.bumps.len();
-                        merged_beef.bumps.extend(parsed.bumps);
-                        // Merge txs, adjusting bump_index offsets
-                        for mut beef_tx in parsed.txs {
-                            if let Some(ref mut idx) = beef_tx.bump_index {
-                                *idx += bump_offset;
-                            }
-                            // Only add if not already present (dedup by txid)
-                            let tx_txid = beef_tx.txid.clone();
-                            if !merged_beef.txs.iter().any(|t| t.txid == tx_txid) {
-                                merged_beef.txs.push(beef_tx);
-                            }
-                        }
+                        merged_beef
+                            .merge_beef_from_binary(&beef_bytes)
+                            .map_err(|e| {
+                                to_sdk_error(crate::error::WalletError::Internal(format!(
+                                    "Failed to merge BEEF for {txid}: {e}"
+                                )))
+                            })?;
                     }
                 }
 
                 if !merged_beef.txs.is_empty() {
+                    // Ancestors before children on the wire (TS Beef.toBinary
+                    // sorts implicitly; the Rust SDK's does not).
+                    merged_beef.sort_txs();
                     let mut buf = Vec::new();
                     merged_beef.to_binary(&mut buf).map_err(|e| {
                         to_sdk_error(crate::error::WalletError::Internal(format!(
