@@ -135,8 +135,12 @@ pub async fn signer_sign_action(
     // updates here, transactions stay stuck as unprocessed and outputs remain
     // invisible to balance/UTXO queries.
     if !is_no_send && !is_delayed {
+        // The network gets the plain sorted broadcast copy (TS ARC.ts posts
+        // plain BEEF); `beef_bytes` — the Atomic frame — is the caller's
+        // return shape only.
+        let broadcast_bytes = super::create_action::serialize_beef_for_broadcast(&beef)?;
         let post_results = services
-            .post_beef(&beef_bytes, std::slice::from_ref(&txid))
+            .post_beef(&broadcast_bytes, std::slice::from_ref(&txid))
             .await;
 
         let outcome = crate::signer::broadcast_outcome::classify_broadcast_results(&post_results);

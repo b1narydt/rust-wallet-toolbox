@@ -347,8 +347,12 @@ pub async fn signer_create_action(
     // for the non-delayed case). Without this update, outputs remain
     // invisible to the balance query and UTXO selection.
     if !args.is_no_send && !args.is_delayed {
+        // The network gets the plain sorted broadcast copy (TS ARC.ts posts
+        // plain BEEF); `beef_bytes` — the Atomic frame — is the caller's
+        // return shape only.
+        let broadcast_bytes = serialize_beef_for_broadcast(&beef)?;
         let post_results = services
-            .post_beef(&beef_bytes, std::slice::from_ref(&txid))
+            .post_beef(&broadcast_bytes, std::slice::from_ref(&txid))
             .await;
 
         let outcome = crate::signer::broadcast_outcome::classify_broadcast_results(&post_results);
@@ -630,6 +634,24 @@ pub fn serialize_beef_atomic(beef: &Beef, txid: &str) -> WalletResult<Vec<u8>> {
     atomic
         .to_binary(&mut buf)
         .map_err(|e| WalletError::Internal(format!("Failed to serialize Atomic BEEF: {e}")))?;
+    Ok(buf)
+}
+
+/// Serialize the BROADCAST copy of a Beef: plain (never Atomic-framed),
+/// dependency-sorted BEEF.
+///
+/// TS counterpart: ARC.ts `postBeef` posts a plain sorted BEEF (TS
+/// `Beef.toBinary` sorts implicitly) — the Atomic frame is a client-return
+/// shape, not a network shape. The signer's RESULT stays Atomic; only the
+/// copy handed to `services.post_beef` uses this.
+pub(crate) fn serialize_beef_for_broadcast(beef: &Beef) -> WalletResult<Vec<u8>> {
+    let mut plain = beef.clone();
+    plain.atomic_txid = None;
+    plain.sort_txs();
+    let mut buf = Vec::new();
+    plain
+        .to_binary(&mut buf)
+        .map_err(|e| WalletError::Internal(format!("Failed to serialize broadcast BEEF: {e}")))?;
     Ok(buf)
 }
 
