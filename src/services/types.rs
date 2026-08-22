@@ -546,6 +546,12 @@ impl Default for ArcConfig {
 pub struct ServicesConfig {
     /// Which BSV chain to use.
     pub chain: Chain,
+    /// Arcade broadcaster URL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arcade_url: Option<String>,
+    /// Arcade broadcaster configuration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arcade_config: Option<ArcConfig>,
     /// TAAL ARC service URL.
     pub arc_url: String,
     /// TAAL ARC configuration.
@@ -606,6 +612,8 @@ impl From<Chain> for ServicesConfig {
 
         Self {
             chain,
+            arcade_url: None,
+            arcade_config: None,
             arc_url,
             arc_config: ArcConfig::default(),
             arc_gorilla_pool_url: gorilla_pool_url,

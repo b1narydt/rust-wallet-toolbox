@@ -6,6 +6,7 @@
 
 pub mod arc;
 pub mod arc_sse_client;
+pub mod arcade;
 pub mod bitails;
 pub mod exchange_rates;
 pub mod whats_on_chain;
@@ -13,6 +14,7 @@ pub mod whats_on_chain;
 // Re-exports
 pub use arc::ArcProvider;
 pub use arc_sse_client::ArcSseClient;
+pub use arcade::ArcadeProvider;
 pub use bitails::Bitails;
 pub use exchange_rates::{
     fetch_bsv_exchange_rate, fetch_fiat_exchange_rate, fetch_fiat_exchange_rates,

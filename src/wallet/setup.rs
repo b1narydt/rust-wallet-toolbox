@@ -615,9 +615,13 @@ impl WalletBuilder {
         let services: Option<Arc<dyn WalletServices>> = if let Some(svc) = self.services {
             Some(svc)
         } else if self.use_default_services {
-            Some(Arc::new(crate::services::services::Services::from_chain(
-                chain.clone(),
-            )))
+            Some(Arc::new(
+                crate::services::services::Services::from_chain_with_arcade(
+                    chain.clone(),
+                    self.arcade_url.clone(),
+                    self.arcade_callback_token.clone(),
+                ),
+            ))
         } else {
             None
         };
