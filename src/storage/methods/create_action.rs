@@ -93,16 +93,22 @@ fn repeatable_random(random_vals: Option<&[f64]>) -> impl FnMut() -> f64 + '_ {
 /// Only the vout VALUES move — the output array keeps its order (caller
 /// outputs, then change), which is what lets the signer match storage's
 /// `outputs[i]` to `args.outputs[i]` (GHSA-36f9-7rg5-cpf8).
-fn randomized_vouts(len: usize, random_vals: Option<&[f64]>) -> Vec<u32> {
+fn randomized_vouts(len: usize, random_vals: Option<&[f64]>) -> WalletResult<Vec<u32>> {
+    if random_vals.is_some_and(|values| values.iter().any(|value| !(0.0..1.0).contains(value))) {
+        return Err(WalletError::InvalidParameter {
+            parameter: "randomVals".to_string(),
+            must_be: "values in the range [0, 1)".to_string(),
+        });
+    }
     let mut next_random = repeatable_random(random_vals);
     let mut vouts: Vec<u32> = (0..len as u32).collect();
     for current in (1..=len).rev() {
-        // A supplied value of exactly 1.0 would index out of bounds; TS's
-        // Math.floor has the same hazard and its callers never supply one.
-        let random_index = ((next_random() * current as f64).floor() as usize).min(current - 1);
+        // Production entropy and validated injected values are both in [0, 1),
+        // which makes the Fisher-Yates index calculation safe without a clamp.
+        let random_index = (next_random() * current as f64).floor() as usize;
         vouts.swap(current - 1, random_index);
     }
-    vouts
+    Ok(vouts)
 }
 
 /// Create a new transaction in storage.
@@ -778,7 +784,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
     // layers and never acted on, so change was always the trailing vout — the
     // standing privacy leak the option exists to close.
     if args.options.randomize_outputs.0.unwrap_or(true) && pending.len() > 1 {
-        let vouts = randomized_vouts(pending.len(), args.random_vals.as_deref());
+        let vouts = randomized_vouts(pending.len(), args.random_vals.as_deref())?;
         for (index, p) in pending.iter_mut().enumerate() {
             p.row.vout = vouts[index] as i32;
             p.record.vout = vouts[index];
@@ -1265,7 +1271,7 @@ mod tests {
     #[test]
     fn randomized_vouts_is_always_a_permutation() {
         for len in 1..12usize {
-            let vouts = randomized_vouts(len, None);
+            let vouts = randomized_vouts(len, None).unwrap();
             let mut sorted = vouts.clone();
             sorted.sort_unstable();
             assert_eq!(
@@ -1283,18 +1289,31 @@ mod tests {
     /// the same action.
     #[test]
     fn randomized_vouts_matches_the_ts_shuffle() {
-        assert_eq!(randomized_vouts(4, Some(&[0.0])), vec![1, 2, 3, 0]);
+        assert_eq!(randomized_vouts(4, Some(&[0.0])).unwrap(), vec![1, 2, 3, 0]);
         assert_eq!(
-            randomized_vouts(6, Some(&[0.999_999])),
+            randomized_vouts(6, Some(&[0.999_999])).unwrap(),
             vec![0, 1, 2, 3, 4, 5],
             "a value just under 1 always selects current-1, so every swap is a no-op"
         );
-        assert_eq!(randomized_vouts(5, Some(&[0.5])), vec![0, 3, 1, 4, 2]);
         assert_eq!(
-            randomized_vouts(3, Some(&[0.1, 0.9])),
+            randomized_vouts(5, Some(&[0.5])).unwrap(),
+            vec![0, 3, 1, 4, 2]
+        );
+        assert_eq!(
+            randomized_vouts(3, Some(&[0.1, 0.9])).unwrap(),
             vec![2, 1, 0],
             "supplied values cycle rather than being consumed"
         );
+    }
+
+    #[test]
+    fn randomized_vouts_rejects_injected_values_outside_the_entropy_range() {
+        let err = randomized_vouts(2, Some(&[1.0])).unwrap_err();
+        assert!(matches!(
+            err,
+            WalletError::InvalidParameter { parameter, must_be }
+                if parameter == "randomVals" && must_be.contains("[0, 1)")
+        ));
     }
 
     #[tokio::test]
