@@ -848,11 +848,9 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         // status left a still-signable action whose inputs the funder had
         // already re-lent — the wallet double-spending its own change.
         //
-        // TS wraps the identical sequence in `this.transaction`
-        // (StorageProvider.abortAction). Note TS 2.10.2 additionally refuses
-        // to abort a signed `nosend` action that has since reached the chain
-        // ('abortAction-skipped-onchain'); that guard needs a services lookup
-        // and is tracked separately, not silently half-ported here.
+        // TS also checks the network before aborting a signed `nosend` action.
+        // This provider has no services argument, so it preserves offline abort
+        // semantics and cannot return the TS `abortAction-skipped-onchain` result.
         let trx = StorageReaderWriter::begin_transaction(self).await?;
         let result = crate::storage::methods::abort_action::abort_action(
             self,

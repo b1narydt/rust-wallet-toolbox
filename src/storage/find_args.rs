@@ -449,6 +449,8 @@ pub struct ProvenTxReqPartial {
     /// `attemptToPostReqsToNetwork` flow where a ServiceError bumps
     /// `req.attempts` in the same update as the status transition.
     pub attempts: Option<i32>,
+    /// JSON-encoded processing history (update target only).
+    pub history: Option<String>,
     /// When used as an update target, the row's `updated_at` timestamp to
     /// write. `None` leaves the auto-touch behavior: the update stamps the
     /// current time. Sync merges pass the source row's timestamp through so

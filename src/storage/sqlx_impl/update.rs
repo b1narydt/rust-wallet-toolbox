@@ -557,6 +557,10 @@ mod sqlite_impl {
                 sets.push("attempts = ?");
                 binds.push(BindVal::Int64(*v as i64));
             }
+            if let Some(v) = &update.history {
+                sets.push("history = ?");
+                binds.push(BindVal::String(v.clone()));
+            }
             match &update.updated_at {
                 Some(v) => {
                     sets.push("updated_at = ?");
@@ -1151,6 +1155,7 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.batch { idx += 1; sets.push(format!("batch = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     if let Some(v) = &update.notified { idx += 1; sets.push(format!("notified = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
                     if let Some(v) = &update.attempts { idx += 1; sets.push(format!("attempts = {}", ph(idx))); binds.push(BindVal::Int64(*v as i64)); }
+                    if let Some(v) = &update.history { idx += 1; sets.push(format!("history = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;

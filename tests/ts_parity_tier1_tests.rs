@@ -300,7 +300,14 @@ async fn abort_restores_inputs_and_fails_the_action() {
     let reference_bytes = b"tier1-abort".to_vec();
     let reference = base64_encode(&reference_bytes);
     let tx_id = seed_tx(&s, user_id, &reference, TransactionStatus::Unsigned).await;
-    let output_id = seed_consumed_output(&s, user_id, tx_id).await;
+    let source_tx_id = seed_tx(
+        &s,
+        user_id,
+        "tier1-abort-source",
+        TransactionStatus::Completed,
+    )
+    .await;
+    let output_id = seed_output(&s, user_id, source_tx_id, 0, false, Some(tx_id)).await;
 
     let auth = AuthId {
         identity_key: IDENTITY.to_string(),
@@ -347,7 +354,14 @@ async fn abort_writes_are_confined_to_its_transaction() {
     let reference_bytes = b"tier1-rollback".to_vec();
     let reference = base64_encode(&reference_bytes);
     let tx_id = seed_tx(&s, user_id, &reference, TransactionStatus::Unsigned).await;
-    let output_id = seed_consumed_output(&s, user_id, tx_id).await;
+    let source_tx_id = seed_tx(
+        &s,
+        user_id,
+        "tier1-rollback-source",
+        TransactionStatus::Completed,
+    )
+    .await;
+    let output_id = seed_output(&s, user_id, source_tx_id, 0, false, Some(tx_id)).await;
 
     let trx = StorageReaderWriter::begin_transaction(&s).await.unwrap();
     bsv_wallet_toolbox::storage::methods::abort_action::abort_action(
@@ -373,6 +387,142 @@ async fn abort_writes_are_confined_to_its_transaction() {
         tx_by_id(&s, tx_id).await.status,
         TransactionStatus::Unsigned,
         "a rolled-back abort must not fail the action"
+    );
+}
+
+#[tokio::test]
+async fn abort_signed_nosend_recovers_raw_inputs_and_invalidates_its_request() {
+    let s = storage().await.unwrap();
+    let user_id = seed_user(&s).await;
+    let source_txid = "11".repeat(32);
+    let action_txid = "22".repeat(32);
+
+    let source_tx_id = seed_tx(&s, user_id, "abort-source", TransactionStatus::Completed).await;
+    let source_output_id = seed_output(&s, user_id, source_tx_id, 0, false, None).await;
+    StorageReaderWriter::update_output(
+        &s,
+        source_output_id,
+        &OutputPartial {
+            txid: Some(source_txid.clone()),
+            ..Default::default()
+        },
+        None,
+    )
+    .await
+    .unwrap();
+
+    let mut signed = bsv::transaction::transaction::Transaction::new();
+    signed
+        .inputs
+        .push(bsv::transaction::transaction_input::TransactionInput {
+            source_transaction: None,
+            source_txid: Some(source_txid),
+            source_output_index: 0,
+            unlocking_script: None,
+            sequence: u32::MAX,
+        });
+    signed
+        .outputs
+        .push(bsv::transaction::transaction_output::TransactionOutput {
+            satoshis: Some(1000),
+            ..Default::default()
+        });
+    let raw_tx = signed.to_bytes().unwrap();
+
+    let action_tx_id = seed_tx(
+        &s,
+        user_id,
+        "stored-reference-is-not-the-txid",
+        TransactionStatus::Nosend,
+    )
+    .await;
+    StorageReaderWriter::update_transaction(
+        &s,
+        action_tx_id,
+        &TransactionPartial {
+            txid: Some(action_txid.clone()),
+            raw_tx: Some(raw_tx.clone()),
+            ..Default::default()
+        },
+        None,
+    )
+    .await
+    .unwrap();
+    let created_output_id = seed_output(&s, user_id, action_tx_id, 0, true, None).await;
+
+    let now = long_ago();
+    let req_id = StorageReaderWriter::insert_proven_tx_req(
+        &s,
+        &ProvenTxReq {
+            created_at: now,
+            updated_at: now,
+            proven_tx_req_id: 0,
+            proven_tx_id: None,
+            status: bsv_wallet_toolbox::status::ProvenTxReqStatus::Nosend,
+            attempts: 0,
+            notified: false,
+            txid: action_txid.clone(),
+            batch: None,
+            history: "{}".to_string(),
+            notify: "{}".to_string(),
+            raw_tx,
+            input_beef: None,
+        },
+        None,
+    )
+    .await
+    .unwrap();
+
+    let auth = AuthId {
+        identity_key: IDENTITY.to_string(),
+        user_id: Some(user_id),
+        is_active: Some(true),
+    };
+    let result = WalletStorageProvider::abort_action(
+        &s,
+        &auth,
+        &AbortActionArgs {
+            reference: action_txid.as_bytes().to_vec(),
+        },
+    )
+    .await
+    .expect("a 64-character txid identifies an abortable action");
+    assert!(result.aborted);
+
+    let source = output_by_id(&s, source_output_id).await;
+    assert!(
+        source.spendable && source.spent_by.is_none(),
+        "rawTx recovers a wallet input even when spentBy was not persisted"
+    );
+    let created = output_by_id(&s, created_output_id).await;
+    assert!(
+        !created.spendable && created.spent_by.is_none(),
+        "outputs created by the aborted transaction are retired"
+    );
+    let req = StorageReader::find_proven_tx_reqs(
+        &s,
+        &FindProvenTxReqsArgs {
+            partial: ProvenTxReqPartial {
+                proven_tx_req_id: Some(req_id),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        None,
+    )
+    .await
+    .unwrap()
+    .into_iter()
+    .next()
+    .unwrap();
+    assert_eq!(
+        req.status,
+        bsv_wallet_toolbox::status::ProvenTxReqStatus::Invalid
+    );
+    assert!(req.history.contains("abortAction"));
+    assert_eq!(
+        tx_by_id(&s, action_tx_id).await.status,
+        TransactionStatus::Failed
     );
 }
 
