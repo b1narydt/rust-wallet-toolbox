@@ -247,6 +247,10 @@ impl WalletSettingsManager {
     }
 
     /// Clear the cached settings, forcing a fresh read on next `get()`.
+    ///
+    /// Consumers must call this after changing `wallet_settings_json` directly
+    /// through the underlying storage provider. Normal [`Self::set`] calls
+    /// refresh the cache themselves and do not require invalidation.
     pub async fn invalidate_cache(&self) {
         let mut cache = self.cache.lock().await;
         *cache = None;
@@ -256,6 +260,15 @@ impl WalletSettingsManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "sqlite")]
+    use crate::storage::sqlx_impl::SqliteStorage;
+    #[cfg(feature = "sqlite")]
+    use crate::storage::traits::provider::StorageProvider;
+    #[cfg(feature = "sqlite")]
+    use crate::storage::StorageConfig;
+    #[cfg(feature = "sqlite")]
+    use crate::types::Chain;
 
     #[test]
     fn test_default_settings_has_two_certifiers() {
@@ -272,6 +285,61 @@ mod tests {
         assert_eq!(
             deserialized.trust_settings.trusted_certifiers.len(),
             settings.trust_settings.trusted_certifiers.len()
+        );
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[tokio::test]
+    async fn test_invalidate_cache_reloads_out_of_band_storage_change() {
+        let storage = Arc::new(
+            SqliteStorage::new_sqlite(
+                StorageConfig {
+                    url: "sqlite::memory:".to_string(),
+                    ..Default::default()
+                },
+                Chain::Test,
+            )
+            .await
+            .unwrap(),
+        );
+        StorageProvider::make_available(storage.as_ref())
+            .await
+            .unwrap();
+
+        let provider: Arc<dyn WalletStorageProvider> = storage;
+        let manager = WalletSettingsManager::new(provider.clone());
+
+        let mut cached_settings = default_settings();
+        cached_settings.currency = Some("USD".to_string());
+        manager.set(cached_settings).await.unwrap();
+        assert_eq!(
+            manager.get().await.unwrap().currency.as_deref(),
+            Some("USD")
+        );
+
+        let mut externally_written_settings = default_settings();
+        externally_written_settings.currency = Some("EUR".to_string());
+        provider
+            .update_settings_storage(&SettingsPartial {
+                wallet_settings_json: Some(
+                    serde_json::to_string(&externally_written_settings).unwrap(),
+                ),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(
+            manager.get().await.unwrap().currency.as_deref(),
+            Some("USD"),
+            "a fresh cache remains authoritative until explicitly invalidated"
+        );
+
+        manager.invalidate_cache().await;
+        assert_eq!(
+            manager.get().await.unwrap().currency.as_deref(),
+            Some("EUR"),
+            "invalidation forces the next get to observe underlying storage"
         );
     }
 }
