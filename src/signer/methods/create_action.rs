@@ -59,15 +59,17 @@ pub(crate) fn to_storage_args(args: &ValidCreateActionArgs) -> StorageCreateActi
         sign_and_process: BooleanDefaultTrue(opts.sign_and_process.0),
         accept_delayed_broadcast: BooleanDefaultTrue(opts.accept_delayed_broadcast.0),
         trust_self: opts.trust_self.as_ref().map(|ts| ts.as_str().to_string()),
-        known_txids: opts.known_txids.clone(),
+        known_txids: opts.known_txids.clone().unwrap_or_default(),
         return_txid_only: BooleanDefaultFalse(opts.return_txid_only.0),
         no_send: BooleanDefaultFalse(opts.no_send.0),
         no_send_change: opts
             .no_send_change
+            .as_deref()
+            .unwrap_or(&[])
             .iter()
             .map(|s| parse_outpoint_string(s))
             .collect(),
-        send_with: opts.send_with.clone(),
+        send_with: opts.send_with.clone().unwrap_or_default(),
         randomize_outputs: BooleanDefaultTrue(opts.randomize_outputs.0),
     };
 
@@ -105,7 +107,7 @@ pub(crate) fn to_storage_args(args: &ValidCreateActionArgs) -> StorageCreateActi
                     output_description: o.output_description.clone(),
                     basket: o.basket.clone(),
                     custom_instructions: o.custom_instructions.clone(),
-                    tags: o.tags.clone(),
+                    tags: o.tags.clone().unwrap_or_default(),
                 }
             })
             .collect(),
@@ -326,7 +328,7 @@ pub async fn signer_create_action(
         txid: Some(txid.clone()),
         raw_tx: Some(signed_tx_bytes),
         send_with: if args.is_send_with {
-            args.options.send_with.clone()
+            args.options.send_with.clone().unwrap_or_default()
         } else {
             vec![]
         },
@@ -737,7 +739,8 @@ mod tests {
                 satoshis: Some(satoshis),
                 locking_script: LockingScript::from_binary(&[0x51]),
                 change: false,
-            });
+            })
+            .expect("test output has a value");
             tx
         }
 
@@ -756,7 +759,8 @@ mod tests {
                 satoshis: Some(1),
                 locking_script: LockingScript::from_binary(&[0x51]),
                 change: false,
-            });
+            })
+            .expect("test output has a value");
             tx
         }
 
@@ -816,12 +820,14 @@ mod tests {
                 satoshis: Some(2),
                 locking_script: LockingScript::from_binary(&[0x51]),
                 change: false,
-            });
+            })
+            .expect("stub output has a value");
             stub.add_output(TransactionOutput {
                 satoshis: Some(0),
                 locking_script: LockingScript::from_binary(&[]),
                 change: false,
-            });
+            })
+            .expect("stub padding output has a value");
             child.inputs[0].source_transaction = Some(Box::new(stub.clone()));
             let parent_txid = parent.id().unwrap();
             assert_ne!(stub.id().unwrap(), parent_txid);

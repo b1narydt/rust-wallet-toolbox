@@ -1108,20 +1108,24 @@ mod tests {
         let mut parent = BsvTransaction::new();
         parent.version = 1;
         parent.lock_time = 0;
-        parent.add_input(TransactionInput {
-            source_transaction: None,
-            source_txid: Some("b".repeat(64)),
-            source_output_index: 0,
-            unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
-            sequence: 0xFFFFFFFF,
-        });
+        parent
+            .add_input(TransactionInput {
+                source_transaction: None,
+                source_txid: Some("b".repeat(64)),
+                source_output_index: 0,
+                unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
+                sequence: 0xFFFFFFFF,
+            })
+            .expect("parent input has a source txid");
         let pscript =
             LockingScript::from_hex("76a914ffffffffffffffffffffffffffffffffffffffff88ac").unwrap();
-        parent.add_output(TransactionOutput {
-            satoshis: Some(5000),
-            locking_script: pscript,
-            change: false,
-        });
+        parent
+            .add_output(TransactionOutput {
+                satoshis: Some(5000),
+                locking_script: pscript,
+                change: false,
+            })
+            .expect("parent output has a value");
         let parent_txid = parent.id().expect("compute parent txid");
 
         // Single-tx-block BUMP proving the parent (computeRoot returns the txid).
@@ -1137,27 +1141,33 @@ mod tests {
         let mut child = BsvTransaction::new();
         child.version = 1;
         child.lock_time = 0;
-        child.add_input(TransactionInput {
-            source_transaction: None,
-            source_txid: Some(parent_txid.clone()),
-            source_output_index: 0,
-            unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
-            sequence: 0xFFFFFFFF,
-        });
+        child
+            .add_input(TransactionInput {
+                source_transaction: None,
+                source_txid: Some(parent_txid.clone()),
+                source_output_index: 0,
+                unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
+                sequence: 0xFFFFFFFF,
+            })
+            .expect("child input has a source txid");
         let script1 =
             LockingScript::from_hex("76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac").unwrap();
-        child.add_output(TransactionOutput {
-            satoshis: Some(1000),
-            locking_script: script1,
-            change: false,
-        });
+        child
+            .add_output(TransactionOutput {
+                satoshis: Some(1000),
+                locking_script: script1,
+                change: false,
+            })
+            .expect("child output has a value");
         let script2 =
             LockingScript::from_hex("76a91400112233445566778899aabbccddeeff0011223388ac").unwrap();
-        child.add_output(TransactionOutput {
-            satoshis: Some(2000),
-            locking_script: script2,
-            change: false,
-        });
+        child
+            .add_output(TransactionOutput {
+                satoshis: Some(2000),
+                locking_script: script2,
+                change: false,
+            })
+            .expect("child output has a value");
         let child_txid = child.id().expect("compute child txid");
 
         // Assemble: bump + proven parent (bump_index 0) + unproven child.
@@ -1477,14 +1487,16 @@ mod tests {
             source_output_index: 0,
             unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
             sequence: 0xFFFFFFFF,
-        });
+        })
+        .expect("dangling fixture still names a source txid");
         let script =
             LockingScript::from_hex("76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac").unwrap();
         tx.add_output(TransactionOutput {
             satoshis: Some(1000),
             locking_script: script,
             change: false,
-        });
+        })
+        .expect("dangling fixture output has a value");
         let txid = tx.id().expect("compute txid");
 
         // No bumps: the transaction is unproven and its input is dangling.
@@ -1634,7 +1646,8 @@ mod tests {
             satoshis: Some(sats),
             locking_script: LockingScript::from_binary(&[0x51]),
             change: false,
-        });
+        })
+        .expect("test output has a value");
         tx
     }
 
@@ -1693,11 +1706,13 @@ mod tests {
             unlocking_script: Some(bsv::script::UnlockingScript::from_binary(&[0x51])),
             sequence: 0xffffffff,
         });
-        child.add_output(TransactionOutput {
-            satoshis: Some(100),
-            locking_script: LockingScript::from_binary(&[0x51]),
-            change: false,
-        });
+        child
+            .add_output(TransactionOutput {
+                satoshis: Some(100),
+                locking_script: LockingScript::from_binary(&[0x51]),
+                change: false,
+            })
+            .expect("child output has a value");
         let child_txid = child.id().unwrap();
         let mut beef = Beef::new(bsv::transaction::beef::BEEF_V2);
         beef.txs

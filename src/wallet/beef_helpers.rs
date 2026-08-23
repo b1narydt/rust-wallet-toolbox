@@ -214,7 +214,8 @@ mod tests {
             satoshis: Some(sats),
             locking_script: LockingScript::from_binary(&[0x51]),
             change: false,
-        });
+        })
+        .expect("test output has a value");
         tx
     }
 

@@ -119,17 +119,21 @@ pub async fn complete_signed_transaction(
         let mut source_tx = Transaction::new();
         // Pad outputs up to source_output_index
         for _ in 0..tx.inputs[vin].source_output_index {
-            source_tx.add_output(TransactionOutput {
-                satoshis: Some(0),
-                locking_script: LockingScript::from_binary(&[]),
-                change: false,
-            });
+            source_tx
+                .add_output(TransactionOutput {
+                    satoshis: Some(0),
+                    locking_script: LockingScript::from_binary(&[]),
+                    change: false,
+                })
+                .map_err(|e| WalletError::Internal(format!("Failed to pad source output: {e}")))?;
         }
-        source_tx.add_output(TransactionOutput {
-            satoshis: Some(pdi.source_satoshis),
-            locking_script: source_locking_script.clone(),
-            change: false,
-        });
+        source_tx
+            .add_output(TransactionOutput {
+                satoshis: Some(pdi.source_satoshis),
+                locking_script: source_locking_script.clone(),
+                change: false,
+            })
+            .map_err(|e| WalletError::Internal(format!("Failed to add source output: {e}")))?;
         tx.inputs[vin].source_transaction = Some(Box::new(source_tx));
 
         // Sign this input using the P2PKH template.
@@ -182,7 +186,8 @@ mod tests {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0xac,
             ]),
             change: false,
-        });
+        })
+        .expect("test output has a value");
 
         let result =
             complete_signed_transaction(&mut tx, &[], &HashMap::new(), &key_deriver, &pub_key)
@@ -220,7 +225,8 @@ mod tests {
             source_output_index: 0,
             unlocking_script: Some(UnlockingScript::from_binary(&[])),
             sequence: 0xFFFFFFFF,
-        });
+        })
+        .expect("test input has a source txid");
 
         // Add an output
         use bsv::transaction::transaction_output::TransactionOutput;
@@ -231,7 +237,8 @@ mod tests {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0xac,
             ]),
             change: false,
-        });
+        })
+        .expect("test output has a value");
 
         let pdi = vec![PendingStorageInput {
             vin: 0,

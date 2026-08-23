@@ -474,18 +474,18 @@ impl Wallet {
                 CreateActionArgs {
                     description: "sweep".to_string(),
                     input_beef: None,
-                    inputs: vec![],
-                    outputs: vec![bsv::wallet::interfaces::CreateActionOutput {
+                    inputs: None,
+                    outputs: Some(vec![bsv::wallet::interfaces::CreateActionOutput {
                         locking_script: Some(lock_script),
                         satoshis: MAX_POSSIBLE_SATOSHIS,
                         output_description: "sweep".to_string(),
                         basket: None,
                         custom_instructions: Some(custom_instructions),
-                        tags: vec!["relinquish".to_string()],
-                    }],
+                        tags: Some(vec!["relinquish".to_string()]),
+                    }]),
                     lock_time: None,
                     version: None,
-                    labels: vec!["sweep".to_string()],
+                    labels: Some(vec!["sweep".to_string()]),
                     options: Some(CreateActionOptions {
                         randomize_outputs: bsv::wallet::types::BooleanDefaultTrue(Some(false)),
                         accept_delayed_broadcast: bsv::wallet::types::BooleanDefaultTrue(Some(
@@ -510,7 +510,7 @@ impl Wallet {
                 InternalizeActionArgs {
                     tx,
                     description: "sweep".to_string(),
-                    labels: vec!["sweep".to_string()],
+                    labels: Some(vec!["sweep".to_string()]),
                     seek_permission: bsv::wallet::types::BooleanDefaultTrue(Some(false)),
                     outputs: vec![bsv::wallet::interfaces::InternalizeOutput::WalletPayment {
                         output_index: 0,
@@ -1074,7 +1074,7 @@ impl WalletInterface for Wallet {
                 .await
                 .map_err(to_sdk_error)?;
             let sig = Signature::from_der(&args.signature)?;
-            if !ecdsa_verify(&digest, &sig, derived_pub.point()) {
+            if !ecdsa_verify(&digest, &sig, derived_pub.point())? {
                 return Err(SdkWalletError::InvalidSignature);
             }
             return Ok(VerifySignatureResult { valid: true });
@@ -1249,7 +1249,7 @@ impl WalletInterface for Wallet {
         bsv::wallet::validation::validate_internalize_action_args(&args)?;
 
         // Check specOp throw review actions label
-        for label in &args.labels {
+        for label in args.labels.as_deref().unwrap_or(&[]) {
             if crate::wallet::types::is_spec_op_throw_label(label) {
                 return Err(SdkWalletError::Internal(
                     "WERR_REVIEW_ACTIONS: internalizeAction specOp throw review actions"
@@ -1262,7 +1262,7 @@ impl WalletInterface for Wallet {
         let valid_args = crate::signer::types::ValidInternalizeActionArgs {
             tx: args.tx,
             description: args.description,
-            labels: args.labels,
+            labels: args.labels.unwrap_or_default(),
             outputs: args.outputs,
         };
 
@@ -1327,7 +1327,7 @@ impl WalletInterface for Wallet {
 
         // Strip customInstructions from outputs (security policy)
         for action in &mut result.actions {
-            for output in &mut action.outputs {
+            for output in action.outputs.as_deref_mut().unwrap_or(&mut []) {
                 output.custom_instructions = None;
             }
         }
@@ -1648,9 +1648,9 @@ impl ContextualWallet for Wallet {
             let mut beef_lock = self.beef.lock().await;
             let known = crate::wallet::beef_helpers::get_known_txids(
                 &mut beef_lock,
-                Some(&options.known_txids),
+                options.known_txids.as_deref(),
             );
-            options.known_txids = known;
+            options.known_txids = (!known.is_empty()).then_some(known);
         }
 
         // Build validated args for signer
@@ -1662,6 +1662,8 @@ impl ContextualWallet for Wallet {
             description: args.description,
             inputs: args
                 .inputs
+                .as_deref()
+                .unwrap_or(&[])
                 .iter()
                 .map(|input| {
                     let parts: Vec<&str> = input.outpoint.rsplitn(2, '.').collect();
@@ -1683,17 +1685,17 @@ impl ContextualWallet for Wallet {
                     }
                 })
                 .collect(),
-            outputs: args.outputs,
+            outputs: args.outputs.unwrap_or_default(),
             lock_time: args.lock_time.unwrap_or(0),
             version: args.version.unwrap_or(1),
-            labels: args.labels,
+            labels: args.labels.unwrap_or_default(),
             options: options.clone(),
             input_beef: args.input_beef,
             is_new_tx: true,
             is_sign_action: !sign_and_process,
             is_no_send: no_send,
             is_delayed: accept_delayed,
-            is_send_with: !options.send_with.is_empty(),
+            is_send_with: !options.send_with.as_deref().unwrap_or(&[]).is_empty(),
         };
 
         let signer_result = self
@@ -1706,8 +1708,10 @@ impl ContextualWallet for Wallet {
         let mut result = CreateActionResult {
             txid: signer_result.txid,
             tx: signer_result.tx,
-            no_send_change: signer_result.no_send_change,
-            send_with_results: signer_result.send_with_results,
+            no_send_change: (!signer_result.no_send_change.is_empty())
+                .then_some(signer_result.no_send_change),
+            send_with_results: (!signer_result.send_with_results.is_empty())
+                .then_some(signer_result.send_with_results),
             signable_transaction: match signer_result.signable_transaction {
                 Some(st) => {
                     // The SDK's `SignableTransaction.reference` is RAW bytes
@@ -1825,7 +1829,7 @@ impl ContextualWallet for Wallet {
                 // `=false` suppressed the broadcast — exactly inverted. The
                 // createAction path above always mapped it straight.
                 opts.accept_delayed_broadcast.0,
-                if opts.send_with.is_empty() {
+                if opts.send_with.as_deref().unwrap_or(&[]).is_empty() {
                     None
                 } else {
                     Some(true)
@@ -1853,7 +1857,8 @@ impl ContextualWallet for Wallet {
         let mut result = SignActionResult {
             txid: signer_result.txid,
             tx: signer_result.tx,
-            send_with_results: signer_result.send_with_results,
+            send_with_results: (!signer_result.send_with_results.is_empty())
+                .then_some(signer_result.send_with_results),
         };
 
         // Verify returned txid-only if applicable

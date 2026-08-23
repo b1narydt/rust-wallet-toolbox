@@ -785,7 +785,7 @@ pub fn create_p2pkh_outputs(
             output_description: format!("p2pkh {i}"),
             basket: None,
             custom_instructions: None,
-            tags: vec![],
+            tags: None,
         });
     }
 
@@ -809,11 +809,11 @@ pub async fn create_p2pkh_outputs_action(
         .create_action(
             CreateActionArgs {
                 description: description.to_string(),
-                inputs: vec![],
-                outputs,
+                inputs: None,
+                outputs: (!outputs.is_empty()).then_some(outputs),
                 lock_time: None,
                 version: None,
-                labels: vec![],
+                labels: None,
                 options: None,
                 input_beef: None,
                 reference: None,

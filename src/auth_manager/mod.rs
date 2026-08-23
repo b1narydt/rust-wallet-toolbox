@@ -351,16 +351,16 @@ impl WalletAuthenticationManager {
         // Create action with faucet UTXO as input
         let create_args = CreateActionArgs {
             input_beef: Some(tx_bytes),
-            inputs: vec![bsv::wallet::interfaces::CreateActionInput {
+            inputs: Some(vec![bsv::wallet::interfaces::CreateActionInput {
                 outpoint: format!("{txid}.0"),
                 unlocking_script_length: Some(108),
                 input_description: "Fund from faucet".to_string(),
                 unlocking_script: None,
                 sequence_number: None,
-            }],
+            }]),
             description: "Fund wallet".to_string(),
-            outputs: vec![],
-            labels: vec![],
+            outputs: None,
+            labels: None,
             lock_time: None,
             version: None,
             options: Some(bsv::wallet::interfaces::CreateActionOptions {
@@ -1010,9 +1010,9 @@ mod tests {
             .create_action(
                 CreateActionArgs {
                     description: "test action".to_string(),
-                    inputs: vec![],
-                    outputs: vec![],
-                    labels: vec![],
+                    inputs: None,
+                    outputs: None,
+                    labels: None,
                     lock_time: None,
                     version: None,
                     options: None,

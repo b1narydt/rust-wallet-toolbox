@@ -1642,7 +1642,8 @@ mod tests {
             source_output_index: 0,
             unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
             sequence: 0xFFFFFFFF,
-        });
+        })
+        .expect("fixture input has a source txid");
 
         // Pad with earlier outputs so the target lands at `vout`.
         for _ in 0..vout {
@@ -1653,13 +1654,15 @@ mod tests {
                 )
                 .unwrap(),
                 change: false,
-            });
+            })
+            .expect("padding output has a value");
         }
         tx.add_output(TransactionOutput {
             satoshis: Some(satoshis),
             locking_script: LockingScript::from_hex(locking_script_hex).unwrap(),
             change: false,
-        });
+        })
+        .expect("fixture output has a value");
 
         let txid = tx.id().expect("compute txid");
         let beef_tx = BeefTx::from_tx(tx, None).expect("create beef tx");

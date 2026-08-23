@@ -16,6 +16,8 @@ use bsv::wallet::interfaces::{
 pub fn throw_if_any_unsuccessful_create_actions(r: &CreateActionResult) -> Result<(), WalletError> {
     let failures: Vec<String> = r
         .send_with_results
+        .as_deref()
+        .unwrap_or(&[])
         .iter()
         .filter(|swr| matches!(swr.status, ActionResultStatus::Failed))
         .map(|swr| format!("txid={} status={}", swr.txid, swr.status.as_str()))
@@ -37,6 +39,8 @@ pub fn throw_if_any_unsuccessful_create_actions(r: &CreateActionResult) -> Resul
 pub fn throw_if_any_unsuccessful_sign_actions(r: &SignActionResult) -> Result<(), WalletError> {
     let failures: Vec<String> = r
         .send_with_results
+        .as_deref()
+        .unwrap_or(&[])
         .iter()
         .filter(|swr| matches!(swr.status, ActionResultStatus::Failed))
         .map(|swr| format!("txid={} status={}", swr.txid, swr.status.as_str()))

@@ -198,8 +198,8 @@ pub async fn create_permission_token(
                     permission_type_label(request.permission_type)
                 ),
                 input_beef: None,
-                inputs: vec![],
-                outputs: vec![CreateActionOutput {
+                inputs: None,
+                outputs: Some(vec![CreateActionOutput {
                     locking_script: Some(script_data),
                     satoshis: 1,
                     output_description: format!(
@@ -209,11 +209,11 @@ pub async fn create_permission_token(
                     ),
                     basket: Some(basket),
                     custom_instructions: None,
-                    tags,
-                }],
+                    tags: (!tags.is_empty()).then_some(tags),
+                }]),
                 lock_time: None,
                 version: None,
-                labels: vec![],
+                labels: None,
                 options: Some(CreateActionOptions {
                     accept_delayed_broadcast: Some(true).into(),
                     ..Default::default()

@@ -101,7 +101,8 @@ pub async fn build_signable_transaction_with_provider(
             locking_script,
             change: is_change,
         };
-        tx.add_output(output);
+        tx.add_output(output)
+            .map_err(|e| WalletError::Internal(format!("Failed to add transaction output: {e}")))?;
     }
 
     // Add dummy OP_RETURN if no outputs
@@ -111,7 +112,9 @@ pub async fn build_signable_transaction_with_provider(
             locking_script: LockingScript::from_binary(&[0x00, 0x6a, 0x01, 0x2a]),
             change: false,
         };
-        tx.add_output(output);
+        tx.add_output(output).map_err(|e| {
+            WalletError::Internal(format!("Failed to add fallback transaction output: {e}"))
+        })?;
     }
 
     // Merge and sort inputs
@@ -148,7 +151,8 @@ pub async fn build_signable_transaction_with_provider(
                 unlocking_script: Some(unlock),
                 sequence: ai.sequence_number,
             };
-            tx.add_input(input);
+            tx.add_input(input)
+                .map_err(|e| WalletError::Internal(format!("Failed to add caller input: {e}")))?;
         } else {
             if storage_input.output_type != "P2PKH" {
                 return Err(WalletError::InvalidParameter {
@@ -198,7 +202,8 @@ pub async fn build_signable_transaction_with_provider(
                 unlocking_script: Some(UnlockingScript::from_binary(&[])),
                 sequence: 0xFFFFFFFF,
             };
-            tx.add_input(input);
+            tx.add_input(input)
+                .map_err(|e| WalletError::Internal(format!("Failed to add storage input: {e}")))?;
 
             total_change_inputs += storage_input.source_satoshis;
         }
@@ -267,17 +272,21 @@ pub async fn complete_signed_transaction_with_provider(
         // it and fetches the real parent from storage. Never let it reach a BEEF.
         let mut source_tx = Transaction::new();
         for _ in 0..tx.inputs[vin].source_output_index {
-            source_tx.add_output(TransactionOutput {
-                satoshis: Some(0),
-                locking_script: LockingScript::from_binary(&[]),
-                change: false,
-            });
+            source_tx
+                .add_output(TransactionOutput {
+                    satoshis: Some(0),
+                    locking_script: LockingScript::from_binary(&[]),
+                    change: false,
+                })
+                .map_err(|e| WalletError::Internal(format!("Failed to pad source output: {e}")))?;
         }
-        source_tx.add_output(TransactionOutput {
-            satoshis: Some(pdi.source_satoshis),
-            locking_script: source_locking_script.clone(),
-            change: false,
-        });
+        source_tx
+            .add_output(TransactionOutput {
+                satoshis: Some(pdi.source_satoshis),
+                locking_script: source_locking_script.clone(),
+                change: false,
+            })
+            .map_err(|e| WalletError::Internal(format!("Failed to add source output: {e}")))?;
         tx.inputs[vin].source_transaction = Some(Box::new(source_tx));
 
         // Compute sighash
@@ -408,7 +417,7 @@ mod ghsa_provider_tests {
                 output_description: "payment".to_string(),
                 basket: None,
                 custom_instructions: None,
-                tags: vec![],
+                tags: None,
             }],
             lock_time: 0,
             version: 1,

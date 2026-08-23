@@ -107,7 +107,8 @@ pub fn build_signable_transaction(
             locking_script,
             change: is_change,
         };
-        tx.add_output(output);
+        tx.add_output(output)
+            .map_err(|e| WalletError::Internal(format!("Failed to add transaction output: {e}")))?;
     }
 
     // If no outputs, add a dummy OP_RETURN output
@@ -117,7 +118,9 @@ pub fn build_signable_transaction(
             locking_script: LockingScript::from_binary(&[0x00, 0x6a, 0x01, 0x2a]), // OP_FALSE OP_RETURN PUSH1 0x2a
             change: false,
         };
-        tx.add_output(output);
+        tx.add_output(output).map_err(|e| {
+            WalletError::Internal(format!("Failed to add fallback transaction output: {e}"))
+        })?;
     }
 
     // ---------------------------------------------------------------
@@ -160,7 +163,8 @@ pub fn build_signable_transaction(
                 unlocking_script: Some(unlock),
                 sequence: ai.sequence_number,
             };
-            tx.add_input(input);
+            tx.add_input(input)
+                .map_err(|e| WalletError::Internal(format!("Failed to add caller input: {e}")))?;
         } else {
             // Type 2: SABPPP/BRC-29 protocol input (change input)
             if storage_input.output_type != "P2PKH" {
@@ -195,7 +199,8 @@ pub fn build_signable_transaction(
                 unlocking_script: Some(UnlockingScript::from_binary(&[])),
                 sequence: 0xFFFFFFFF,
             };
-            tx.add_input(input);
+            tx.add_input(input)
+                .map_err(|e| WalletError::Internal(format!("Failed to add storage input: {e}")))?;
 
             total_change_inputs += storage_input.source_satoshis;
         }
@@ -484,7 +489,7 @@ mod tests {
                 output_description: "payment".to_string(),
                 basket: None,
                 custom_instructions: None,
-                tags: vec![],
+                tags: None,
             }],
             lock_time: 0,
             version: 1,

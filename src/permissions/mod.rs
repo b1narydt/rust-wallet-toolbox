@@ -493,14 +493,20 @@ impl WalletInterface for WalletPermissionsManager {
         let o = orig(originator);
 
         // Check basket access for each output that has a basket
-        for output in &args.outputs {
+        for output in args.outputs.as_deref().unwrap_or(&[]) {
             if let Some(ref basket) = output.basket {
                 ensure::ensure_basket_access(self, o, basket, "insertion").await?;
             }
         }
 
         // Check spending authorization if there are outputs with satoshis
-        let total_output_sats: u64 = args.outputs.iter().map(|o| o.satoshis).sum();
+        let total_output_sats: u64 = args
+            .outputs
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .map(|o| o.satoshis)
+            .sum();
         if total_output_sats > 0 {
             ensure::ensure_spending_authorization(self, o, total_output_sats).await?;
         }
@@ -519,8 +525,9 @@ impl WalletInterface for WalletPermissionsManager {
         // `query_spent_since` can accumulate this originator's monthly spend and
         // enforce the DSAP cap (matches TS createAction). Without these, the
         // monthly spend query finds nothing and limits never accumulate.
-        args.labels.push(format!("admin originator {o}"));
-        args.labels.push(format!(
+        let labels = args.labels.get_or_insert_with(Vec::new);
+        labels.push(format!("admin originator {o}"));
+        labels.push(format!(
             "admin month {}",
             token_crud::current_month_year_utc()
         ));
@@ -531,6 +538,8 @@ impl WalletInterface for WalletPermissionsManager {
         // the caller actually asked to pay.
         let requested_outputs: Vec<(Option<Vec<u8>>, u64)> = args
             .outputs
+            .as_deref()
+            .unwrap_or(&[])
             .iter()
             .map(|out| (out.locking_script.clone(), out.satoshis))
             .collect();

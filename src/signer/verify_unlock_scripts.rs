@@ -141,7 +141,8 @@ mod tests {
                 0xac,
             ]),
             change: false,
-        });
+        })
+        .expect("test output has a value");
 
         let txid = tx.id().unwrap();
         let mut beef = Beef::new(BEEF_V1);

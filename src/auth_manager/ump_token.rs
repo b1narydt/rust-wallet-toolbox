@@ -395,18 +395,18 @@ pub async fn create_ump_token(
             CreateActionArgs {
                 description: "Create UMP token".to_string(),
                 input_beef: None,
-                inputs: vec![],
-                outputs: vec![CreateActionOutput {
+                inputs: None,
+                outputs: Some(vec![CreateActionOutput {
                     locking_script: Some(script_bytes),
                     satoshis: 1,
                     output_description: "UMP token PushDrop output".to_string(),
                     basket: Some(UMP_BASKET.to_string()),
                     custom_instructions: None,
-                    tags: vec![format!("presentationHash {}", presentation_hash_hex)],
-                }],
+                    tags: Some(vec![format!("presentationHash {}", presentation_hash_hex)]),
+                }]),
                 lock_time: None,
                 version: None,
-                labels: vec![],
+                labels: None,
                 options: Some(CreateActionOptions {
                     accept_delayed_broadcast: Some(true).into(),
                     ..Default::default()

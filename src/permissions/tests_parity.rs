@@ -196,7 +196,7 @@ impl WalletInterface for StatefulWallet {
         let mut net: i64 = 0;
         {
             let mut outs = self.outputs.lock().unwrap();
-            for (i, out) in args.outputs.iter().enumerate() {
+            for (i, out) in args.outputs.as_deref().unwrap_or(&[]).iter().enumerate() {
                 net += out.satoshis as i64;
                 if let Some(script) = &out.locking_script {
                     outs.push(StoredOutput {
@@ -204,7 +204,7 @@ impl WalletInterface for StatefulWallet {
                         outpoint: format!("{txid}.{i}"),
                         script: script.clone(),
                         satoshis: out.satoshis,
-                        tags: out.tags.clone(),
+                        tags: out.tags.clone().unwrap_or_default(),
                     });
                 }
             }
@@ -213,7 +213,7 @@ impl WalletInterface for StatefulWallet {
         // Record the action as a spend: net satoshis is negative for money out,
         // matching the wallet's `Action.satoshis` convention.
         self.actions.lock().unwrap().push(StoredAction {
-            labels: args.labels.clone(),
+            labels: args.labels.clone().unwrap_or_default(),
             satoshis: -net,
         });
 
@@ -225,8 +225,8 @@ impl WalletInterface for StatefulWallet {
             return Ok(CreateActionResult {
                 txid: None,
                 tx: None,
-                no_send_change: vec![],
-                send_with_results: vec![],
+                no_send_change: None,
+                send_with_results: None,
                 signable_transaction: Some(bsv::wallet::interfaces::SignableTransaction {
                     tx,
                     reference,
@@ -237,8 +237,8 @@ impl WalletInterface for StatefulWallet {
         Ok(CreateActionResult {
             txid: Some(txid),
             tx: None,
-            no_send_change: vec![],
-            send_with_results: vec![],
+            no_send_change: None,
+            send_with_results: None,
             signable_transaction: None,
         })
     }
@@ -258,11 +258,11 @@ impl WalletInterface for StatefulWallet {
                 status: ActionStatus::Completed,
                 is_outgoing: a.satoshis < 0,
                 description: String::new(),
-                labels: a.labels.clone(),
+                labels: (!a.labels.is_empty()).then_some(a.labels.clone()),
                 version: 0,
                 lock_time: 0,
-                inputs: vec![],
-                outputs: vec![],
+                inputs: None,
+                outputs: None,
             })
             .collect();
         Ok(ListActionsResult {
@@ -287,9 +287,9 @@ impl WalletInterface for StatefulWallet {
                 locking_script: Some(o.script.clone()),
                 spendable: true,
                 custom_instructions: None,
-                tags: o.tags.clone(),
+                tags: (!o.tags.is_empty()).then_some(o.tags.clone()),
                 outpoint: o.outpoint.clone(),
-                labels: vec![],
+                labels: None,
             })
             .collect();
         Ok(ListOutputsResult {
@@ -459,7 +459,7 @@ fn spend_output(satoshis: u64) -> bsv::wallet::interfaces::CreateActionOutput {
         output_description: "spend".to_string(),
         basket: None,
         custom_instructions: None,
-        tags: vec![],
+        tags: None,
     }
 }
 
@@ -467,11 +467,11 @@ fn spend_args(satoshis: u64) -> CreateActionArgs {
     CreateActionArgs {
         description: "spend".to_string(),
         input_beef: None,
-        inputs: vec![],
-        outputs: vec![spend_output(satoshis)],
+        inputs: None,
+        outputs: Some(vec![spend_output(satoshis)]),
         lock_time: None,
         version: None,
-        labels: vec![],
+        labels: None,
         options: None,
         reference: None,
     }
@@ -710,7 +710,7 @@ fn output_with_script(
         output_description: "pay".to_string(),
         basket: None,
         custom_instructions: None,
-        tags: vec![],
+        tags: None,
     }
 }
 
@@ -720,11 +720,11 @@ fn args_with_outputs(
     CreateActionArgs {
         description: "pay recipients".to_string(),
         input_beef: None,
-        inputs: vec![],
-        outputs,
+        inputs: None,
+        outputs: (!outputs.is_empty()).then_some(outputs),
         lock_time: None,
         version: None,
-        labels: vec![],
+        labels: None,
         options: None,
         reference: None,
     }

@@ -257,7 +257,8 @@ mod tests {
             source_output_index: 0,
             unlocking_script: Some(UnlockingScript::from_binary(&[])),
             sequence: 0xFFFFFFFF,
-        });
+        })
+        .expect("test input has a source txid");
         tx.add_output(TransactionOutput {
             satoshis: Some(5_000),
             locking_script: LockingScript::from_binary(&[
@@ -265,7 +266,8 @@ mod tests {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x88, 0xac,
             ]),
             change: false,
-        });
+        })
+        .expect("test output has a value");
 
         // Compute the sighash exactly as the signing pipeline does.
         let preimage = tx
@@ -298,7 +300,7 @@ mod tests {
         let pubkey = PublicKey::from_der_bytes(pubkey_bytes).expect("valid pubkey");
 
         assert!(
-            ecdsa_verify(&sighash, &sig, pubkey.point()),
+            ecdsa_verify(&sighash, &sig, pubkey.point()).expect("public key is a valid point"),
             "sign_input signature must verify against the raw sighash digest"
         );
     }

@@ -105,10 +105,10 @@ pub async fn signer_sign_action(
         // createAction list is only the fallback when the caller supplied
         // none. Previously the caller's list was discarded outright.
         send_with: if is_send_with {
-            if args.options.send_with.is_empty() {
-                pending.args.options.send_with.clone()
+            if args.options.send_with.as_deref().unwrap_or(&[]).is_empty() {
+                pending.args.options.send_with.clone().unwrap_or_default()
             } else {
-                args.options.send_with.clone()
+                args.options.send_with.clone().unwrap_or_default()
             }
         } else {
             vec![]

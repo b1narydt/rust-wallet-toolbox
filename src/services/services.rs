@@ -1369,7 +1369,8 @@ mod beef_builder_tests {
         tx.add_input(TransactionInput {
             source_txid: Some(parent_txid.to_string()),
             ..Default::default()
-        });
+        })
+        .expect("spend input has a source txid");
         let mut raw = Vec::new();
         tx.to_binary(&mut raw).unwrap();
         let txid = tx.id().unwrap();

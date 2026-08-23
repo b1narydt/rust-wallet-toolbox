@@ -87,9 +87,9 @@ async fn handle_no_send_actions(
             description: tx.description.clone(),
             version: tx.version.unwrap_or(0) as u32,
             lock_time: tx.lock_time.unwrap_or(0) as u32,
-            labels: vec![],
-            inputs: vec![],
-            outputs: vec![],
+            labels: None,
+            inputs: None,
+            outputs: None,
         })
         .collect();
 
@@ -128,9 +128,9 @@ async fn handle_failed_actions(
             description: tx.description.clone(),
             version: tx.version.unwrap_or(0) as u32,
             lock_time: tx.lock_time.unwrap_or(0) as u32,
-            labels: vec![],
-            inputs: vec![],
-            outputs: vec![],
+            labels: None,
+            inputs: None,
+            outputs: None,
         })
         .collect();
 
@@ -320,14 +320,15 @@ pub async fn list_actions(
             description: tx.description.clone(),
             version: tx.version.unwrap_or(0) as u32,
             lock_time: tx.lock_time.unwrap_or(0) as u32,
-            labels: vec![],
-            inputs: vec![],
-            outputs: vec![],
+            labels: None,
+            inputs: None,
+            outputs: None,
         };
 
         if include_labels {
-            action.labels =
+            let labels =
                 get_labels_for_transaction(storage, user_id, tx.transaction_id, trx).await?;
+            action.labels = (!labels.is_empty()).then_some(labels);
         }
 
         if include_outputs {
@@ -360,7 +361,7 @@ pub async fn list_actions(
                     output_description: o.output_description.clone().unwrap_or_default(),
                     basket: None,
                 };
-                action.outputs.push(ao);
+                action.outputs.get_or_insert_with(Vec::new).push(ao);
             }
         }
 
@@ -392,7 +393,7 @@ pub async fn list_actions(
                     input_description: o.output_description.clone().unwrap_or_default(),
                     sequence_number: o.sequence_number.unwrap_or(0) as u32,
                 };
-                action.inputs.push(ai);
+                action.inputs.get_or_insert_with(Vec::new).push(ai);
             }
         }
 

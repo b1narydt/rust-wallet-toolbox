@@ -206,11 +206,7 @@ pub async fn list_certificates(
             signature,
         };
 
-        let verifier = cert
-            .verifier
-            .as_ref()
-            .and_then(|v| hex_decode(v))
-            .or_else(|| cert.verifier.as_ref().map(|v| v.as_bytes().to_vec()));
+        let verifier = cert.verifier.clone();
 
         certificates.push(CertificateResult {
             certificate: sdk_cert,

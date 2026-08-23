@@ -147,8 +147,8 @@ async fn handle_wallet_balance(
             outpoint: format!("{}.{}", o.txid.as_deref().unwrap_or(""), o.vout),
             locking_script: None,
             custom_instructions: None,
-            tags: vec![],
-            labels: vec![],
+            tags: None,
+            labels: None,
         })
         .collect();
 
@@ -222,8 +222,8 @@ async fn handle_invalid_change(
             outpoint: format!("{}.{}", o.txid.as_deref().unwrap_or(""), o.vout),
             locking_script: None,
             custom_instructions: None,
-            tags: vec![],
-            labels: vec![],
+            tags: None,
+            labels: None,
         })
         .collect();
 
@@ -332,7 +332,7 @@ pub async fn list_outputs(
     trx: Option<&TrxToken>,
 ) -> WalletResult<ListOutputsResult> {
     let limit = args.limit.unwrap_or(10) as i64;
-    let raw_offset = args.offset.map(|o| o as i64).unwrap_or(0);
+    let raw_offset = args.offset.unwrap_or(0);
     let offset = if raw_offset < 0 {
         (-raw_offset) - 1
     } else {
@@ -513,17 +513,19 @@ pub async fn list_outputs(
             } else {
                 None
             },
-            tags: vec![],
-            labels: vec![],
+            tags: None,
+            labels: None,
         };
 
         if include_tags_flag {
-            sdk_output.tags = get_tags_for_output(storage, o.output_id, trx).await?;
+            let tags = get_tags_for_output(storage, o.output_id, trx).await?;
+            sdk_output.tags = (!tags.is_empty()).then_some(tags);
         }
 
         if include_labels_flag {
-            sdk_output.labels =
+            let labels =
                 get_labels_for_transaction_id(storage, user_id, o.transaction_id, trx).await?;
+            sdk_output.labels = (!labels.is_empty()).then_some(labels);
         }
 
         outputs.push(sdk_output);
