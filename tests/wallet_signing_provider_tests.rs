@@ -275,11 +275,13 @@ mod wallet_signing_provider_tests {
         // Build the funding transaction the seeded UTXOs actually come from.
         let mut funding = BsvTransaction::new();
         for _ in 0..count {
-            funding.add_output(TransactionOutput {
-                satoshis: Some(satoshis as u64),
-                locking_script: LockingScript::from_binary(&locking_script),
-                change: false,
-            });
+            funding
+                .add_output(TransactionOutput {
+                    satoshis: Some(satoshis as u64),
+                    locking_script: LockingScript::from_binary(&locking_script),
+                    change: false,
+                })
+                .expect("funding output has a value");
         }
         let mut funding_raw = Vec::new();
         funding
@@ -384,8 +386,8 @@ mod wallet_signing_provider_tests {
     fn payment_args(sign_and_process: bool) -> CreateActionArgs {
         CreateActionArgs {
             description: "provider injection test".to_string(),
-            inputs: vec![],
-            outputs: vec![CreateActionOutput {
+            inputs: None,
+            outputs: Some(vec![CreateActionOutput {
                 locking_script: Some(vec![
                     0x76, 0xa9, 0x14, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb,
                     0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0x88, 0xac,
@@ -394,11 +396,11 @@ mod wallet_signing_provider_tests {
                 output_description: "payment".to_string(),
                 basket: None,
                 custom_instructions: None,
-                tags: vec![],
-            }],
+                tags: None,
+            }]),
             lock_time: None,
             version: None,
-            labels: vec![],
+            labels: None,
             options: Some(CreateActionOptions {
                 sign_and_process: BooleanDefaultTrue(Some(sign_and_process)),
                 ..Default::default()

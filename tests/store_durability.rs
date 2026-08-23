@@ -179,7 +179,8 @@ mod store_durability {
                     satoshis: Some(1_000),
                     locking_script: LockingScript::from_binary(&script),
                     change: false,
-                });
+                })
+                .expect("BEEF fixture output has a value");
             }
             let mut raw = Vec::new();
             tx.to_binary(&mut raw).expect("serialize beef tx");
@@ -902,11 +903,13 @@ mod spend_lock_scope {
 
         let mut funding = BsvTransaction::new();
         for _ in 0..count {
-            funding.add_output(TransactionOutput {
-                satoshis: Some(satoshis as u64),
-                locking_script: LockingScript::from_binary(&locking_script),
-                change: false,
-            });
+            funding
+                .add_output(TransactionOutput {
+                    satoshis: Some(satoshis as u64),
+                    locking_script: LockingScript::from_binary(&locking_script),
+                    change: false,
+                })
+                .expect("funding output has a value");
         }
         let mut funding_raw = Vec::new();
         funding
@@ -972,8 +975,8 @@ mod spend_lock_scope {
     fn payment_args(inline_broadcast: bool) -> CreateActionArgs {
         CreateActionArgs {
             description: "spend lock scope test".to_string(),
-            inputs: vec![],
-            outputs: vec![CreateActionOutput {
+            inputs: None,
+            outputs: Some(vec![CreateActionOutput {
                 locking_script: Some(vec![
                     0x76, 0xa9, 0x14, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb,
                     0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0x88, 0xac,
@@ -982,11 +985,11 @@ mod spend_lock_scope {
                 output_description: "payment".to_string(),
                 basket: None,
                 custom_instructions: None,
-                tags: vec![],
-            }],
+                tags: None,
+            }]),
             lock_time: None,
             version: None,
-            labels: vec![],
+            labels: None,
             options: Some(CreateActionOptions {
                 sign_and_process: BooleanDefaultTrue(Some(true)),
                 // false → broadcast happens inline, inside createAction

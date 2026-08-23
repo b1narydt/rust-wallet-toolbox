@@ -534,7 +534,7 @@ async fn send_brc29<W: WalletInterface>(
         output_description: description.to_string(),
         basket: None,
         custom_instructions: None,
-        tags: vec![],
+        tags: None,
     });
 
     let result = wallet
@@ -542,11 +542,11 @@ async fn send_brc29<W: WalletInterface>(
             CreateActionArgs {
                 description: description.to_string(),
                 input_beef: None,
-                inputs: vec![],
-                outputs,
+                inputs: None,
+                outputs: Some(outputs),
                 lock_time: None,
                 version: None,
-                labels: vec!["funded-conformance".to_string()],
+                labels: Some(vec!["funded-conformance".to_string()]),
                 options: Some(CreateActionOptions {
                     accept_delayed_broadcast: BooleanDefaultTrue(Some(false)),
                     randomize_outputs: BooleanDefaultTrue(Some(false)),
@@ -587,6 +587,8 @@ async fn send_brc29<W: WalletInterface>(
         fixture,
         result
             .send_with_results
+            .as_deref()
+            .unwrap_or(&[])
             .iter()
             .map(|s| serde_json::to_value(s).unwrap_or_default())
             .collect(),
@@ -1097,31 +1099,33 @@ fn sign_precursor_args(
     CreateActionArgs {
         description: "funded signAction precursor".to_string(),
         input_beef: Some(from_hex(&sig.beef)),
-        inputs: caller_outpoints
-            .iter()
-            .map(|op| CreateActionInput {
-                outpoint: (*op).to_string(),
-                input_description: "conformance caller input".to_string(),
-                unlocking_script: None,
-                unlocking_script_length: Some(108),
-                sequence_number: None,
-            })
-            .collect(),
-        outputs: vec![CreateActionOutput {
+        inputs: (!caller_outpoints.is_empty()).then(|| {
+            caller_outpoints
+                .iter()
+                .map(|op| CreateActionInput {
+                    outpoint: (*op).to_string(),
+                    input_description: "conformance caller input".to_string(),
+                    unlocking_script: None,
+                    unlocking_script_length: Some(108),
+                    sequence_number: None,
+                })
+                .collect()
+        }),
+        outputs: Some(vec![CreateActionOutput {
             locking_script: Some(p2pkh_lock(&caller_key)),
             satoshis: 100,
             output_description: "signAction vector output".to_string(),
             basket: None,
             custom_instructions: None,
-            tags: vec![],
-        }],
+            tags: None,
+        }]),
         lock_time: None,
         version: None,
-        labels: vec!["funded-conformance".to_string()],
+        labels: Some(vec!["funded-conformance".to_string()]),
         options: Some(CreateActionOptions {
             sign_and_process: BooleanDefaultTrue(Some(false)),
             no_send: BooleanDefaultFalse(Some(no_send)),
-            no_send_change: chained_no_send_change,
+            no_send_change: (!chained_no_send_change.is_empty()).then_some(chained_no_send_change),
             ..Default::default()
         }),
         reference: None,
@@ -1134,21 +1138,21 @@ fn nosend_precursor_args(chained_no_send_change: Vec<String>) -> CreateActionArg
     CreateActionArgs {
         description: "funded signAction sendWith precursor".to_string(),
         input_beef: None,
-        inputs: vec![],
-        outputs: vec![CreateActionOutput {
+        inputs: None,
+        outputs: Some(vec![CreateActionOutput {
             locking_script: Some(p2pkh_lock(&caller_key)),
             satoshis: 100,
             output_description: "sendWith batch output".to_string(),
             basket: None,
             custom_instructions: None,
-            tags: vec![],
-        }],
+            tags: None,
+        }]),
         lock_time: None,
         version: None,
-        labels: vec!["funded-conformance".to_string()],
+        labels: Some(vec!["funded-conformance".to_string()]),
         options: Some(CreateActionOptions {
             no_send: BooleanDefaultFalse(Some(true)),
-            no_send_change: chained_no_send_change,
+            no_send_change: (!chained_no_send_change.is_empty()).then_some(chained_no_send_change),
             ..Default::default()
         }),
         reference: None,
@@ -1163,7 +1167,7 @@ fn sign_options_none() -> SignActionOptions {
         accept_delayed_broadcast: BooleanDefaultTrue::none(),
         return_txid_only: BooleanDefaultFalse::none(),
         no_send: BooleanDefaultFalse::none(),
-        send_with: vec![],
+        send_with: None,
     }
 }
 
@@ -1427,7 +1431,7 @@ async fn record_one_sign_vector(
             .expect("noSend precursor 1");
         let ns1_txid = ns1.txid.clone().expect("ns1 txid");
 
-        let ns2_args = nosend_precursor_args(ns1.no_send_change.clone());
+        let ns2_args = nosend_precursor_args(ns1.no_send_change.clone().unwrap_or_default());
         let ns2 = setup_wallet
             .wallet
             .create_action(ns2_args.clone(), None)
@@ -1520,7 +1524,7 @@ async fn record_one_sign_vector(
     let mut sign_options = plan.sign_options.clone();
     if !send_with_txids.is_empty() {
         sign_options = Some(SignActionOptions {
-            send_with: send_with_txids.clone(),
+            send_with: Some(send_with_txids.clone()),
             ..sign_options_none()
         });
     }
@@ -2068,7 +2072,7 @@ async fn record_funded_vectors() {
                 output_description: "signAction caller input A".to_string(),
                 basket: None,
                 custom_instructions: None,
-                tags: vec![],
+                tags: None,
             },
             CreateActionOutput {
                 locking_script: Some(p2pkh_lock(&caller_key)),
@@ -2076,7 +2080,7 @@ async fn record_funded_vectors() {
                 output_description: "signAction caller input B".to_string(),
                 basket: None,
                 custom_instructions: None,
-                tags: vec![],
+                tags: None,
             },
         ];
         // Size the BRC-29 wallet output downward until it funds.

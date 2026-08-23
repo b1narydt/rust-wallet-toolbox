@@ -177,7 +177,8 @@ mod beef_tests {
                 satoshis: Some(sats),
                 locking_script: LockingScript::from_binary(&[0x51]),
                 change: false,
-            });
+            })
+            .expect("parent output has a value");
             tx
         };
         let parent1 = mk_parent(1000);
@@ -236,11 +237,13 @@ mod beef_tests {
                 sequence: 0xffffffff,
             });
         }
-        child.add_output(TransactionOutput {
-            satoshis: Some(2900),
-            locking_script: LockingScript::from_binary(&[0x51]),
-            change: false,
-        });
+        child
+            .add_output(TransactionOutput {
+                satoshis: Some(2900),
+                locking_script: LockingScript::from_binary(&[0x51]),
+                change: false,
+            })
+            .expect("child output has a value");
         let child_txid = child.id().unwrap();
         let mut child_raw = Vec::new();
         child.to_binary(&mut child_raw).unwrap();

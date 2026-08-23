@@ -126,18 +126,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             CreateActionArgs {
                 description: "BRC29 transfer example".to_string(),
                 input_beef: None,
-                inputs: vec![],
-                outputs: vec![CreateActionOutput {
+                inputs: None,
+                outputs: Some(vec![CreateActionOutput {
                     locking_script: Some(lock_script),
                     satoshis: 1000,
                     output_description: "BRC29 payment".to_string(),
                     basket: None,
                     custom_instructions: Some(custom_instructions),
-                    tags: vec![],
-                }],
+                    tags: None,
+                }]),
                 lock_time: None,
                 version: None,
-                labels: vec!["brc29-transfer".to_string()],
+                labels: Some(vec!["brc29-transfer".to_string()]),
                 options: Some(bsv::wallet::interfaces::CreateActionOptions {
                     randomize_outputs: bsv::wallet::types::BooleanDefaultTrue(Some(false)),
                     ..Default::default()
@@ -166,7 +166,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             InternalizeActionArgs {
                 tx: tx_bytes,
                 description: "BRC29 payment received".to_string(),
-                labels: vec!["brc29-transfer".to_string()],
+                labels: Some(vec!["brc29-transfer".to_string()]),
                 seek_permission: bsv::wallet::types::BooleanDefaultTrue(Some(false)),
                 outputs: vec![InternalizeOutput::WalletPayment {
                     output_index: 0,

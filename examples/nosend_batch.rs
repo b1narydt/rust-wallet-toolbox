@@ -115,21 +115,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 CreateActionArgs {
                     description: format!("noSend batch tx {}", i + 1),
                     input_beef: None,
-                    inputs: vec![],
-                    outputs: vec![CreateActionOutput {
+                    inputs: None,
+                    outputs: Some(vec![CreateActionOutput {
                         locking_script: Some(lock_script.clone()),
                         satoshis: 1,
                         output_description: format!("batch output {}", i + 1),
                         basket: None,
                         custom_instructions: None,
-                        tags: vec![],
-                    }],
+                        tags: None,
+                    }]),
                     lock_time: None,
                     version: None,
-                    labels: vec!["nosend-batch".to_string()],
+                    labels: Some(vec!["nosend-batch".to_string()]),
                     options: Some(CreateActionOptions {
                         no_send: BooleanDefaultFalse(Some(true)),
-                        no_send_change: accumulated_change.clone(),
+                        no_send_change: (!accumulated_change.is_empty())
+                            .then_some(accumulated_change.clone()),
                         randomize_outputs: BooleanDefaultTrue(Some(false)),
                         ..Default::default()
                     }),
@@ -143,7 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  TXID: {txid}");
         println!(
             "  Change outpoints: {} entries",
-            result.no_send_change.len()
+            result.no_send_change.as_deref().unwrap_or(&[]).len()
         );
 
         // Collect the txid for the final send_with batch
@@ -153,7 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Chain the no_send_change from this result into the next transaction
         // so the wallet knows about the uncommitted change UTXOs.
-        accumulated_change = result.no_send_change;
+        accumulated_change = result.no_send_change.unwrap_or_default();
     }
 
     // -----------------------------------------------------------------------
@@ -177,21 +178,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             CreateActionArgs {
                 description: "Batch send trigger".to_string(),
                 input_beef: None,
-                inputs: vec![],
-                outputs: vec![CreateActionOutput {
+                inputs: None,
+                outputs: Some(vec![CreateActionOutput {
                     locking_script: Some(lock_script),
                     satoshis: 1,
                     output_description: "batch trigger output".to_string(),
                     basket: None,
                     custom_instructions: None,
-                    tags: vec![],
-                }],
+                    tags: None,
+                }]),
                 lock_time: None,
                 version: None,
-                labels: vec!["nosend-batch".to_string()],
+                labels: Some(vec!["nosend-batch".to_string()]),
                 options: Some(CreateActionOptions {
-                    no_send_change: accumulated_change,
-                    send_with: collected_txids.clone(),
+                    no_send_change: (!accumulated_change.is_empty()).then_some(accumulated_change),
+                    send_with: (!collected_txids.is_empty()).then_some(collected_txids.clone()),
                     randomize_outputs: BooleanDefaultTrue(Some(false)),
                     ..Default::default()
                 }),
@@ -205,9 +206,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nBatch trigger TXID: {final_txid}");
 
     // Print send_with results
-    if !batch_result.send_with_results.is_empty() {
+    if !batch_result
+        .send_with_results
+        .as_deref()
+        .unwrap_or(&[])
+        .is_empty()
+    {
         println!("\nSend-with results:");
-        for swr in &batch_result.send_with_results {
+        for swr in batch_result.send_with_results.as_deref().unwrap_or(&[]) {
             println!("  {} -> {:?}", swr.txid, swr.status);
         }
     }

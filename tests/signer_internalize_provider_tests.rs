@@ -250,18 +250,22 @@ mod signer_internalize_provider_tests {
         let mut parent = BsvTransaction::new();
         parent.version = 1;
         parent.lock_time = 0;
-        parent.add_input(TransactionInput {
-            source_transaction: None,
-            source_txid: Some("c".repeat(64)),
-            source_output_index: 0,
-            unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
-            sequence: 0xFFFFFFFF,
-        });
-        parent.add_output(TransactionOutput {
-            satoshis: Some(satoshis),
-            locking_script: LockingScript::from_binary(&[0x51]),
-            change: false,
-        });
+        parent
+            .add_input(TransactionInput {
+                source_transaction: None,
+                source_txid: Some("c".repeat(64)),
+                source_output_index: 0,
+                unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
+                sequence: 0xFFFFFFFF,
+            })
+            .expect("parent input has a source txid");
+        parent
+            .add_output(TransactionOutput {
+                satoshis: Some(satoshis),
+                locking_script: LockingScript::from_binary(&[0x51]),
+                change: false,
+            })
+            .expect("parent output has a value");
         let parent_txid = parent.id().expect("compute parent txid");
 
         let level0 = vec![MerklePathLeaf {
@@ -282,12 +286,14 @@ mod signer_internalize_provider_tests {
             source_output_index: 0,
             unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
             sequence: 0xFFFFFFFF,
-        });
+        })
+        .expect("payment input has a source txid");
         tx.add_output(TransactionOutput {
             satoshis: Some(satoshis),
             locking_script: LockingScript::from_binary(locking_script),
             change: false,
-        });
+        })
+        .expect("payment output has a value");
         let txid = tx.id().expect("compute txid");
 
         let mut beef = Beef::new(bsv::transaction::beef::BEEF_V1);

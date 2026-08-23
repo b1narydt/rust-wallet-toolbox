@@ -131,18 +131,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             CreateActionArgs {
                 description: "Mint PushDrop token".to_string(),
                 input_beef: None,
-                inputs: vec![],
-                outputs: vec![CreateActionOutput {
+                inputs: None,
+                outputs: Some(vec![CreateActionOutput {
                     locking_script: Some(script_bytes),
                     satoshis: 1,
                     output_description: "PushDrop token output".to_string(),
                     basket: Some("tokens".to_string()),
                     custom_instructions: None,
-                    tags: vec!["pushdrop-example".to_string()],
-                }],
+                    tags: Some(vec!["pushdrop-example".to_string()]),
+                }]),
                 lock_time: None,
                 version: None,
-                labels: vec!["pushdrop-mint".to_string()],
+                labels: Some(vec!["pushdrop-mint".to_string()]),
                 options: Some(CreateActionOptions {
                     no_send: BooleanDefaultFalse(Some(false)),
                     ..Default::default()

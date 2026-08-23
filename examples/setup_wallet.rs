@@ -214,7 +214,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .create_action(
             CreateActionArgs {
                 description: "Fund Rust wallet".to_string(),
-                outputs: vec![CreateActionOutput {
+                outputs: Some(vec![CreateActionOutput {
                     locking_script: Some(locking_script.to_binary()),
                     satoshis: amount,
                     output_description: "BRC-42 payment to Rust wallet".to_string(),
@@ -224,13 +224,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "derivationSuffix": derivation_suffix,
                         "payee": setup.identity_key,
                     }))?),
-                    tags: vec![],
-                }],
-                inputs: vec![],
+                    tags: None,
+                }]),
+                inputs: None,
                 input_beef: None,
                 lock_time: None,
                 version: None,
-                labels: vec![],
+                labels: None,
                 options: None,
                 reference: None,
             },
@@ -257,7 +257,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             InternalizeActionArgs {
                 tx: beef_bytes.clone(),
                 description: "Funding from desktop wallet".to_string(),
-                labels: vec!["funding".to_string()],
+                labels: Some(vec!["funding".to_string()]),
                 seek_permission: BooleanDefaultTrue(Some(false)),
                 outputs: vec![InternalizeOutput::WalletPayment {
                     output_index: 0,

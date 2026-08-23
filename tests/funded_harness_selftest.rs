@@ -44,18 +44,22 @@ fn fabricate_funding() -> (FundingPayment, BTreeMap<u32, String>) {
 
     // Parent transaction: pretend-coinbase paying an arbitrary script.
     let mut parent = Transaction::new();
-    parent.add_input(TransactionInput {
-        source_transaction: None,
-        source_txid: Some("00".repeat(32)),
-        source_output_index: 0xffff_ffff,
-        unlocking_script: Some(UnlockingScript::from_binary(&[0x51])),
-        sequence: 0xffff_ffff,
-    });
-    parent.add_output(TransactionOutput {
-        satoshis: Some(10_000),
-        locking_script: LockingScript::from_binary(&[0x51]),
-        change: false,
-    });
+    parent
+        .add_input(TransactionInput {
+            source_transaction: None,
+            source_txid: Some("00".repeat(32)),
+            source_output_index: 0xffff_ffff,
+            unlocking_script: Some(UnlockingScript::from_binary(&[0x51])),
+            sequence: 0xffff_ffff,
+        })
+        .expect("parent input has a source txid");
+    parent
+        .add_output(TransactionOutput {
+            satoshis: Some(10_000),
+            locking_script: LockingScript::from_binary(&[0x51]),
+            change: false,
+        })
+        .expect("parent output has a value");
     let parent_txid = parent.id().expect("parent txid");
 
     // Payment transaction: spends the parent, pays 5000 sats to a real
@@ -69,25 +73,31 @@ fn fabricate_funding() -> (FundingPayment, BTreeMap<u32, String>) {
         .expect("brc29 lock");
 
     let mut payment = Transaction::new();
-    payment.add_input(TransactionInput {
-        source_transaction: None,
-        source_txid: Some(parent_txid.clone()),
-        source_output_index: 0,
-        unlocking_script: Some(UnlockingScript::from_binary(&[0x51])),
-        sequence: 0xffff_ffff,
-    });
-    payment.add_output(TransactionOutput {
-        satoshis: Some(5_000),
-        locking_script: LockingScript::from_binary(&lock),
-        change: false,
-    });
+    payment
+        .add_input(TransactionInput {
+            source_transaction: None,
+            source_txid: Some(parent_txid.clone()),
+            source_output_index: 0,
+            unlocking_script: Some(UnlockingScript::from_binary(&[0x51])),
+            sequence: 0xffff_ffff,
+        })
+        .expect("payment input has a source txid");
+    payment
+        .add_output(TransactionOutput {
+            satoshis: Some(5_000),
+            locking_script: LockingScript::from_binary(&lock),
+            change: false,
+        })
+        .expect("payment output has a value");
     // Output 1: P2PKH to the caller key, for signAction caller-input tests.
     let caller = PrivateKey::from_hex(CALLER_KEY).expect("caller key");
-    payment.add_output(TransactionOutput {
-        satoshis: Some(300),
-        locking_script: LockingScript::from_binary(&p2pkh_lock(&caller)),
-        change: false,
-    });
+    payment
+        .add_output(TransactionOutput {
+            satoshis: Some(300),
+            locking_script: LockingScript::from_binary(&p2pkh_lock(&caller)),
+            change: false,
+        })
+        .expect("caller output has a value");
     let payment_txid = payment.id().expect("payment txid");
 
     let bump = MerklePath::new(
@@ -434,7 +444,7 @@ async fn nosend_chaining_via_no_send_change() {
         .create_action(ns1_args, None)
         .await
         .expect("ns1");
-    assert!(!ns1.no_send_change.is_empty());
+    assert!(!ns1.no_send_change.as_deref().unwrap_or(&[]).is_empty());
 
     let ns2_args: bsv::wallet::interfaces::CreateActionArgs =
         serde_json::from_value(serde_json::json!({

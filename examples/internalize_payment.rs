@@ -134,18 +134,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             CreateActionArgs {
                 description: "BRC29 payment for internalize example".to_string(),
                 input_beef: None,
-                inputs: vec![],
-                outputs: vec![CreateActionOutput {
+                inputs: None,
+                outputs: Some(vec![CreateActionOutput {
                     locking_script: Some(lock_script),
                     satoshis: payment_amount,
                     output_description: "BRC29 payment".to_string(),
                     basket: None,
                     custom_instructions: Some(custom_instructions),
-                    tags: vec![],
-                }],
+                    tags: None,
+                }]),
                 lock_time: None,
                 version: None,
-                labels: vec!["internalize-example".to_string()],
+                labels: Some(vec!["internalize-example".to_string()]),
                 options: Some(CreateActionOptions {
                     randomize_outputs: BooleanDefaultTrue(Some(false)),
                     ..Default::default()
@@ -177,7 +177,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             InternalizeActionArgs {
                 tx: tx_bytes,
                 description: "BRC29 payment received via internalize".to_string(),
-                labels: vec!["internalize-example".to_string()],
+                labels: Some(vec!["internalize-example".to_string()]),
                 seek_permission: BooleanDefaultTrue(Some(false)),
                 outputs: vec![InternalizeOutput::WalletPayment {
                     output_index: 0,

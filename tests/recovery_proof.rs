@@ -348,7 +348,8 @@ fn assert_restored_output_is_spendable(
         source_output_index: restored.vout as u32,
         unlocking_script: Some(UnlockingScript::from_binary(&[])),
         sequence: 0xFFFF_FFFF,
-    });
+    })
+    .expect("spend input has a source txid");
     tx.add_output(TransactionOutput {
         satoshis: Some(source_satoshis - 100),
         locking_script: LockingScript::from_binary(&[
@@ -356,7 +357,8 @@ fn assert_restored_output_is_spendable(
             0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x88, 0xac,
         ]),
         change: false,
-    });
+    })
+    .expect("spend output has a value");
 
     let preimage = tx
         .sighash_preimage(0, sighash_type, source_satoshis, &source_locking_script)

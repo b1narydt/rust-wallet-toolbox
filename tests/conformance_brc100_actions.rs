@@ -492,11 +492,13 @@ async fn seed_spendable_change(
 
     let mut funding = BsvTransaction::new();
     for _ in 0..count {
-        funding.add_output(TransactionOutput {
-            satoshis: Some(satoshis as u64),
-            locking_script: LockingScript::from_binary(&locking_script),
-            change: false,
-        });
+        funding
+            .add_output(TransactionOutput {
+                satoshis: Some(satoshis as u64),
+                locking_script: LockingScript::from_binary(&locking_script),
+                change: false,
+            })
+            .expect("funding output has a value");
     }
     let mut funding_raw = Vec::new();
     funding
@@ -794,6 +796,8 @@ async fn run_createaction_vector(
     };
     let requested: Vec<(u64, Vec<u8>)> = args
         .outputs
+        .as_deref()
+        .unwrap_or(&[])
         .iter()
         .map(|o| {
             (
@@ -949,23 +953,27 @@ async fn seed_pending_action(w: &BackendWallet, caller_inputs: usize) -> String 
     // with a single-leaf bump. The always-valid local tracker accepts it.
     let mut source = BsvTransaction::new();
     source.version = 1;
-    source.add_input(TransactionInput {
-        source_transaction: None,
-        source_txid: Some("e".repeat(64)),
-        source_output_index: 0,
-        unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
-        sequence: 0xFFFF_FFFF,
-    });
+    source
+        .add_input(TransactionInput {
+            source_transaction: None,
+            source_txid: Some("e".repeat(64)),
+            source_output_index: 0,
+            unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
+            sequence: 0xFFFF_FFFF,
+        })
+        .expect("source input has a source txid");
     for _ in 0..caller_inputs {
-        source.add_output(TransactionOutput {
-            satoshis: Some(10_000),
-            // OP_DROP OP_TRUE: consumes the corpus's placeholder-signature
-            // push and leaves a clean single true, so the spliced spend
-            // passes the interpreter's clean-stack rule in
-            // verify_unlock_scripts (a bare OP_TRUE lock does not).
-            locking_script: LockingScript::from_binary(&[0x75, 0x51]),
-            change: false,
-        });
+        source
+            .add_output(TransactionOutput {
+                satoshis: Some(10_000),
+                // OP_DROP OP_TRUE: consumes the corpus's placeholder-signature
+                // push and leaves a clean single true, so the spliced spend
+                // passes the interpreter's clean-stack rule in
+                // verify_unlock_scripts (a bare OP_TRUE lock does not).
+                locking_script: LockingScript::from_binary(&[0x75, 0x51]),
+                change: false,
+            })
+            .expect("source output has a value");
     }
     let source_txid = source.id().expect("source txid");
 
@@ -1137,7 +1145,11 @@ async fn run_signaction_vector(
         .as_ref()
         .and_then(|o| o.return_txid_only.0)
         .unwrap_or(false);
-    let send_with_count = args.options.as_ref().map_or(0, |o| o.send_with.len());
+    let send_with_count = args
+        .options
+        .as_ref()
+        .and_then(|o| o.send_with.as_ref())
+        .map_or(0, Vec::len);
 
     let outcome = w
         .setup
@@ -1228,14 +1240,15 @@ async fn run_signaction_vector(
 
     // sendWith semantics: every batched noSend txid comes back with a status.
     if send_with_count > 0 {
-        if result.send_with_results.len() != send_with_count {
+        let send_with_results = result.send_with_results.as_deref().unwrap_or(&[]);
+        if send_with_results.len() != send_with_count {
             failures.push(format!(
                 "{}: sendWithResults has {} entries, want {send_with_count}",
                 v.id,
-                result.send_with_results.len()
+                send_with_results.len()
             ));
         }
-        for r in &result.send_with_results {
+        for r in send_with_results {
             if r.status.as_str() != "sending" && r.status.as_str() != "unproven" {
                 failures.push(format!(
                     "{}: sendWith txid {} has status {:?}, want sending/unproven",
@@ -1333,19 +1346,23 @@ fn build_internalize_beef(outputs: &Value, receiver_root_hex: &str) -> Vec<u8> {
 
     let mut source = BsvTransaction::new();
     source.version = 1;
-    source.add_input(TransactionInput {
-        source_transaction: None,
-        source_txid: Some("d".repeat(64)),
-        source_output_index: 0,
-        unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
-        sequence: 0xFFFF_FFFF,
-    });
+    source
+        .add_input(TransactionInput {
+            source_transaction: None,
+            source_txid: Some("d".repeat(64)),
+            source_output_index: 0,
+            unlocking_script: Some(UnlockingScript::from_binary(&[0x00])),
+            sequence: 0xFFFF_FFFF,
+        })
+        .expect("source input has a source txid");
     for script in &scripts {
-        source.add_output(TransactionOutput {
-            satoshis: Some(4321),
-            locking_script: LockingScript::from_binary(script),
-            change: false,
-        });
+        source
+            .add_output(TransactionOutput {
+                satoshis: Some(4321),
+                locking_script: LockingScript::from_binary(script),
+                change: false,
+            })
+            .expect("source output has a value");
     }
     let txid = source.id().expect("txid");
 

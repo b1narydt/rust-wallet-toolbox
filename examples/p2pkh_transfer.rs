@@ -117,18 +117,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             CreateActionArgs {
                 description: "P2PKH transfer example".to_string(),
                 input_beef: None,
-                inputs: vec![],
-                outputs: vec![CreateActionOutput {
+                inputs: None,
+                outputs: Some(vec![CreateActionOutput {
                     locking_script: Some(lock_bytes),
                     satoshis: 42,
                     output_description: "P2PKH to receiver".to_string(),
                     basket: None,
                     custom_instructions: None,
-                    tags: vec![],
-                }],
+                    tags: None,
+                }]),
                 lock_time: None,
                 version: None,
-                labels: vec!["p2pkh-transfer".to_string()],
+                labels: Some(vec!["p2pkh-transfer".to_string()]),
                 options: None,
                 reference: None,
             },

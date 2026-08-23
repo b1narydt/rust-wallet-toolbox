@@ -826,7 +826,13 @@ fn compare_action(
     }
     if let Some(w) = want["labels"].as_array() {
         let want_labels: Vec<&str> = w.iter().filter_map(|x| x.as_str()).collect();
-        let got_labels: Vec<&str> = got.labels.iter().map(|s| s.as_str()).collect();
+        let got_labels: Vec<&str> = got
+            .labels
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
         diff(
             "labels",
             format!("{want_labels:?}"),
@@ -837,14 +843,14 @@ fn compare_action(
         diff(
             "inputs.len",
             w.len().to_string(),
-            got.inputs.len().to_string(),
+            got.inputs.as_deref().unwrap_or(&[]).len().to_string(),
         );
     }
     if let Some(w) = want["outputs"].as_array() {
         diff(
             "outputs.len",
             w.len().to_string(),
-            got.outputs.len().to_string(),
+            got.outputs.as_deref().unwrap_or(&[]).len().to_string(),
         );
     }
 }

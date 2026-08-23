@@ -372,7 +372,7 @@ pub async fn internalize_funding(
             InternalizeActionArgs {
                 tx: from_hex(&payment.beef),
                 description: payment.description.clone(),
-                labels: vec!["funded-conformance".to_string()],
+                labels: Some(vec!["funded-conformance".to_string()]),
                 seek_permission: BooleanDefaultTrue(Some(false)),
                 outputs: vec![InternalizeOutput::WalletPayment {
                     output_index: payment.output_index,
@@ -495,9 +495,11 @@ async fn outcome_from_create(
                 txid,
                 tx: tx_hex,
                 raw_tx,
-                no_send_change: r.no_send_change.clone(),
+                no_send_change: r.no_send_change.clone().unwrap_or_default(),
                 send_with_results: r
                     .send_with_results
+                    .as_deref()
+                    .unwrap_or(&[])
                     .iter()
                     .map(|s| serde_json::to_value(s).unwrap_or_default())
                     .collect(),
@@ -551,6 +553,8 @@ async fn outcome_from_sign(
                 no_send_change: vec![],
                 send_with_results: r
                     .send_with_results
+                    .as_deref()
+                    .unwrap_or(&[])
                     .iter()
                     .map(|s| serde_json::to_value(s).unwrap_or_default())
                     .collect(),
