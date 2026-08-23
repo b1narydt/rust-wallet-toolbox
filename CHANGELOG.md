@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-22
+
+Consumes **bsv-sdk 0.7.0** and **bsv-messagebox-client 0.4.0**. Minor rather than patch because the
+SDK release is breaking and its types cross this crate's public API.
+
+### Changed — breaking
+
+- **Optional array fields are now `Option<Vec<_>>`** wherever the BRC-100 wire distinguishes absent
+  from empty. Call sites here were migrated to preserve the existing wire bytes exactly: an empty
+  `Vec` already serialised as *absent* before 0.7.0 — that collapse was the defect — so `vec![]`
+  became `None`, never `Some(vec![])`. 71 direct fields plus 18 dynamic vectors that emit `Some`
+  only when non-empty. No call site wanted a deliberately explicit empty array.
+- **`Transaction::add_input` / `add_output` are fallible**, updating 18 and 39 call sites.
+- **`ecdsa_verify` returns `Result<bool>`** at 2 call sites; the error propagates rather than
+  collapsing into `false`, preserving the distinction between an invalid public key and a signature
+  that does not verify.
+- `CertificateResult.verifier` and `ListOutputsArgs.offset` adapted to their new types.
+
+### Fixed
+
+- A funded conformance replay caught an `Option::iter()` trap introduced during the migration:
+  iterating an `Option<Vec<_>>` directly yields the vector once rather than its elements, which
+  produced a nested `sendWithResults` array. The runner now uses `as_deref().unwrap_or(&[])`. The
+  corpus data was not touched.
+
+
 ## [0.9.0] - 2026-08-22
 
 Minor rather than patch: this release consumes **bsv-sdk 0.6.0**, which changed
