@@ -1546,7 +1546,7 @@ impl WalletInterface for Wallet {
             subject: subject_pk,
             certifier: certifier_pk,
             revocation_outpoint: Some(result.revocation_outpoint),
-            fields: Some(result.fields),
+            fields: Some(result.fields.into_iter().collect()),
             signature: args.signature,
         })
     }

@@ -344,7 +344,7 @@ async fn parse_single_output(
         subject,
         certifier,
         revocation_outpoint: revocation_str,
-        fields,
+        fields: fields.map(|f| f.into_iter().collect()),
         signature,
     };
 

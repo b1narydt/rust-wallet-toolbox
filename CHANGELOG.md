@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-08-23
+
+Consumes **bsv-sdk 0.7.1**, which fixes a regression that broke BRC-103 certificate exchange for any
+certificate carrying more than one field. **0.10.0 is yanked** — it depends on the broken SDK.
+
+### Changed
+
+- `Certificate.fields` is an `IndexMap` in the SDK now, so signed payloads re-serialise in wire
+  order. The six sites here that build or consume that map convert at the boundary; the maps that
+  are wallet RPC data rather than signed auth JSON — `AcquireCertificateArgs.fields` among them —
+  stay `HashMap`, matching the SDK's split.
+
+
 ## [0.10.0] - 2026-08-22
 
 Consumes **bsv-sdk 0.7.0** and **bsv-messagebox-client 0.4.0**. Minor rather than patch because the

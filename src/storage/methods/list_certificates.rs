@@ -202,7 +202,7 @@ pub async fn list_certificates(
             subject,
             certifier: certifier_pk,
             revocation_outpoint: Some(cert.revocation_outpoint.clone()),
-            fields: Some(field_map),
+            fields: Some(field_map.into_iter().collect()),
             signature,
         };
 

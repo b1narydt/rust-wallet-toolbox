@@ -268,7 +268,7 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
         subject,
         certifier: certifier_pk.clone(),
         revocation_outpoint: Some(storage_cert.revocation_outpoint.clone()),
-        fields: Some(field_map),
+        fields: Some(field_map.into_iter().collect()),
         signature: args.certificate.signature.clone(),
     };
 
@@ -555,7 +555,7 @@ pub async fn acquire_issuance_certificate<W: WalletInterface + ?Sized>(
         subject: subject_pk,
         certifier: certifier_resp_pk,
         revocation_outpoint: Some(resp_revocation.to_string()),
-        fields: Some(resp_fields.clone()),
+        fields: Some(resp_fields.clone().into_iter().collect()),
         signature: signature_bytes,
     };
 

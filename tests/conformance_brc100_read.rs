@@ -1137,7 +1137,7 @@ async fn seed_certificate(built: &BuiltWallet, f: &VectorFile) -> SeededCertific
                 cert_type,
                 certifier: certifier_pub,
                 acquisition_protocol: AcquisitionProtocol::Direct,
-                fields: encrypted_fields.clone(),
+                fields: encrypted_fields.clone().into_iter().collect(),
                 serial_number: Some(serial.clone()),
                 revocation_outpoint: Some(vector_revocation),
                 signature: Some(vector_signature),
