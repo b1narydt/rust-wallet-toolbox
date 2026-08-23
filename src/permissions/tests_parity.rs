@@ -646,6 +646,43 @@ async fn test_permission_token_is_valid_pushdrop_roundtrip() {
     assert_eq!(decoded.fields[0], b"app.com".to_vec());
 }
 
+#[tokio::test]
+async fn test_revoke_permission_removes_requested_token() {
+    let wallet = Arc::new(StatefulWallet::new());
+    token_crud::create_permission_token(
+        wallet.as_ref(),
+        &protocol_request("app.com", "test proto", false),
+        None,
+        ADMIN,
+    )
+    .await
+    .unwrap();
+
+    let tokens = token_crud::list_protocol_permissions(wallet.as_ref(), "app.com", ADMIN)
+        .await
+        .unwrap();
+    assert_eq!(tokens.len(), 1, "precondition: one token to revoke");
+
+    let token = &tokens[0];
+    let mgr =
+        WalletPermissionsManager::new(wallet.clone(), ADMIN.to_string(), config_no_metadata());
+    mgr.revoke_permission(
+        &token.txid,
+        token.output_index,
+        PermissionType::ProtocolPermission,
+    )
+    .await
+    .expect("the consumer-requested token should be relinquished");
+
+    let remaining = token_crud::list_protocol_permissions(wallet.as_ref(), "app.com", ADMIN)
+        .await
+        .unwrap();
+    assert!(
+        remaining.is_empty(),
+        "the revoked token must no longer be listed"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // #17 — output-substitution defense (GHSA-36f9-7rg5-cpf8)
 // ---------------------------------------------------------------------------

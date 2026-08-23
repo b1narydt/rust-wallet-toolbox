@@ -214,6 +214,10 @@ impl WalletPermissionsManager {
     }
 
     /// Revoke a single permission token.
+    ///
+    /// This is a consumer-facing administrative operation: wallet owners or
+    /// permission UIs call it when explicitly withdrawing a stored grant.
+    /// Expiry and renewal flows do not invoke it automatically.
     pub async fn revoke_permission(
         &self,
         txid: &str,
