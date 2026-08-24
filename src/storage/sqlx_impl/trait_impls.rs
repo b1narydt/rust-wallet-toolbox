@@ -945,7 +945,8 @@ macro_rules! impl_storage_rw_and_provider {
         extract_trx = $extract_trx:path,
         migrate_fn = $migrate_fn:path,
         trx_name = $trx_name:literal,
-        dbtype_str = $dbtype_str:literal
+        dbtype_str = $dbtype_str:literal,
+        dialect = $dialect:expr
     ) => {
         #[cfg(feature = $feature)]
         mod $mod_name {
@@ -1041,8 +1042,15 @@ macro_rules! impl_storage_rw_and_provider {
                     before_id: i64,
                     _trx: Option<&TrxToken>,
                 ) -> WalletResult<u64> {
-                    let sql = "DELETE FROM monitor_events WHERE event = ? AND id < ?";
-                    let result = sqlx::query(sql)
+                    // Placeholders are dialect-specific: `?` for MySQL, `$N` for
+                    // PostgreSQL. A hardcoded `?` here is a syntax error on
+                    // PostgreSQL, which this macro also generates.
+                    let sql = format!(
+                        "DELETE FROM monitor_events WHERE event = {} AND id < {}",
+                        crate::storage::sqlx_impl::dialect::placeholder($dialect, 1),
+                        crate::storage::sqlx_impl::dialect::placeholder($dialect, 2),
+                    );
+                    let result = sqlx::query(&sql)
                         .bind(event_name)
                         .bind(before_id)
                         .execute(&self.write_pool)
@@ -1385,7 +1393,8 @@ impl_storage_rw_and_provider! {
     extract_trx = StorageSqlx::<sqlx::MySql>::extract_mysql_trx,
     migrate_fn = crate::migrations::run_mysql_migrations,
     trx_name = "MySQL",
-    dbtype_str = "MySQL"
+    dbtype_str = "MySQL",
+    dialect = crate::storage::sqlx_impl::dialect::Dialect::Mysql
 }
 
 impl_storage_rw_and_provider! {
@@ -1397,5 +1406,6 @@ impl_storage_rw_and_provider! {
     extract_trx = StorageSqlx::<sqlx::Postgres>::extract_pg_trx,
     migrate_fn = crate::migrations::run_postgres_migrations,
     trx_name = "PostgreSQL",
-    dbtype_str = "PostgreSQL"
+    dbtype_str = "PostgreSQL",
+    dialect = crate::storage::sqlx_impl::dialect::Dialect::Postgres
 }

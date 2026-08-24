@@ -396,3 +396,46 @@ mod tests {
         assert_eq!(wb.param_count(), 2);
     }
 }
+
+#[cfg(test)]
+mod monitor_events_placeholder_tests {
+    use super::{placeholder, Dialect};
+
+    /// The shared storage macro generates both the MySQL and PostgreSQL
+    /// implementations, so any statement it builds must use dialect
+    /// placeholders. A hardcoded `?` is a hard syntax error on PostgreSQL —
+    /// verified against PostgreSQL 16.15:
+    ///   ERROR: syntax error at or near "AND"
+    /// It was previously reachable from the ReviewDoubleSpends monitor task on
+    /// every tick after the first.
+    #[test]
+    fn delete_monitor_events_uses_dialect_placeholders() {
+        let build = |d: Dialect| {
+            format!(
+                "DELETE FROM monitor_events WHERE event = {} AND id < {}",
+                placeholder(d, 1),
+                placeholder(d, 2)
+            )
+        };
+
+        assert_eq!(
+            build(Dialect::Postgres),
+            "DELETE FROM monitor_events WHERE event = $1 AND id < $2",
+            "PostgreSQL requires positional $N placeholders"
+        );
+        assert_eq!(
+            build(Dialect::Mysql),
+            "DELETE FROM monitor_events WHERE event = ? AND id < ?"
+        );
+        assert_eq!(
+            build(Dialect::Sqlite),
+            "DELETE FROM monitor_events WHERE event = ? AND id < ?"
+        );
+
+        // The specific regression: PostgreSQL must never receive `?`.
+        assert!(
+            !build(Dialect::Postgres).contains('?'),
+            "hardcoded `?` reaching PostgreSQL is ERROR: syntax error"
+        );
+    }
+}
