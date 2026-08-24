@@ -49,6 +49,7 @@ mod sqlite_impl {
         binds: Vec<SqliteBindValue>,
         trx: Option<&TrxToken>,
     ) -> WalletResult<Vec<T>> {
+        storage.record_sql_statement();
         if let Some(trx_token) = trx {
             let inner = StorageSqlx::<Sqlite>::extract_sqlite_trx(trx_token)?;
             let mut guard = inner.lock().await;
@@ -79,6 +80,7 @@ mod sqlite_impl {
         binds: Vec<SqliteBindValue>,
         trx: Option<&TrxToken>,
     ) -> WalletResult<i64> {
+        storage.record_sql_statement();
         if let Some(trx_token) = trx {
             let inner = StorageSqlx::<Sqlite>::extract_sqlite_trx(trx_token)?;
             let mut guard = inner.lock().await;
@@ -481,6 +483,10 @@ mod sqlite_impl {
             wb.add_eq("transactionId");
             binds.push(SqliteBindValue::Int64(*v));
         }
+        if let Some(ids) = &args.transaction_ids {
+            wb.add_in("transactionId", ids.len());
+            binds.extend(ids.iter().copied().map(SqliteBindValue::Int64));
+        }
         if let Some(v) = &args.partial.basket_id {
             wb.add_eq("basketId");
             binds.push(SqliteBindValue::Int64(*v));
@@ -525,6 +531,10 @@ mod sqlite_impl {
             wb.add_eq("spentBy");
             binds.push(SqliteBindValue::Int64(*v));
         }
+        if let Some(ids) = &args.spent_by_ids {
+            wb.add_in("spentBy", ids.len());
+            binds.extend(ids.iter().copied().map(SqliteBindValue::Int64));
+        }
         if let Some(v) = &args.partial.output_description {
             wb.add_eq("outputDescription");
             binds.push(SqliteBindValue::String(v.clone()));
@@ -546,18 +556,16 @@ mod sqlite_impl {
             binds.push(SqliteBindValue::Int64(*v));
         }
         if let Some(statuses) = &args.tx_status {
-            if !statuses.is_empty() {
-                wb.add_subquery_in(
-                    "transactions",
-                    "status",
-                    "transactionId",
-                    "outputs",
-                    "transactionId",
-                    statuses.len(),
-                );
-                for s in statuses {
-                    binds.push(SqliteBindValue::String(s.to_string()));
-                }
+            wb.add_subquery_in(
+                "transactions",
+                "status",
+                "transactionId",
+                "outputs",
+                "transactionId",
+                statuses.len(),
+            );
+            for s in statuses {
+                binds.push(SqliteBindValue::String(s.to_string()));
             }
         }
         if let Some(v) = &args.since {
@@ -575,6 +583,48 @@ mod sqlite_impl {
             ));
         }
         Ok((sql, binds))
+    }
+
+    fn build_outputs_find_query(
+        args: &FindOutputsArgs,
+    ) -> WalletResult<(String, Vec<SqliteBindValue>)> {
+        let (where_and_page, binds) = build_outputs_where(args)?;
+        let columns = if args.no_script {
+            super::OUTPUTS_WITHOUT_LOCKING_SCRIPT
+        } else {
+            "*"
+        };
+        // Preserve the base per-transaction output order without adding
+        // ordering to the WHERE builder shared by count_outputs.
+        let batch_order = if args.paged.is_none() && args.transaction_ids.is_some() {
+            format!(" ORDER BY {}", Dialect::Sqlite.quote_column("vout"))
+        } else {
+            String::new()
+        };
+        Ok((
+            format!("SELECT {columns} FROM outputs{where_and_page}{batch_order}"),
+            binds,
+        ))
+    }
+
+    fn build_outputs_count_query(
+        args: &FindOutputsArgs,
+    ) -> WalletResult<(String, Vec<SqliteBindValue>)> {
+        let (where_and_page, binds) = build_outputs_where(args)?;
+        Ok((
+            format!("SELECT COUNT(*) FROM outputs{where_and_page}"),
+            binds,
+        ))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn outputs_find_sql(args: &FindOutputsArgs) -> WalletResult<String> {
+        build_outputs_find_query(args).map(|(sql, _)| sql)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn outputs_count_sql(args: &FindOutputsArgs) -> WalletResult<String> {
+        build_outputs_count_query(args).map(|(sql, _)| sql)
     }
 
     fn build_proven_txs_where(args: &FindProvenTxsArgs) -> (String, Vec<SqliteBindValue>) {
@@ -626,11 +676,9 @@ mod sqlite_impl {
         }
         // Multi-status filter takes precedence over single partial.status
         if let Some(statuses) = &args.statuses {
-            if !statuses.is_empty() {
-                wb.add_in("status", statuses.len());
-                for s in statuses {
-                    binds.push(SqliteBindValue::String(s.to_string()));
-                }
+            wb.add_in("status", statuses.len());
+            for s in statuses {
+                binds.push(SqliteBindValue::String(s.to_string()));
             }
         } else if let Some(v) = &args.partial.status {
             wb.add_eq("status");
@@ -758,11 +806,9 @@ mod sqlite_impl {
         }
         // Multi-status filter takes precedence over single partial.status
         if let Some(statuses) = &args.status {
-            if !statuses.is_empty() {
-                wb.add_in("status", statuses.len());
-                for s in statuses {
-                    binds.push(SqliteBindValue::String(s.to_string()));
-                }
+            wb.add_in("status", statuses.len());
+            for s in statuses {
+                binds.push(SqliteBindValue::String(s.to_string()));
             }
         } else if let Some(v) = &args.partial.status {
             wb.add_eq("status");
@@ -808,6 +854,10 @@ mod sqlite_impl {
             wb.add_eq("transactionId");
             binds.push(SqliteBindValue::Int64(*v));
         }
+        if let Some(ids) = &args.transaction_ids {
+            wb.add_in("transactionId", ids.len());
+            binds.extend(ids.iter().copied().map(SqliteBindValue::Int64));
+        }
         if let Some(v) = &args.partial.is_deleted {
             wb.add_eq("isDeleted");
             binds.push(SqliteBindValue::Bool(*v));
@@ -835,6 +885,14 @@ mod sqlite_impl {
         if let Some(v) = &args.partial.tx_label_id {
             wb.add_eq("txLabelId");
             binds.push(SqliteBindValue::Int64(*v));
+        }
+        if let Some(ids) = &args.tx_label_ids {
+            wb.add_in("txLabelId", ids.len());
+            binds.extend(ids.iter().copied().map(SqliteBindValue::Int64));
+        }
+        if let Some(labels) = &args.labels {
+            wb.add_in("label", labels.len());
+            binds.extend(labels.iter().cloned().map(SqliteBindValue::String));
         }
         if let Some(v) = &args.partial.user_id {
             wb.add_eq("userId");
@@ -1063,13 +1121,7 @@ mod sqlite_impl {
             args: &FindOutputsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<Output>> {
-            let (where_clause, binds) = build_outputs_where(args)?;
-            let columns = if args.no_script {
-                super::OUTPUTS_WITHOUT_LOCKING_SCRIPT
-            } else {
-                "*"
-            };
-            let sql = format!("SELECT {columns} FROM outputs{where_clause}");
+            let (sql, binds) = build_outputs_find_query(args)?;
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1078,8 +1130,7 @@ mod sqlite_impl {
             args: &FindOutputsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_outputs_where(args)?;
-            let sql = format!("SELECT COUNT(*) FROM outputs{where_clause}");
+            let (sql, binds) = build_outputs_count_query(args)?;
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1428,6 +1479,7 @@ macro_rules! impl_storage_reader_find {
                 binds: Vec<BindVal>,
                 trx: Option<&TrxToken>,
             ) -> WalletResult<Vec<T>> {
+                storage.record_sql_statement();
                 if let Some(trx_token) = trx {
                     let inner = $extract(trx_token)?;
                     let mut guard = inner.lock().await;
@@ -1457,6 +1509,7 @@ macro_rules! impl_storage_reader_find {
                 binds: Vec<BindVal>,
                 trx: Option<&TrxToken>,
             ) -> WalletResult<i64> {
+                storage.record_sql_statement();
                 if let Some(trx_token) = trx {
                     let inner = $extract(trx_token)?;
                     let mut guard = inner.lock().await;
@@ -1800,6 +1853,10 @@ macro_rules! impl_storage_reader_find {
                     w.add_eq("transactionId");
                     binds.push(BindVal::Int64(*v));
                 }
+                if let Some(ids) = &args.transaction_ids {
+                    w.add_in("transactionId", ids.len());
+                    binds.extend(ids.iter().copied().map(BindVal::Int64));
+                }
                 if let Some(v) = &args.partial.basket_id {
                     w.add_eq("basketId");
                     binds.push(BindVal::Int64(*v));
@@ -1844,6 +1901,10 @@ macro_rules! impl_storage_reader_find {
                     w.add_eq("spentBy");
                     binds.push(BindVal::Int64(*v));
                 }
+                if let Some(ids) = &args.spent_by_ids {
+                    w.add_in("spentBy", ids.len());
+                    binds.extend(ids.iter().copied().map(BindVal::Int64));
+                }
                 if let Some(v) = &args.partial.output_description {
                     w.add_eq("outputDescription");
                     binds.push(BindVal::String(v.clone()));
@@ -1865,18 +1926,16 @@ macro_rules! impl_storage_reader_find {
                     binds.push(BindVal::Int64(*v));
                 }
                 if let Some(statuses) = &args.tx_status {
-                    if !statuses.is_empty() {
-                        w.add_subquery_in(
-                            "transactions",
-                            "status",
-                            "transactionId",
-                            "outputs",
-                            "transactionId",
-                            statuses.len(),
-                        );
-                        for s in statuses {
-                            binds.push(BindVal::String(s.to_string()));
-                        }
+                    w.add_subquery_in(
+                        "transactions",
+                        "status",
+                        "transactionId",
+                        "outputs",
+                        "transactionId",
+                        statuses.len(),
+                    );
+                    for s in statuses {
+                        binds.push(BindVal::String(s.to_string()));
                     }
                 }
                 if let Some(v) = &args.since {
@@ -1892,6 +1951,51 @@ macro_rules! impl_storage_reader_find {
                     ));
                 }
                 Ok((sql, binds))
+            }
+
+            fn build_outputs_find_query(
+                args: &FindOutputsArgs,
+            ) -> WalletResult<(String, Vec<BindVal>)> {
+                let (where_and_page, binds) = build_outputs_where(args)?;
+                let columns = if args.no_script {
+                    match $dialect {
+                        Dialect::Postgres => super::POSTGRES_OUTPUTS_WITHOUT_LOCKING_SCRIPT,
+                        _ => super::OUTPUTS_WITHOUT_LOCKING_SCRIPT,
+                    }
+                } else {
+                    "*"
+                };
+                // Preserve the base per-transaction output order without adding
+                // ordering to the WHERE builder shared by count_outputs.
+                let batch_order = if args.paged.is_none() && args.transaction_ids.is_some() {
+                    format!(" ORDER BY {}", $dialect.quote_column("vout"))
+                } else {
+                    String::new()
+                };
+                Ok((
+                    format!("SELECT {columns} FROM outputs{where_and_page}{batch_order}"),
+                    binds,
+                ))
+            }
+
+            fn build_outputs_count_query(
+                args: &FindOutputsArgs,
+            ) -> WalletResult<(String, Vec<BindVal>)> {
+                let (where_and_page, binds) = build_outputs_where(args)?;
+                Ok((
+                    format!("SELECT COUNT(*) FROM outputs{where_and_page}"),
+                    binds,
+                ))
+            }
+
+            #[cfg(test)]
+            pub(crate) fn outputs_find_sql(args: &FindOutputsArgs) -> WalletResult<String> {
+                build_outputs_find_query(args).map(|(sql, _)| sql)
+            }
+
+            #[cfg(test)]
+            pub(crate) fn outputs_count_sql(args: &FindOutputsArgs) -> WalletResult<String> {
+                build_outputs_count_query(args).map(|(sql, _)| sql)
             }
 
             fn build_proven_txs_where(args: &FindProvenTxsArgs) -> (String, Vec<BindVal>) {
@@ -1941,11 +2045,9 @@ macro_rules! impl_storage_reader_find {
                 }
                 // Multi-status filter takes precedence over single partial.status
                 if let Some(statuses) = &args.statuses {
-                    if !statuses.is_empty() {
-                        w.add_in("status", statuses.len());
-                        for s in statuses {
-                            binds.push(BindVal::String(s.to_string()));
-                        }
+                    w.add_in("status", statuses.len());
+                    for s in statuses {
+                        binds.push(BindVal::String(s.to_string()));
                     }
                 } else if let Some(v) = &args.partial.status {
                     w.add_eq("status");
@@ -2067,11 +2169,9 @@ macro_rules! impl_storage_reader_find {
                 }
                 // Multi-status filter takes precedence over single partial.status
                 if let Some(statuses) = &args.status {
-                    if !statuses.is_empty() {
-                        w.add_in("status", statuses.len());
-                        for s in statuses {
-                            binds.push(BindVal::String(s.to_string()));
-                        }
+                    w.add_in("status", statuses.len());
+                    for s in statuses {
+                        binds.push(BindVal::String(s.to_string()));
                     }
                 } else if let Some(v) = &args.partial.status {
                     w.add_eq("status");
@@ -2115,6 +2215,10 @@ macro_rules! impl_storage_reader_find {
                     w.add_eq("transactionId");
                     binds.push(BindVal::Int64(*v));
                 }
+                if let Some(ids) = &args.transaction_ids {
+                    w.add_in("transactionId", ids.len());
+                    binds.extend(ids.iter().copied().map(BindVal::Int64));
+                }
                 if let Some(v) = &args.partial.is_deleted {
                     w.add_eq("isDeleted");
                     binds.push(BindVal::Bool(*v));
@@ -2140,6 +2244,14 @@ macro_rules! impl_storage_reader_find {
                 if let Some(v) = &args.partial.tx_label_id {
                     w.add_eq("txLabelId");
                     binds.push(BindVal::Int64(*v));
+                }
+                if let Some(ids) = &args.tx_label_ids {
+                    w.add_in("txLabelId", ids.len());
+                    binds.extend(ids.iter().copied().map(BindVal::Int64));
+                }
+                if let Some(labels) = &args.labels {
+                    w.add_in("label", labels.len());
+                    binds.extend(labels.iter().cloned().map(BindVal::String));
                 }
                 if let Some(v) = &args.partial.user_id {
                     w.add_eq("userId");
@@ -2357,24 +2469,16 @@ macro_rules! impl_storage_reader_find {
                     args: &FindOutputsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<Output>> {
-                    let (w, b) = build_outputs_where(args)?;
-                    let columns = if args.no_script {
-                        match $dialect {
-                            Dialect::Postgres => super::POSTGRES_OUTPUTS_WITHOUT_LOCKING_SCRIPT,
-                            _ => super::OUTPUTS_WITHOUT_LOCKING_SCRIPT,
-                        }
-                    } else {
-                        "*"
-                    };
-                    query_rows(self, &format!("SELECT {columns} FROM outputs{w}"), b, trx).await
+                    let (sql, b) = build_outputs_find_query(args)?;
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_outputs(
                     &self,
                     args: &FindOutputsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_outputs_where(args)?;
-                    query_count(self, &format!("SELECT COUNT(*) FROM outputs{}", w), b, trx).await
+                    let (sql, b) = build_outputs_count_query(args)?;
+                    query_count(self, &sql, b, trx).await
                 }
                 async fn find_proven_txs(
                     &self,
@@ -2872,4 +2976,159 @@ impl_storage_reader_find! {
     dialect = Dialect::Postgres,
     extract_trx = StorageSqlx::<sqlx::Postgres>::extract_pg_trx,
     trx_name = "PostgreSQL"
+}
+
+#[cfg(test)]
+mod output_sql_generation_tests {
+    use crate::error::WalletResult;
+    use crate::storage::find_args::{FindOutputsArgs, Paged};
+
+    type Generator = fn(&FindOutputsArgs) -> WalletResult<String>;
+
+    fn assert_output_sql_for_dialect(
+        find_sql: Generator,
+        count_sql: Generator,
+        quote: &str,
+        placeholders: [&str; 2],
+    ) {
+        let q = |column: &str| format!("{quote}{column}{quote}");
+        let cases = [
+            (
+                FindOutputsArgs::default(),
+                "SELECT * FROM outputs".to_string(),
+                "SELECT COUNT(*) FROM outputs".to_string(),
+            ),
+            (
+                FindOutputsArgs {
+                    transaction_ids: Some(vec![11, 12]),
+                    ..Default::default()
+                },
+                format!(
+                    "SELECT * FROM outputs WHERE {} IN ({}, {}) ORDER BY {}",
+                    q("transactionId"),
+                    placeholders[0],
+                    placeholders[1],
+                    q("vout")
+                ),
+                format!(
+                    "SELECT COUNT(*) FROM outputs WHERE {} IN ({}, {})",
+                    q("transactionId"),
+                    placeholders[0],
+                    placeholders[1]
+                ),
+            ),
+            (
+                FindOutputsArgs {
+                    spent_by_ids: Some(vec![21, 22]),
+                    ..Default::default()
+                },
+                format!(
+                    "SELECT * FROM outputs WHERE {} IN ({}, {})",
+                    q("spentBy"),
+                    placeholders[0],
+                    placeholders[1]
+                ),
+                format!(
+                    "SELECT COUNT(*) FROM outputs WHERE {} IN ({}, {})",
+                    q("spentBy"),
+                    placeholders[0],
+                    placeholders[1]
+                ),
+            ),
+            (
+                FindOutputsArgs {
+                    transaction_ids: Some(Vec::new()),
+                    ..Default::default()
+                },
+                format!("SELECT * FROM outputs WHERE 1 = 0 ORDER BY {}", q("vout")),
+                "SELECT COUNT(*) FROM outputs WHERE 1 = 0".to_string(),
+            ),
+            (
+                FindOutputsArgs {
+                    spent_by_ids: Some(Vec::new()),
+                    ..Default::default()
+                },
+                "SELECT * FROM outputs WHERE 1 = 0".to_string(),
+                "SELECT COUNT(*) FROM outputs WHERE 1 = 0".to_string(),
+            ),
+        ];
+
+        for (args, expected_find, expected_count) in cases {
+            let actual_find = find_sql(&args).unwrap();
+            let actual_count = count_sql(&args).unwrap();
+            assert_eq!(actual_find, expected_find);
+            assert_eq!(actual_count, expected_count);
+            assert!(!actual_count.contains("ORDER BY"));
+            assert!(!actual_count.contains("LIMIT"));
+        }
+
+        let paged_args = FindOutputsArgs {
+            transaction_ids: Some(vec![11, 12]),
+            paged: Some(Paged {
+                limit: 5,
+                offset: 2,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            find_sql(&paged_args).unwrap(),
+            format!(
+                "SELECT * FROM outputs WHERE {} IN ({}, {}) ORDER BY {} LIMIT 5 OFFSET 2",
+                q("transactionId"),
+                placeholders[0],
+                placeholders[1],
+                q("outputId")
+            )
+        );
+        let paged_count = count_sql(&paged_args).unwrap();
+        // This documents KNOWN-DEFECTIVE pre-existing behavior, not a contract: paged
+        // count_outputs inherits ORDER BY and LIMIT from the shared where-builder exactly
+        // as before this change. OFFSET can suppress the aggregate row, and Postgres can
+        // reject ordering the aggregate by an ungrouped outputId. It remains pending a
+        // separate filed ticket; fifteen other count_* methods share this builder shape.
+        // The batching COUNT case above is unpaged and correctly has no ORDER BY.
+        assert_eq!(
+            paged_count,
+            format!(
+                "SELECT COUNT(*) FROM outputs WHERE {} IN ({}, {}) ORDER BY {} LIMIT 5 OFFSET 2",
+                q("transactionId"),
+                placeholders[0],
+                placeholders[1],
+                q("outputId")
+            )
+        );
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[test]
+    fn sqlite_find_and_count_output_sql_is_exact() {
+        assert_output_sql_for_dialect(
+            super::sqlite_impl::outputs_find_sql,
+            super::sqlite_impl::outputs_count_sql,
+            "`",
+            ["?", "?"],
+        );
+    }
+
+    #[cfg(feature = "mysql")]
+    #[test]
+    fn mysql_find_and_count_output_sql_is_exact() {
+        assert_output_sql_for_dialect(
+            super::mysql_find_impl::outputs_find_sql,
+            super::mysql_find_impl::outputs_count_sql,
+            "`",
+            ["?", "?"],
+        );
+    }
+
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn postgres_find_and_count_output_sql_is_exact() {
+        assert_output_sql_for_dialect(
+            super::postgres_find_impl::outputs_find_sql,
+            super::postgres_find_impl::outputs_count_sql,
+            "\"",
+            ["$1", "$2"],
+        );
+    }
 }

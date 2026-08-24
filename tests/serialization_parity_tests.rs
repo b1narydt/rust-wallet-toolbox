@@ -7,7 +7,15 @@
 use bsv::primitives::public_key::PublicKey;
 use bsv::wallet::interfaces::{BasketInsertion, InternalizeOutput, Payment};
 use bsv_wallet_toolbox::storage::action_types::*;
+use bsv_wallet_toolbox::storage::find_args::FindOutputsArgs;
 use bsv_wallet_toolbox::types::StorageProvidedBy;
+
+#[test]
+fn find_outputs_unused_batch_filters_are_absent_from_wire_shape() {
+    let json = serde_json::to_value(FindOutputsArgs::default()).unwrap();
+    assert!(json.get("transactionIds").is_none());
+    assert!(json.get("spentByIds").is_none());
+}
 
 #[test]
 fn test_storage_create_action_args_camel_case() {

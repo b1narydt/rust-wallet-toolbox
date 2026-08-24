@@ -21,6 +21,9 @@ pub mod sqlite_specific;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(test)]
+use std::sync::atomic::AtomicUsize;
+
 use crate::error::{WalletError, WalletResult};
 use crate::storage::StorageConfig;
 use crate::tables::Settings;
@@ -45,6 +48,9 @@ pub struct StorageSqlx<DB: sqlx::Database> {
     pub storage_identity_key: String,
     /// Cached settings loaded from the settings table.
     pub settings: tokio::sync::RwLock<Option<Settings>>,
+    /// Number of SQL read statements issued through the find/count layer.
+    #[cfg(test)]
+    sql_statement_count: AtomicUsize,
 }
 
 impl<DB: sqlx::Database> StorageSqlx<DB> {
@@ -62,6 +68,29 @@ impl<DB: sqlx::Database> StorageSqlx<DB> {
     /// Set the active state of this storage provider.
     pub fn set_active(&self, active: bool) {
         self.active.store(active, Ordering::Relaxed);
+    }
+
+    /// Record one SQL statement issued by the find/count layer.
+    #[cfg(test)]
+    pub(crate) fn record_sql_statement(&self) {
+        self.sql_statement_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Production builds do not carry query-count instrumentation.
+    #[cfg(not(test))]
+    #[inline]
+    pub(crate) fn record_sql_statement(&self) {}
+
+    /// Return the number of SQL statements issued by the find/count layer.
+    #[cfg(test)]
+    pub(crate) fn sql_statement_count(&self) -> usize {
+        self.sql_statement_count.load(Ordering::Relaxed)
+    }
+
+    /// Reset the find/count SQL statement counter.
+    #[cfg(test)]
+    pub(crate) fn reset_sql_statement_count(&self) {
+        self.sql_statement_count.store(0, Ordering::Relaxed);
     }
 }
 
@@ -86,6 +115,8 @@ impl SqliteStorage {
             active: AtomicBool::new(false),
             storage_identity_key: String::new(),
             settings: tokio::sync::RwLock::new(None),
+            #[cfg(test)]
+            sql_statement_count: AtomicUsize::new(0),
         })
     }
 
@@ -145,6 +176,8 @@ impl MysqlStorage {
             active: AtomicBool::new(false),
             storage_identity_key: String::new(),
             settings: tokio::sync::RwLock::new(None),
+            #[cfg(test)]
+            sql_statement_count: AtomicUsize::new(0),
         })
     }
 
@@ -197,6 +230,8 @@ impl PgStorage {
             active: AtomicBool::new(false),
             storage_identity_key: String::new(),
             settings: tokio::sync::RwLock::new(None),
+            #[cfg(test)]
+            sql_statement_count: AtomicUsize::new(0),
         })
     }
 
