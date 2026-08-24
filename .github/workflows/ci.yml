@@ -67,6 +67,60 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --no-default-features --features ${{ matrix.features }}
 
+  # Two hard-crash bugs shipped while behavioural coverage was SQLite-only.
+  server-backends:
+    name: test (${{ matrix.backend }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend:
+          - postgres
+          - mysql
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: walletuser
+          POSTGRES_PASSWORD: walletpass
+          POSTGRES_DB: wallet_toolbox_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U walletuser -d wallet_toolbox_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      mysql:
+        image: mysql:8.4
+        # Do not override sql_mode: the strict default includes ONLY_FULL_GROUP_BY.
+        env:
+          MYSQL_ROOT_PASSWORD: walletpass
+          MYSQL_DATABASE: wallet_toolbox_test
+          MYSQL_USER: walletuser
+          MYSQL_PASSWORD: walletpass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -uwalletuser -pwalletpass --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run PostgreSQL integration suite
+        if: matrix.backend == 'postgres'
+        env:
+          POSTGRES_DATABASE_URL: postgres://walletuser:walletpass@localhost:5432/wallet_toolbox_test
+        run: cargo test --no-default-features --features postgres --test storage_postgres_tests -- --ignored --test-threads=1 --nocapture
+      - name: Run MySQL integration suite
+        if: matrix.backend == 'mysql'
+        env:
+          MYSQL_DATABASE_URL: mysql://walletuser:walletpass@localhost:3306/wallet_toolbox_test
+        run: cargo test --no-default-features --features mysql --test storage_mysql_tests -- --ignored --test-threads=1 --nocapture
+
   doc:
     name: rustdoc
     runs-on: ubuntu-latest
