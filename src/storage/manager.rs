@@ -366,6 +366,15 @@ impl WalletStorageManager {
         &self.identity_key
     }
 
+    fn validate_identity_key(&self, identity_key: &str) -> WalletResult<()> {
+        if identity_key != self.identity_key.as_str() {
+            return Err(WalletError::Unauthorized(
+                "identity key does not match WalletStorageManager identity key".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Returns `true` after `make_available()` has successfully completed.
     pub fn is_available(&self) -> bool {
         self.is_available_flag.load(Ordering::Acquire)
@@ -1047,6 +1056,7 @@ impl WalletStorageManager {
     // -----------------------------------------------------------------------
 
     pub async fn find_or_insert_user(&self, identity_key: &str) -> WalletResult<(User, bool)> {
+        self.validate_identity_key(identity_key)?;
         let active = self.get_active().await?;
         let result = active.find_or_insert_user(identity_key).await?;
 
@@ -1067,6 +1077,7 @@ impl WalletStorageManager {
     }
 
     pub async fn get_sync_chunk(&self, args: &RequestSyncChunkArgs) -> WalletResult<SyncChunk> {
+        self.validate_identity_key(&args.identity_key)?;
         let active = self.get_active().await?;
         active.get_sync_chunk(args).await
     }
@@ -1076,6 +1087,7 @@ impl WalletStorageManager {
         args: &RequestSyncChunkArgs,
         chunk: &SyncChunk,
     ) -> WalletResult<ProcessSyncChunkResult> {
+        self.validate_identity_key(&args.identity_key)?;
         let active = self.get_active().await?;
         active.process_sync_chunk(args, chunk).await
     }

@@ -16,10 +16,13 @@ mod manager_tests {
     use std::time::Duration;
 
     use bsv_wallet_toolbox::error::WalletResult;
-    use bsv_wallet_toolbox::storage::find_args::{FindOutputsArgs, OutputPartial};
+    use bsv_wallet_toolbox::storage::find_args::{FindOutputsArgs, FindUsersArgs, OutputPartial};
     use bsv_wallet_toolbox::storage::manager::WalletStorageManager;
     use bsv_wallet_toolbox::storage::sqlx_impl::SqliteStorage;
+    use bsv_wallet_toolbox::storage::sync::request_args::RequestSyncChunkArgs;
+    use bsv_wallet_toolbox::storage::sync::SyncChunk;
     use bsv_wallet_toolbox::storage::traits::provider::StorageProvider;
+    use bsv_wallet_toolbox::storage::traits::reader::StorageReader;
     use bsv_wallet_toolbox::storage::traits::wallet_provider::WalletStorageProvider;
     use bsv_wallet_toolbox::storage::StorageConfig;
     use bsv_wallet_toolbox::types::Chain;
@@ -32,20 +35,158 @@ mod manager_tests {
     // -----------------------------------------------------------------------
 
     /// Create a fresh in-memory SQLite provider, migrated and ready.
-    async fn create_provider() -> WalletResult<Arc<dyn WalletStorageProvider>> {
+    async fn create_sqlite_provider() -> WalletResult<Arc<SqliteStorage>> {
         let config = StorageConfig {
             url: "sqlite::memory:".to_string(),
             ..Default::default()
         };
         let storage = SqliteStorage::new_sqlite(config, Chain::Test).await?;
         StorageProvider::migrate_database(&storage).await?;
-        Ok(Arc::new(storage) as Arc<dyn WalletStorageProvider>)
+        Ok(Arc::new(storage))
+    }
+
+    async fn create_provider() -> WalletResult<Arc<dyn WalletStorageProvider>> {
+        Ok(create_sqlite_provider().await? as Arc<dyn WalletStorageProvider>)
+    }
+
+    fn sync_args(identity_key: &str, from_storage_identity_key: &str) -> RequestSyncChunkArgs {
+        RequestSyncChunkArgs {
+            from_storage_identity_key: from_storage_identity_key.to_string(),
+            to_storage_identity_key: "sync-destination".to_string(),
+            identity_key: identity_key.to_string(),
+            since: None,
+            max_rough_size: 10_000_000,
+            max_items: 1000,
+            offsets: vec![],
+        }
+    }
+
+    fn empty_sync_chunk(args: &RequestSyncChunkArgs) -> SyncChunk {
+        SyncChunk {
+            from_storage_identity_key: args.from_storage_identity_key.clone(),
+            to_storage_identity_key: args.to_storage_identity_key.clone(),
+            user_identity_key: args.identity_key.clone(),
+            user: None,
+            proven_txs: Some(vec![]),
+            output_baskets: Some(vec![]),
+            transactions: Some(vec![]),
+            outputs: Some(vec![]),
+            tx_labels: Some(vec![]),
+            tx_label_maps: Some(vec![]),
+            output_tags: Some(vec![]),
+            output_tag_maps: Some(vec![]),
+            certificates: Some(vec![]),
+            certificate_fields: Some(vec![]),
+            commissions: Some(vec![]),
+            proven_tx_reqs: Some(vec![]),
+        }
     }
 
     const IDENTITY_KEY: &str =
         "02aabbccdd0011223344556677889900aabbccdd0011223344556677889900aabbcc";
     const IDENTITY_KEY_2: &str =
         "03bbccddee0011223344556677889900aabbccdd0011223344556677889900aabbcc";
+
+    #[tokio::test]
+    async fn find_or_insert_user_rejects_foreign_identity_without_phantom_row() {
+        let storage = create_sqlite_provider().await.unwrap();
+        let manager =
+            WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(storage.clone()), vec![]);
+        manager.make_available().await.unwrap();
+
+        assert_ne!(IDENTITY_KEY, IDENTITY_KEY_2);
+        let users_before =
+            StorageReader::count_users(storage.as_ref(), &FindUsersArgs::default(), None)
+                .await
+                .unwrap();
+
+        let foreign_result = manager.find_or_insert_user(IDENTITY_KEY_2).await;
+
+        let users_after =
+            StorageReader::count_users(storage.as_ref(), &FindUsersArgs::default(), None)
+                .await
+                .unwrap();
+        assert!(
+            foreign_result.is_err(),
+            "a foreign identity must be rejected"
+        );
+        assert_eq!(
+            users_after, users_before,
+            "rejecting a foreign identity must not insert a phantom user row"
+        );
+
+        let (own_user, _) = manager.find_or_insert_user(IDENTITY_KEY).await.unwrap();
+        assert_eq!(own_user.identity_key, IDENTITY_KEY);
+    }
+
+    #[tokio::test]
+    async fn get_sync_chunk_accepts_owner_and_rejects_foreign_identity() {
+        let storage = create_sqlite_provider().await.unwrap();
+        let manager =
+            WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(storage.clone()), vec![]);
+        let settings = manager.make_available().await.unwrap();
+        WalletStorageProvider::find_or_insert_user(storage.as_ref(), IDENTITY_KEY_2)
+            .await
+            .unwrap();
+
+        assert_ne!(IDENTITY_KEY, IDENTITY_KEY_2);
+        let foreign_args = sync_args(IDENTITY_KEY_2, &settings.storage_identity_key);
+        assert!(
+            manager.get_sync_chunk(&foreign_args).await.is_err(),
+            "a foreign identity must not select exported sync data"
+        );
+
+        let own_args = sync_args(IDENTITY_KEY, &settings.storage_identity_key);
+        let own_chunk = manager.get_sync_chunk(&own_args).await.unwrap();
+        assert_eq!(own_chunk.user_identity_key, IDENTITY_KEY);
+    }
+
+    #[tokio::test]
+    async fn process_sync_chunk_accepts_owner_and_leaves_foreign_user_unchanged() {
+        let storage = create_sqlite_provider().await.unwrap();
+        let manager =
+            WalletStorageManager::new(IDENTITY_KEY.to_string(), Some(storage.clone()), vec![]);
+        let settings = manager.make_available().await.unwrap();
+        WalletStorageProvider::find_or_insert_user(storage.as_ref(), IDENTITY_KEY_2)
+            .await
+            .unwrap();
+        let victim_before =
+            WalletStorageProvider::find_user_by_identity_key(storage.as_ref(), IDENTITY_KEY_2)
+                .await
+                .unwrap()
+                .expect("victim user must exist before the attempted merge");
+
+        assert_ne!(IDENTITY_KEY, IDENTITY_KEY_2);
+        let foreign_args = sync_args(IDENTITY_KEY_2, &settings.storage_identity_key);
+        let mut foreign_chunk = empty_sync_chunk(&foreign_args);
+        let mut attacker_update = victim_before.clone();
+        attacker_update.updated_at += chrono::Duration::days(1);
+        attacker_update.active_storage = "attacker-controlled-storage".to_string();
+        foreign_chunk.user = Some(attacker_update);
+
+        let foreign_result = manager
+            .process_sync_chunk(&foreign_args, &foreign_chunk)
+            .await;
+        let victim_after =
+            WalletStorageProvider::find_user_by_identity_key(storage.as_ref(), IDENTITY_KEY_2)
+                .await
+                .unwrap()
+                .expect("victim user must still exist after the rejected merge");
+        assert!(
+            foreign_result.is_err(),
+            "a foreign identity must be rejected"
+        );
+        assert_eq!(
+            victim_after, victim_before,
+            "rejecting a foreign identity must leave the victim row unchanged"
+        );
+
+        let own_args = sync_args(IDENTITY_KEY, &settings.storage_identity_key);
+        manager
+            .process_sync_chunk(&own_args, &empty_sync_chunk(&own_args))
+            .await
+            .unwrap();
+    }
 
     // -----------------------------------------------------------------------
     // Test 1: Constructor stores providers in correct order

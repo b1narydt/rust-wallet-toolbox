@@ -14,7 +14,9 @@ mod sync_tests {
     use bsv_wallet_toolbox::storage::find_args::*;
     use bsv_wallet_toolbox::storage::sqlx_impl::SqliteStorage;
     use bsv_wallet_toolbox::storage::sync::get_sync_chunk::{get_sync_chunk, GetSyncChunkArgs};
-    use bsv_wallet_toolbox::storage::sync::process_sync_chunk::process_sync_chunk;
+    use bsv_wallet_toolbox::storage::sync::process_sync_chunk::{
+        process_sync_chunk, AuthenticatedIdentityKey,
+    };
     use bsv_wallet_toolbox::storage::sync::request_args::{RequestSyncChunkArgs, SyncChunkOffset};
     use bsv_wallet_toolbox::storage::sync::sync_map::{SyncChunk, SyncMap};
     use bsv_wallet_toolbox::storage::traits::provider::StorageProvider;
@@ -326,9 +328,15 @@ mod sync_tests {
 
         // Process chunk into target
         let mut target_sync_map = SyncMap::new();
-        let result = process_sync_chunk(&target, "02abc333", chunk, &mut target_sync_map, None)
-            .await
-            .unwrap();
+        let result = process_sync_chunk(
+            &target,
+            AuthenticatedIdentityKey::assert_authenticated("02abc333"),
+            chunk,
+            &mut target_sync_map,
+            None,
+        )
+        .await
+        .unwrap();
         assert!(
             result.inserts > 0,
             "should have inserted at least one entity"
@@ -413,9 +421,15 @@ mod sync_tests {
         };
 
         let mut sync_map = SyncMap::new();
-        let result = process_sync_chunk(&target, "02abc444", chunk, &mut sync_map, None)
-            .await
-            .unwrap();
+        let result = process_sync_chunk(
+            &target,
+            AuthenticatedIdentityKey::assert_authenticated("02abc444"),
+            chunk,
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap();
 
         // Should have updated the existing basket
         assert!(result.updates > 0, "should have updated the basket");
@@ -678,9 +692,15 @@ mod sync_tests {
         };
 
         let mut sync_map = SyncMap::new();
-        let result = process_sync_chunk(&target, "02abc555", chunk, &mut sync_map, None)
-            .await
-            .unwrap();
+        let result = process_sync_chunk(
+            &target,
+            AuthenticatedIdentityKey::assert_authenticated("02abc555"),
+            chunk,
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(result.inserts, 2, "should insert transaction + output");
 
@@ -848,7 +868,14 @@ mod sync_tests {
         let chunk = chunk_with("02abc666", None, Some(vec![orphan]));
 
         let mut sync_map = SyncMap::new();
-        let result = process_sync_chunk(&target, "02abc666", chunk, &mut sync_map, None).await;
+        let result = process_sync_chunk(
+            &target,
+            AuthenticatedIdentityKey::assert_authenticated("02abc666"),
+            chunk,
+            &mut sync_map,
+            None,
+        )
+        .await;
 
         assert!(
             result.is_err(),
@@ -1168,18 +1195,30 @@ mod sync_tests {
         // First pass populates the target.
         let first_chunk = get_sync_chunk(&source, args(), None).await.unwrap();
         let mut first_map = SyncMap::new();
-        let first = process_sync_chunk(&target, "02abc999", first_chunk, &mut first_map, None)
-            .await
-            .unwrap();
+        let first = process_sync_chunk(
+            &target,
+            AuthenticatedIdentityKey::assert_authenticated("02abc999"),
+            first_chunk,
+            &mut first_map,
+            None,
+        )
+        .await
+        .unwrap();
         assert!(first.inserts > 0, "the first pass must insert the row");
 
         // Second pass over the same data, from a FRESH sync map — exactly what
         // re-attaching an already-current backup looks like.
         let second_chunk = get_sync_chunk(&source, args(), None).await.unwrap();
         let mut second_map = SyncMap::new();
-        let second = process_sync_chunk(&target, "02abc999", second_chunk, &mut second_map, None)
-            .await
-            .unwrap();
+        let second = process_sync_chunk(
+            &target,
+            AuthenticatedIdentityKey::assert_authenticated("02abc999"),
+            second_chunk,
+            &mut second_map,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             (second.inserts, second.updates),
@@ -1279,7 +1318,7 @@ mod sync_tests {
         // Round 1: the row replicates before signing — no rawTx, no script.
         process_sync_chunk(
             &target,
-            "02mergewide",
+            AuthenticatedIdentityKey::assert_authenticated("02mergewide"),
             chunk_with(tx_at(t1, None, None), out_at(t1, None, None)),
             &mut sync_map,
             None,
@@ -1294,7 +1333,7 @@ mod sync_tests {
         let script = vec![0x76, 0xa9, 0x14];
         process_sync_chunk(
             &target,
-            "02mergewide",
+            AuthenticatedIdentityKey::assert_authenticated("02mergewide"),
             chunk_with(
                 tx_at(t2, Some(raw.clone()), Some(beef.clone())),
                 out_at(t2, Some(script.clone()), Some("spend me".to_string())),
@@ -1406,7 +1445,7 @@ mod sync_tests {
         // newer and the third update is silently rejected.
         process_sync_chunk(
             &target,
-            "02skew",
+            AuthenticatedIdentityKey::assert_authenticated("02skew"),
             chunk_with(mk_label(t1, false)),
             &mut sync_map,
             None,
@@ -1415,7 +1454,7 @@ mod sync_tests {
         .unwrap();
         process_sync_chunk(
             &target,
-            "02skew",
+            AuthenticatedIdentityKey::assert_authenticated("02skew"),
             chunk_with(mk_label(t2, true)),
             &mut sync_map,
             None,
@@ -1424,7 +1463,7 @@ mod sync_tests {
         .unwrap();
         let third = process_sync_chunk(
             &target,
-            "02skew",
+            AuthenticatedIdentityKey::assert_authenticated("02skew"),
             chunk_with(mk_label(t3, false)),
             &mut sync_map,
             None,
@@ -1588,9 +1627,15 @@ mod sync_tests {
             .await
             .unwrap();
         let mut consumer_map = SyncMap::new();
-        process_sync_chunk(&target, "02crossround", chunk1, &mut consumer_map, None)
-            .await
-            .unwrap();
+        process_sync_chunk(
+            &target,
+            AuthenticatedIdentityKey::assert_authenticated("02crossround"),
+            chunk1,
+            &mut consumer_map,
+            None,
+        )
+        .await
+        .unwrap();
 
         // Between rounds: a NEW map labels the month-old transaction with the
         // month-old second label. Neither parent will be in the next window.
@@ -1632,9 +1677,15 @@ mod sync_tests {
             "the old parent transaction is not in the incremental window"
         );
 
-        process_sync_chunk(&target, "02crossround", chunk2, &mut consumer_map, None)
-            .await
-            .unwrap();
+        process_sync_chunk(
+            &target,
+            AuthenticatedIdentityKey::assert_authenticated("02crossround"),
+            chunk2,
+            &mut consumer_map,
+            None,
+        )
+        .await
+        .unwrap();
 
         let target_maps = target
             .find_tx_label_maps(&FindTxLabelMapsArgs::default(), None)
@@ -1745,9 +1796,15 @@ mod sync_tests {
             }
 
             let done = chunk_done(&chunk);
-            process_sync_chunk(&target, "02exhaust", chunk, &mut consumer_map, None)
-                .await
-                .expect("every child's parent must already be mapped");
+            process_sync_chunk(
+                &target,
+                AuthenticatedIdentityKey::assert_authenticated("02exhaust"),
+                chunk,
+                &mut consumer_map,
+                None,
+            )
+            .await
+            .expect("every child's parent must already be mapped");
             if done {
                 break;
             }
