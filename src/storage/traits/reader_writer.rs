@@ -216,6 +216,42 @@ pub trait StorageReaderWriter: StorageReader {
         trx: Option<&TrxToken>,
     ) -> WalletResult<i64>;
 
+    /// Claim change inputs for a transaction. Returns the number of outputs claimed.
+    ///
+    /// This default is a non-atomic best-effort fallback that still refuses
+    /// already-claimed outputs. Real storage backends must override it with a
+    /// single atomic guarded update.
+    async fn mark_change_inputs_spent(
+        &self,
+        output_ids: &[i64],
+        transaction_id: i64,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
+        let update = OutputPartial {
+            spendable: Some(false),
+            spent_by: Some(transaction_id),
+            ..Default::default()
+        };
+        let mut updated = 0;
+        for output_id in output_ids {
+            let args = FindOutputsArgs {
+                partial: OutputPartial {
+                    output_id: Some(*output_id),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let Some(output) = verify_one_or_none(self.find_outputs(&args, trx).await?)? else {
+                continue;
+            };
+            if !output.spendable || output.spent_by.is_some() {
+                continue;
+            }
+            updated += self.update_output(*output_id, &update, trx).await?;
+        }
+        Ok(updated)
+    }
+
     /// Update a proven transaction by ID. Returns the number of rows affected.
     async fn update_proven_tx(
         &self,
