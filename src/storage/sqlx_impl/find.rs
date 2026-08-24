@@ -8,19 +8,51 @@
 //! `impl_storage_reader_find!` macro to avoid massive code duplication.
 //! The key difference is placeholder style: `?` for SQLite/MySQL, `$N` for PostgreSQL.
 
-const OUTPUTS_WITHOUT_LOCKING_SCRIPT: &str = "created_at, updated_at, outputId, userId, \
-    transactionId, basketId, spendable, change, vout, satoshis, providedBy, purpose, type, \
-    outputDescription, txid, senderIdentityKey, derivationPrefix, derivationSuffix, \
-    customInstructions, spentBy, sequenceNumber, spendingDescription, scriptLength, \
-    scriptOffset, NULL AS lockingScript";
+use crate::storage::sqlx_impl::dialect::Dialect;
 
-#[cfg_attr(not(feature = "postgres"), allow(dead_code))]
-const POSTGRES_OUTPUTS_WITHOUT_LOCKING_SCRIPT: &str = "\"created_at\", \"updated_at\", \
-    \"outputId\", \"userId\", \"transactionId\", \"basketId\", \"spendable\", \"change\", \
-    \"vout\", \"satoshis\", \"providedBy\", \"purpose\", \"type\", \"outputDescription\", \
-    \"txid\", \"senderIdentityKey\", \"derivationPrefix\", \"derivationSuffix\", \
-    \"customInstructions\", \"spentBy\", \"sequenceNumber\", \"spendingDescription\", \
-    \"scriptLength\", \"scriptOffset\", NULL AS \"lockingScript\"";
+/// Every `outputs` column except `lockingScript`, in schema order.
+///
+/// Kept as bare names and quoted per-dialect at use: `change` is a reserved word
+/// in MySQL, so an unquoted projection is a hard syntax error there (ERROR 1064)
+/// while SQLite accepts it silently. The migrations already backtick it; this
+/// list exists so the read path cannot drift from that.
+const OUTPUTS_COLUMNS_WITHOUT_LOCKING_SCRIPT: &[&str] = &[
+    "created_at",
+    "updated_at",
+    "outputId",
+    "userId",
+    "transactionId",
+    "basketId",
+    "spendable",
+    "change",
+    "vout",
+    "satoshis",
+    "providedBy",
+    "purpose",
+    "type",
+    "outputDescription",
+    "txid",
+    "senderIdentityKey",
+    "derivationPrefix",
+    "derivationSuffix",
+    "customInstructions",
+    "spentBy",
+    "sequenceNumber",
+    "spendingDescription",
+    "scriptLength",
+    "scriptOffset",
+];
+
+/// Build the `no_script` projection for `dialect`, quoting every identifier so
+/// reserved words are safe on all three backends.
+fn outputs_without_locking_script(dialect: Dialect) -> String {
+    let mut cols: Vec<String> = OUTPUTS_COLUMNS_WITHOUT_LOCKING_SCRIPT
+        .iter()
+        .map(|c| dialect.quote_column(c))
+        .collect();
+    cols.push(format!("NULL AS {}", dialect.quote_column("lockingScript")));
+    cols.join(", ")
+}
 
 #[cfg(feature = "sqlite")]
 mod sqlite_impl {
@@ -590,9 +622,9 @@ mod sqlite_impl {
     ) -> WalletResult<(String, Vec<SqliteBindValue>)> {
         let (where_and_page, binds) = build_outputs_where(args)?;
         let columns = if args.no_script {
-            super::OUTPUTS_WITHOUT_LOCKING_SCRIPT
+            super::outputs_without_locking_script(Dialect::Sqlite)
         } else {
-            "*"
+            "*".to_string()
         };
         // Preserve the base per-transaction output order without adding
         // ordering to the WHERE builder shared by count_outputs.
@@ -1958,12 +1990,9 @@ macro_rules! impl_storage_reader_find {
             ) -> WalletResult<(String, Vec<BindVal>)> {
                 let (where_and_page, binds) = build_outputs_where(args)?;
                 let columns = if args.no_script {
-                    match $dialect {
-                        Dialect::Postgres => super::POSTGRES_OUTPUTS_WITHOUT_LOCKING_SCRIPT,
-                        _ => super::OUTPUTS_WITHOUT_LOCKING_SCRIPT,
-                    }
+                    super::outputs_without_locking_script($dialect)
                 } else {
-                    "*"
+                    "*".to_string()
                 };
                 // Preserve the base per-transaction output order without adding
                 // ordering to the WHERE builder shared by count_outputs.
@@ -2985,6 +3014,36 @@ mod output_sql_generation_tests {
 
     type Generator = fn(&FindOutputsArgs) -> WalletResult<String>;
 
+    /// The `no_script` projection must quote every identifier.
+    ///
+    /// `change` is reserved in MySQL: an unquoted projection is ERROR 1064 there,
+    /// while SQLite accepts it, so this was invisible to the SQLite-only suite.
+    /// Verified against MySQL 8.4.11 — unquoted fails, quoted succeeds.
+    fn assert_no_script_projection_is_quoted(find_sql: Generator, quote: &str) {
+        let sql = find_sql(&FindOutputsArgs {
+            no_script: true,
+            ..Default::default()
+        })
+        .expect("no_script query builds");
+
+        for column in super::OUTPUTS_COLUMNS_WITHOUT_LOCKING_SCRIPT {
+            let quoted = format!("{quote}{column}{quote}");
+            assert!(
+                sql.contains(&quoted),
+                "no_script projection must quote {column} for this dialect; got: {sql}"
+            );
+        }
+        assert!(
+            sql.contains(&format!("NULL AS {quote}lockingScript{quote}")),
+            "lockingScript alias must be quoted; got: {sql}"
+        );
+        // Bare `change` outside backquotes is the MySQL syntax error.
+        assert!(
+            !sql.contains(", change,"),
+            "unquoted `change` in projection is ERROR 1064 on MySQL; got: {sql}"
+        );
+    }
+
     fn assert_output_sql_for_dialect(
         find_sql: Generator,
         count_sql: Generator,
@@ -3101,6 +3160,12 @@ mod output_sql_generation_tests {
 
     #[cfg(feature = "sqlite")]
     #[test]
+    fn sqlite_no_script_projection_is_quoted() {
+        assert_no_script_projection_is_quoted(super::sqlite_impl::outputs_find_sql, "`");
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[test]
     fn sqlite_find_and_count_output_sql_is_exact() {
         assert_output_sql_for_dialect(
             super::sqlite_impl::outputs_find_sql,
@@ -3112,6 +3177,12 @@ mod output_sql_generation_tests {
 
     #[cfg(feature = "mysql")]
     #[test]
+    fn mysql_no_script_projection_is_quoted() {
+        assert_no_script_projection_is_quoted(super::mysql_find_impl::outputs_find_sql, "`");
+    }
+
+    #[cfg(feature = "mysql")]
+    #[test]
     fn mysql_find_and_count_output_sql_is_exact() {
         assert_output_sql_for_dialect(
             super::mysql_find_impl::outputs_find_sql,
@@ -3119,6 +3190,12 @@ mod output_sql_generation_tests {
             "`",
             ["?", "?"],
         );
+    }
+
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn postgres_no_script_projection_is_quoted() {
+        assert_no_script_projection_is_quoted(super::postgres_find_impl::outputs_find_sql, "\"");
     }
 
     #[cfg(feature = "postgres")]
