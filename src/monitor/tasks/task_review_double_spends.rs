@@ -19,17 +19,18 @@ use crate::monitor::helpers::now_msecs;
 use crate::monitor::task_trait::WalletMonitorTask;
 use crate::monitor::ONE_MINUTE;
 use crate::services::traits::WalletServices;
+use crate::services::types::StatusForTxidResult;
 use crate::status::ProvenTxReqStatus;
 use crate::storage::find_args::{
     FindMonitorEventsArgs, FindProvenTxReqsArgs, MonitorEventPartial, Paged, ProvenTxReqPartial,
 };
 use crate::storage::manager::WalletStorageManager;
 use crate::tables::MonitorEvent;
+use tracing::{error, warn};
 
 /// WhatsOnChain's bulk `/txs/status` endpoint documents "Max 20 transactions
-/// per request" (https://docs.taal.com/core-products/whatsonchain/transaction),
-/// and it is the only provider implementing `GetStatusForTxidsProvider`. Chunk
-/// to that limit so a full `review_limit` batch stays within provider limits.
+/// per request" (https://docs.taal.com/core-products/whatsonchain/transaction).
+/// Chunk to the WhatsOnChain limit so each batch stays within its provider limit.
 const STATUS_TXID_CHUNK_SIZE: usize = 20;
 
 /// Reviews ProvenTxReqs flagged as double-spends and unfails false positives.
@@ -65,6 +66,41 @@ struct ReviewDoubleSpendCheckpoint {
     min_age_minutes: u64,
     reviewed: u64,
     unfails: u64,
+}
+
+fn absorb_status_rows(
+    status_by_txid: &mut HashMap<String, StatusForTxidResult>,
+    rows: Vec<StatusForTxidResult>,
+    requested_txids: &HashSet<String>,
+    provider_name: &str,
+) {
+    for row in rows {
+        if !requested_txids.contains(&row.txid) {
+            warn!(
+                foreign_txid = %row.txid,
+                provider_name,
+                requested_txid_count = requested_txids.len(),
+                "provider returned an unsolicited txid, indicating a possible response mix-up from a caching proxy or connection-pool crossover serving another caller's data"
+            );
+            continue;
+        }
+
+        match status_by_txid.entry(row.txid.clone()) {
+            std::collections::hash_map::Entry::Occupied(existing) => {
+                if existing.get().status != row.status {
+                    warn!(
+                        txid = %row.txid,
+                        kept_status = %existing.get().status,
+                        discarded_status = %row.status,
+                        "provider returned contradictory duplicate status rows; keeping the first row"
+                    );
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(row);
+            }
+        }
+    }
 }
 
 impl TaskReviewDoubleSpends {
@@ -252,28 +288,40 @@ impl WalletMonitorTask for TaskReviewDoubleSpends {
 
         let mut unfailed = 0u64;
         let mut still_unknown = 0u64;
+        let mut lookup_failures = 0u64;
         let mut last_double_spend_id: Option<i64> = None;
         let mut retained_count: i64 = 0;
 
         for window in reqs.chunks(STATUS_TXID_CHUNK_SIZE) {
             let mut txids = Vec::new();
-            let mut seen_txids = HashSet::new();
-            // This de-duplication relies on txid being UNIQUE in proven_tx_reqs in
-            // the built-in SQLite, PostgreSQL, and MySQL schemas.
+            let mut requested_txids = HashSet::new();
+            // Duplicate txids in one window would consume slots in the 20-wide
+            // request, so collapse them and let each req read the same status row.
             for req in window {
-                if seen_txids.insert(req.txid.clone()) {
+                if requested_txids.insert(req.txid.clone()) {
                     txids.push(req.txid.clone());
                 }
             }
 
             let mut status_by_txid = HashMap::new();
             let result = self.services.get_status_for_txids(&txids, false).await;
-            for entry in result.results {
-                if seen_txids.contains(&entry.txid) {
-                    status_by_txid.entry(entry.txid.clone()).or_insert(entry);
-                }
+            if result.status != "success" {
+                warn!(
+                    provider_name = %result.name,
+                    error = ?result.error,
+                    txid_count = txids.len(),
+                    "batch status lookup failed; any returned rows were still consumed and per-txid retry follows"
+                );
             }
+            absorb_status_rows(
+                &mut status_by_txid,
+                result.results,
+                &requested_txids,
+                &result.name,
+            );
 
+            // A single-txid window has nothing to gain from re-issuing the
+            // identical call, so only larger windows retry missing rows.
             let retry_missing = txids.len() > 1;
 
             for req in window {
@@ -282,17 +330,27 @@ impl WalletMonitorTask for TaskReviewDoubleSpends {
                         .services
                         .get_status_for_txids(std::slice::from_ref(&req.txid), false)
                         .await;
-                    for entry in result.results {
-                        if entry.txid == req.txid {
-                            status_by_txid.entry(entry.txid.clone()).or_insert(entry);
-                        }
-                    }
+                    let requested_txids = HashSet::from([req.txid.clone()]);
+                    absorb_status_rows(
+                        &mut status_by_txid,
+                        result.results,
+                        &requested_txids,
+                        &result.name,
+                    );
                 }
 
                 // If the service found the txid on-chain, mark for unfail.
                 let is_unknown = match status_by_txid.get(&req.txid) {
                     Some(r) => r.status == "unknown",
-                    None => true,
+                    None => {
+                        lookup_failures += 1;
+                        error!(
+                            txid = %req.txid,
+                            proven_tx_req_id = req.proven_tx_req_id,
+                            "provider failed to answer for txid; request stays flagged as a double-spend and is not re-verified this run"
+                        );
+                        true
+                    }
                 };
 
                 if is_unknown {
@@ -328,11 +386,12 @@ impl WalletMonitorTask for TaskReviewDoubleSpends {
         self.save_checkpoint(&cp).await?;
 
         Ok(format!(
-            "reviewed {} double-spend reqs (offset {}): {} unfailed, {} still unknown",
+            "reviewed {} double-spend reqs (offset {}): {} unfailed, {} still unknown, {} lookup failures",
             reqs.len(),
             offset,
             unfailed,
-            still_unknown
+            still_unknown,
+            lookup_failures
         ))
     }
 }
@@ -372,6 +431,7 @@ mod tests {
     // response keyed by txid. Captures call count for verification.
     // -----------------------------------------------------------------------
 
+    #[derive(Default)]
     struct ScriptedStatusServices {
         /// Whether to return an error with no per-txid results.
         outage: bool,
@@ -404,37 +464,16 @@ mod tests {
     impl ScriptedStatusServices {
         fn success(responses: std::collections::HashMap<String, String>) -> Arc<Self> {
             Arc::new(Self {
-                outage: false,
-                poison_txid: None,
                 responses,
-                reverse_results: false,
-                omitted_txids: Default::default(),
-                duplicate_response: None,
-                unsolicited_response: None,
-                empty_multi_txid_results: false,
-                singleton_results: Default::default(),
-                error_envelope: false,
-                observed_storage: None,
-                calls: Mutex::new(Vec::new()),
-                unfail_ids_at_call: Mutex::new(Vec::new()),
+                ..Default::default()
             })
         }
 
         fn reversed(responses: std::collections::HashMap<String, String>) -> Arc<Self> {
             Arc::new(Self {
-                outage: false,
-                poison_txid: None,
                 responses,
                 reverse_results: true,
-                omitted_txids: Default::default(),
-                duplicate_response: None,
-                unsolicited_response: None,
-                empty_multi_txid_results: false,
-                singleton_results: Default::default(),
-                error_envelope: false,
-                observed_storage: None,
-                calls: Mutex::new(Vec::new()),
-                unfail_ids_at_call: Mutex::new(Vec::new()),
+                ..Default::default()
             })
         }
 
@@ -443,37 +482,16 @@ mod tests {
             omitted_txids: impl IntoIterator<Item = String>,
         ) -> Arc<Self> {
             Arc::new(Self {
-                outage: false,
-                poison_txid: None,
                 responses,
-                reverse_results: false,
                 omitted_txids: omitted_txids.into_iter().collect(),
-                duplicate_response: None,
-                unsolicited_response: None,
-                empty_multi_txid_results: false,
-                singleton_results: Default::default(),
-                error_envelope: false,
-                observed_storage: None,
-                calls: Mutex::new(Vec::new()),
-                unfail_ids_at_call: Mutex::new(Vec::new()),
+                ..Default::default()
             })
         }
 
         fn outage() -> Arc<Self> {
             Arc::new(Self {
                 outage: true,
-                poison_txid: None,
-                responses: Default::default(),
-                reverse_results: false,
-                omitted_txids: Default::default(),
-                duplicate_response: None,
-                unsolicited_response: None,
-                empty_multi_txid_results: false,
-                singleton_results: Default::default(),
-                error_envelope: false,
-                observed_storage: None,
-                calls: Mutex::new(Vec::new()),
-                unfail_ids_at_call: Mutex::new(Vec::new()),
+                ..Default::default()
             })
         }
 
@@ -482,19 +500,9 @@ mod tests {
             poison_txid: String,
         ) -> Arc<Self> {
             Arc::new(Self {
-                outage: false,
                 poison_txid: Some(poison_txid),
                 responses,
-                reverse_results: false,
-                omitted_txids: Default::default(),
-                duplicate_response: None,
-                unsolicited_response: None,
-                empty_multi_txid_results: false,
-                singleton_results: Default::default(),
-                error_envelope: false,
-                observed_storage: None,
-                calls: Mutex::new(Vec::new()),
-                unfail_ids_at_call: Mutex::new(Vec::new()),
+                ..Default::default()
             })
         }
 
@@ -504,19 +512,9 @@ mod tests {
             duplicate_status: String,
         ) -> Arc<Self> {
             Arc::new(Self {
-                outage: false,
-                poison_txid: None,
                 responses,
-                reverse_results: false,
-                omitted_txids: Default::default(),
                 duplicate_response: Some((txid, duplicate_status)),
-                unsolicited_response: None,
-                empty_multi_txid_results: false,
-                singleton_results: Default::default(),
-                error_envelope: false,
-                observed_storage: None,
-                calls: Mutex::new(Vec::new()),
-                unfail_ids_at_call: Mutex::new(Vec::new()),
+                ..Default::default()
             })
         }
 
@@ -527,19 +525,9 @@ mod tests {
             foreign_status: String,
         ) -> Arc<Self> {
             Arc::new(Self {
-                outage: false,
-                poison_txid: None,
                 responses,
-                reverse_results: false,
-                omitted_txids: Default::default(),
-                duplicate_response: None,
                 unsolicited_response: Some((trigger_txid, foreign_txid, foreign_status)),
-                empty_multi_txid_results: false,
-                singleton_results: Default::default(),
-                error_envelope: false,
-                observed_storage: None,
-                calls: Mutex::new(Vec::new()),
-                unfail_ids_at_call: Mutex::new(Vec::new()),
+                ..Default::default()
             })
         }
 
@@ -548,37 +536,17 @@ mod tests {
             storage: Arc<WalletStorageManager>,
         ) -> Arc<Self> {
             Arc::new(Self {
-                outage: false,
-                poison_txid: None,
                 responses,
-                reverse_results: false,
-                omitted_txids: Default::default(),
-                duplicate_response: None,
-                unsolicited_response: None,
-                empty_multi_txid_results: false,
-                singleton_results: Default::default(),
-                error_envelope: false,
                 observed_storage: Some(storage),
-                calls: Mutex::new(Vec::new()),
-                unfail_ids_at_call: Mutex::new(Vec::new()),
+                ..Default::default()
             })
         }
 
         fn error_with_results(responses: std::collections::HashMap<String, String>) -> Arc<Self> {
             Arc::new(Self {
-                outage: false,
-                poison_txid: None,
                 responses,
-                reverse_results: false,
-                omitted_txids: Default::default(),
-                duplicate_response: None,
-                unsolicited_response: None,
-                empty_multi_txid_results: false,
-                singleton_results: Default::default(),
                 error_envelope: true,
-                observed_storage: None,
-                calls: Mutex::new(Vec::new()),
-                unfail_ids_at_call: Mutex::new(Vec::new()),
+                ..Default::default()
             })
         }
 
@@ -588,19 +556,11 @@ mod tests {
             observed_storage: Option<Arc<WalletStorageManager>>,
         ) -> Arc<Self> {
             Arc::new(Self {
-                outage: false,
-                poison_txid: None,
                 responses,
-                reverse_results: false,
-                omitted_txids: Default::default(),
-                duplicate_response: None,
-                unsolicited_response: None,
                 empty_multi_txid_results: true,
                 singleton_results,
-                error_envelope: false,
                 observed_storage,
-                calls: Mutex::new(Vec::new()),
-                unfail_ids_at_call: Mutex::new(Vec::new()),
+                ..Default::default()
             })
         }
     }
@@ -1191,7 +1151,7 @@ mod tests {
         }
         assert_eq!(
             summary,
-            "reviewed 4 double-spend reqs (offset 0): 2 unfailed, 2 still unknown"
+            "reviewed 4 double-spend reqs (offset 0): 2 unfailed, 2 still unknown, 0 lookup failures"
         );
     }
 
@@ -1226,7 +1186,7 @@ mod tests {
         }
         assert_eq!(
             summary,
-            "reviewed 5 double-spend reqs (offset 0): 3 unfailed, 2 still unknown"
+            "reviewed 5 double-spend reqs (offset 0): 3 unfailed, 2 still unknown, 1 lookup failures"
         );
     }
 
