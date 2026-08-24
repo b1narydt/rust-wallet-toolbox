@@ -371,6 +371,7 @@ async fn merge_brc38_in_trx<S: StorageProvider>(
     )?);
     let chunk_result = process_sync_chunk(
         storage as &dyn StorageProvider,
+        &target_user.identity_key,
         chunk,
         &mut import_map,
         Some(trx),

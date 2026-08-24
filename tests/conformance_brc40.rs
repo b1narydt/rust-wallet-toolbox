@@ -563,7 +563,7 @@ async fn run_merge_transaction(v: &Vector) {
     for row in [existing, incoming] {
         let mut chunk = empty_chunk();
         chunk.transactions = Some(vec![tx_row(row, user_id)]);
-        process_sync_chunk(&storage, chunk, &mut sync_map, None)
+        process_sync_chunk(&storage, USER_KEY, chunk, &mut sync_map, None)
             .await
             .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
     }
@@ -664,14 +664,14 @@ async fn run_merge_output(v: &Vector) {
         mk_seed_tx(i(existing, "transactionId")),
         mk_seed_tx(i(existing, "spentBy")),
     ]);
-    process_sync_chunk(&storage, seed, &mut sync_map, None)
+    process_sync_chunk(&storage, USER_KEY, seed, &mut sync_map, None)
         .await
         .unwrap_or_else(|e| panic!("{}: seed failed: {e}", v.id));
 
     for row in [existing, incoming] {
         let mut chunk = empty_chunk();
         chunk.outputs = Some(vec![output_row(row, user_id)]);
-        process_sync_chunk(&storage, chunk, &mut sync_map, None)
+        process_sync_chunk(&storage, USER_KEY, chunk, &mut sync_map, None)
             .await
             .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
     }
@@ -740,7 +740,7 @@ async fn run_merge_proven_tx(v: &Vector) {
     for (row, marker) in [(existing, "hash-existing"), (incoming, "hash-incoming")] {
         let mut chunk = empty_chunk();
         chunk.proven_txs = Some(vec![proven_row(row, marker)]);
-        process_sync_chunk(&storage, chunk, &mut sync_map, None)
+        process_sync_chunk(&storage, USER_KEY, chunk, &mut sync_map, None)
             .await
             .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
     }
@@ -855,7 +855,7 @@ async fn flow_idmap_convergence(v: &Vector, failures: &mut Vec<String>) {
                 })
                 .collect(),
         );
-        process_sync_chunk(&storage, chunk, &mut sync_map, None)
+        process_sync_chunk(&storage, USER_KEY, chunk, &mut sync_map, None)
             .await
             .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
     }
@@ -931,7 +931,7 @@ async fn flow_idmap_conflict(v: &Vector, failures: &mut Vec<String>) {
                 })
                 .collect(),
         );
-        if process_sync_chunk(&storage, chunk, &mut sync_map, None)
+        if process_sync_chunk(&storage, USER_KEY, chunk, &mut sync_map, None)
             .await
             .is_err()
         {
@@ -969,7 +969,7 @@ async fn flow_stale_regression(v: &Vector, failures: &mut Vec<String>) {
         let rows = sc["transactions"].as_array().expect("transactions");
         let mut chunk = empty_chunk();
         chunk.transactions = Some(rows.iter().map(|r| tx_row(r, user_id)).collect());
-        process_sync_chunk(&storage, chunk, &mut sync_map, None)
+        process_sync_chunk(&storage, USER_KEY, chunk, &mut sync_map, None)
             .await
             .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
     }

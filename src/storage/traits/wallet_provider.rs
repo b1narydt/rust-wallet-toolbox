@@ -1174,7 +1174,7 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         // and processSyncChunk writes it back (line 411). Rebuilding a fresh
         // SyncMap each chunk discards cross-chunk FK mappings and offsets.
         let (user, _) =
-            StorageReaderWriter::find_or_insert_user(self, &chunk.user_identity_key, None).await?;
+            StorageReaderWriter::find_or_insert_user(self, &args.identity_key, None).await?;
         let existing = verify_one_or_none(
             StorageReader::find_sync_states(
                 self,
@@ -1202,6 +1202,7 @@ impl<T: StorageProvider> WalletStorageProvider for T {
 
         let mut result = crate::storage::sync::process_sync_chunk::process_sync_chunk(
             self,
+            &args.identity_key,
             chunk.clone(),
             &mut sync_map,
             None,

@@ -326,7 +326,7 @@ mod sync_tests {
 
         // Process chunk into target
         let mut target_sync_map = SyncMap::new();
-        let result = process_sync_chunk(&target, chunk, &mut target_sync_map, None)
+        let result = process_sync_chunk(&target, "02abc333", chunk, &mut target_sync_map, None)
             .await
             .unwrap();
         assert!(
@@ -413,7 +413,7 @@ mod sync_tests {
         };
 
         let mut sync_map = SyncMap::new();
-        let result = process_sync_chunk(&target, chunk, &mut sync_map, None)
+        let result = process_sync_chunk(&target, "02abc444", chunk, &mut sync_map, None)
             .await
             .unwrap();
 
@@ -443,6 +443,161 @@ mod sync_tests {
         // Verify ID mapping
         let local_id = sync_map.output_basket.get_local_id(99);
         assert!(local_id.is_some(), "foreign basket ID 99 should be mapped");
+    }
+
+    #[tokio::test]
+    async fn process_sync_chunk_binds_nested_user_to_authenticated_identity() {
+        use bsv_wallet_toolbox::storage::sync::request_args::RequestSyncChunkArgs;
+
+        let storage = setup_storage().await.unwrap();
+        let attacker_key = "02sync-attacker";
+        let victim_key = "02sync-victim";
+        assert_ne!(
+            attacker_key, victim_key,
+            "the attacker and victim identities must differ for this regression test"
+        );
+
+        let attacker_time = dt("2024-01-15 09:00:00");
+        storage
+            .insert_user(
+                &User {
+                    created_at: attacker_time,
+                    updated_at: attacker_time,
+                    user_id: 0,
+                    identity_key: attacker_key.to_string(),
+                    active_storage: "attacker-storage".to_string(),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let victim_time = dt("2024-01-15 10:00:00");
+        let victim_active_storage = "victim-storage";
+        storage
+            .insert_user(
+                &User {
+                    created_at: victim_time,
+                    updated_at: victim_time,
+                    user_id: 0,
+                    identity_key: victim_key.to_string(),
+                    active_storage: victim_active_storage.to_string(),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let victim_before = storage
+            .find_user_by_identity_key(victim_key, None)
+            .await
+            .unwrap()
+            .expect("victim user must exist before the attack");
+
+        let args = RequestSyncChunkArgs {
+            from_storage_identity_key: "storage-a".to_string(),
+            to_storage_identity_key: "storage-b".to_string(),
+            identity_key: attacker_key.to_string(),
+            since: None,
+            max_rough_size: 10_000_000,
+            max_items: 1000,
+            offsets: vec![],
+        };
+        let nested_user_chunk = |identity_key: &str, active_storage: &str| SyncChunk {
+            from_storage_identity_key: "storage-a".to_string(),
+            to_storage_identity_key: "storage-b".to_string(),
+            // This matches the authenticated request, so the existing
+            // top-level defense-in-depth guard deliberately passes.
+            user_identity_key: attacker_key.to_string(),
+            user: Some(User {
+                created_at: victim_time,
+                updated_at: dt("2030-01-15 10:00:00"),
+                user_id: 999,
+                identity_key: identity_key.to_string(),
+                active_storage: active_storage.to_string(),
+            }),
+            proven_txs: Some(vec![]),
+            output_baskets: Some(vec![]),
+            transactions: Some(vec![]),
+            outputs: Some(vec![]),
+            tx_labels: Some(vec![]),
+            tx_label_maps: Some(vec![]),
+            output_tags: Some(vec![]),
+            output_tag_maps: Some(vec![]),
+            certificates: Some(vec![]),
+            certificate_fields: Some(vec![]),
+            commissions: Some(vec![]),
+            proven_tx_reqs: Some(vec![]),
+        };
+
+        let mismatch =
+            bsv_wallet_toolbox::storage::traits::WalletStorageProvider::process_sync_chunk(
+                &storage,
+                &args,
+                &nested_user_chunk(victim_key, "attacker-controlled-storage"),
+            )
+            .await;
+
+        let victim_after = storage
+            .find_user_by_identity_key(victim_key, None)
+            .await
+            .unwrap()
+            .expect("victim user must still exist");
+        assert_eq!(
+            victim_after.active_storage, victim_active_storage,
+            "a nested identity must not steer the merge onto the victim row"
+        );
+        assert_eq!(
+            victim_after.updated_at, victim_time,
+            "the victim timestamp must remain byte-for-byte unchanged"
+        );
+        assert_eq!(
+            victim_after, victim_before,
+            "the victim row must remain byte-for-byte unchanged"
+        );
+        assert!(
+            mismatch.is_err(),
+            "a nested identity resolving to another local user must be a hard error"
+        );
+
+        let users_before = storage
+            .find_users(&FindUsersArgs::default(), None)
+            .await
+            .unwrap()
+            .len();
+        let unknown_key = "02sync-unknown";
+        assert!(
+            storage
+                .find_user_by_identity_key(unknown_key, None)
+                .await
+                .unwrap()
+                .is_none(),
+            "the unknown nested identity must not exist before the merge"
+        );
+
+        bsv_wallet_toolbox::storage::traits::WalletStorageProvider::process_sync_chunk(
+            &storage,
+            &args,
+            &nested_user_chunk(unknown_key, "phantom-storage"),
+        )
+        .await
+        .expect("an unknown nested identity is skipped, not inserted");
+
+        let users_after = storage
+            .find_users(&FindUsersArgs::default(), None)
+            .await
+            .unwrap()
+            .len();
+        assert_eq!(
+            users_after, users_before,
+            "chunk-supplied identities must never create phantom user rows"
+        );
+        assert!(
+            storage
+                .find_user_by_identity_key(unknown_key, None)
+                .await
+                .unwrap()
+                .is_none(),
+            "the unknown nested identity must still not exist after the merge"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -523,7 +678,7 @@ mod sync_tests {
         };
 
         let mut sync_map = SyncMap::new();
-        let result = process_sync_chunk(&target, chunk, &mut sync_map, None)
+        let result = process_sync_chunk(&target, "02abc555", chunk, &mut sync_map, None)
             .await
             .unwrap();
 
@@ -693,7 +848,7 @@ mod sync_tests {
         let chunk = chunk_with("02abc666", None, Some(vec![orphan]));
 
         let mut sync_map = SyncMap::new();
-        let result = process_sync_chunk(&target, chunk, &mut sync_map, None).await;
+        let result = process_sync_chunk(&target, "02abc666", chunk, &mut sync_map, None).await;
 
         assert!(
             result.is_err(),
@@ -1013,7 +1168,7 @@ mod sync_tests {
         // First pass populates the target.
         let first_chunk = get_sync_chunk(&source, args(), None).await.unwrap();
         let mut first_map = SyncMap::new();
-        let first = process_sync_chunk(&target, first_chunk, &mut first_map, None)
+        let first = process_sync_chunk(&target, "02abc999", first_chunk, &mut first_map, None)
             .await
             .unwrap();
         assert!(first.inserts > 0, "the first pass must insert the row");
@@ -1022,7 +1177,7 @@ mod sync_tests {
         // re-attaching an already-current backup looks like.
         let second_chunk = get_sync_chunk(&source, args(), None).await.unwrap();
         let mut second_map = SyncMap::new();
-        let second = process_sync_chunk(&target, second_chunk, &mut second_map, None)
+        let second = process_sync_chunk(&target, "02abc999", second_chunk, &mut second_map, None)
             .await
             .unwrap();
 
@@ -1124,6 +1279,7 @@ mod sync_tests {
         // Round 1: the row replicates before signing — no rawTx, no script.
         process_sync_chunk(
             &target,
+            "02mergewide",
             chunk_with(tx_at(t1, None, None), out_at(t1, None, None)),
             &mut sync_map,
             None,
@@ -1138,6 +1294,7 @@ mod sync_tests {
         let script = vec![0x76, 0xa9, 0x14];
         process_sync_chunk(
             &target,
+            "02mergewide",
             chunk_with(
                 tx_at(t2, Some(raw.clone()), Some(beef.clone())),
                 out_at(t2, Some(script.clone()), Some("spend me".to_string())),
@@ -1249,17 +1406,25 @@ mod sync_tests {
         // newer and the third update is silently rejected.
         process_sync_chunk(
             &target,
+            "02skew",
             chunk_with(mk_label(t1, false)),
             &mut sync_map,
             None,
         )
         .await
         .unwrap();
-        process_sync_chunk(&target, chunk_with(mk_label(t2, true)), &mut sync_map, None)
-            .await
-            .unwrap();
+        process_sync_chunk(
+            &target,
+            "02skew",
+            chunk_with(mk_label(t2, true)),
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap();
         let third = process_sync_chunk(
             &target,
+            "02skew",
             chunk_with(mk_label(t3, false)),
             &mut sync_map,
             None,
@@ -1423,7 +1588,7 @@ mod sync_tests {
             .await
             .unwrap();
         let mut consumer_map = SyncMap::new();
-        process_sync_chunk(&target, chunk1, &mut consumer_map, None)
+        process_sync_chunk(&target, "02crossround", chunk1, &mut consumer_map, None)
             .await
             .unwrap();
 
@@ -1467,7 +1632,7 @@ mod sync_tests {
             "the old parent transaction is not in the incremental window"
         );
 
-        process_sync_chunk(&target, chunk2, &mut consumer_map, None)
+        process_sync_chunk(&target, "02crossround", chunk2, &mut consumer_map, None)
             .await
             .unwrap();
 
@@ -1580,7 +1745,7 @@ mod sync_tests {
             }
 
             let done = chunk_done(&chunk);
-            process_sync_chunk(&target, chunk, &mut consumer_map, None)
+            process_sync_chunk(&target, "02exhaust", chunk, &mut consumer_map, None)
                 .await
                 .expect("every child's parent must already be mapped");
             if done {
