@@ -268,29 +268,27 @@ impl WalletMonitorTask for TaskReviewDoubleSpends {
 
             let mut status_by_txid = HashMap::new();
             let result = self.services.get_status_for_txids(&txids, false).await;
-            if result.status != "success" || result.error.is_some() {
-                for txid in &txids {
-                    let result = self
-                        .services
-                        .get_status_for_txids(std::slice::from_ref(txid), false)
-                        .await;
-                    if result.status == "success" && result.error.is_none() {
-                        for entry in result.results {
-                            if entry.txid == *txid {
-                                status_by_txid.entry(entry.txid.clone()).or_insert(entry);
-                            }
-                        }
-                    }
-                }
-            } else {
-                for entry in result.results {
-                    if seen_txids.contains(&entry.txid) {
-                        status_by_txid.entry(entry.txid.clone()).or_insert(entry);
-                    }
+            for entry in result.results {
+                if seen_txids.contains(&entry.txid) {
+                    status_by_txid.entry(entry.txid.clone()).or_insert(entry);
                 }
             }
 
+            let retry_missing = txids.len() > 1;
+
             for req in window {
+                if retry_missing && !status_by_txid.contains_key(&req.txid) {
+                    let result = self
+                        .services
+                        .get_status_for_txids(std::slice::from_ref(&req.txid), false)
+                        .await;
+                    for entry in result.results {
+                        if entry.txid == req.txid {
+                            status_by_txid.entry(entry.txid.clone()).or_insert(entry);
+                        }
+                    }
+                }
+
                 // If the service found the txid on-chain, mark for unfail.
                 let is_unknown = match status_by_txid.get(&req.txid) {
                     Some(r) => r.status == "unknown",
@@ -389,12 +387,18 @@ mod tests {
         duplicate_response: Option<(String, String)>,
         /// (trigger txid, foreign txid, status) appended when the trigger is requested.
         unsolicited_response: Option<(String, String, String)>,
+        /// Return no rows for multi-txid calls, forcing structural singleton recovery.
+        empty_multi_txid_results: bool,
+        /// Exact rows returned by singleton calls, keyed by the requested txid.
+        singleton_results: std::collections::HashMap<String, Vec<(String, String)>>,
+        /// Return scripted rows inside an error envelope.
+        error_envelope: bool,
         /// Storage inspected at each service call to verify write/fetch ordering.
         observed_storage: Option<Arc<WalletStorageManager>>,
         /// Collected txids that were looked up.
         calls: Mutex<Vec<Vec<String>>>,
-        /// Number of Unfail rows visible when each tracked call begins.
-        unfail_counts_at_call: Mutex<Vec<usize>>,
+        /// Ordered Unfail proven_tx_req_ids visible when each tracked call begins.
+        unfail_ids_at_call: Mutex<Vec<Vec<i64>>>,
     }
 
     impl ScriptedStatusServices {
@@ -407,9 +411,12 @@ mod tests {
                 omitted_txids: Default::default(),
                 duplicate_response: None,
                 unsolicited_response: None,
+                empty_multi_txid_results: false,
+                singleton_results: Default::default(),
+                error_envelope: false,
                 observed_storage: None,
                 calls: Mutex::new(Vec::new()),
-                unfail_counts_at_call: Mutex::new(Vec::new()),
+                unfail_ids_at_call: Mutex::new(Vec::new()),
             })
         }
 
@@ -422,9 +429,12 @@ mod tests {
                 omitted_txids: Default::default(),
                 duplicate_response: None,
                 unsolicited_response: None,
+                empty_multi_txid_results: false,
+                singleton_results: Default::default(),
+                error_envelope: false,
                 observed_storage: None,
                 calls: Mutex::new(Vec::new()),
-                unfail_counts_at_call: Mutex::new(Vec::new()),
+                unfail_ids_at_call: Mutex::new(Vec::new()),
             })
         }
 
@@ -440,9 +450,12 @@ mod tests {
                 omitted_txids: omitted_txids.into_iter().collect(),
                 duplicate_response: None,
                 unsolicited_response: None,
+                empty_multi_txid_results: false,
+                singleton_results: Default::default(),
+                error_envelope: false,
                 observed_storage: None,
                 calls: Mutex::new(Vec::new()),
-                unfail_counts_at_call: Mutex::new(Vec::new()),
+                unfail_ids_at_call: Mutex::new(Vec::new()),
             })
         }
 
@@ -455,9 +468,12 @@ mod tests {
                 omitted_txids: Default::default(),
                 duplicate_response: None,
                 unsolicited_response: None,
+                empty_multi_txid_results: false,
+                singleton_results: Default::default(),
+                error_envelope: false,
                 observed_storage: None,
                 calls: Mutex::new(Vec::new()),
-                unfail_counts_at_call: Mutex::new(Vec::new()),
+                unfail_ids_at_call: Mutex::new(Vec::new()),
             })
         }
 
@@ -473,9 +489,12 @@ mod tests {
                 omitted_txids: Default::default(),
                 duplicate_response: None,
                 unsolicited_response: None,
+                empty_multi_txid_results: false,
+                singleton_results: Default::default(),
+                error_envelope: false,
                 observed_storage: None,
                 calls: Mutex::new(Vec::new()),
-                unfail_counts_at_call: Mutex::new(Vec::new()),
+                unfail_ids_at_call: Mutex::new(Vec::new()),
             })
         }
 
@@ -492,9 +511,12 @@ mod tests {
                 omitted_txids: Default::default(),
                 duplicate_response: Some((txid, duplicate_status)),
                 unsolicited_response: None,
+                empty_multi_txid_results: false,
+                singleton_results: Default::default(),
+                error_envelope: false,
                 observed_storage: None,
                 calls: Mutex::new(Vec::new()),
-                unfail_counts_at_call: Mutex::new(Vec::new()),
+                unfail_ids_at_call: Mutex::new(Vec::new()),
             })
         }
 
@@ -512,9 +534,12 @@ mod tests {
                 omitted_txids: Default::default(),
                 duplicate_response: None,
                 unsolicited_response: Some((trigger_txid, foreign_txid, foreign_status)),
+                empty_multi_txid_results: false,
+                singleton_results: Default::default(),
+                error_envelope: false,
                 observed_storage: None,
                 calls: Mutex::new(Vec::new()),
-                unfail_counts_at_call: Mutex::new(Vec::new()),
+                unfail_ids_at_call: Mutex::new(Vec::new()),
             })
         }
 
@@ -530,9 +555,52 @@ mod tests {
                 omitted_txids: Default::default(),
                 duplicate_response: None,
                 unsolicited_response: None,
+                empty_multi_txid_results: false,
+                singleton_results: Default::default(),
+                error_envelope: false,
                 observed_storage: Some(storage),
                 calls: Mutex::new(Vec::new()),
-                unfail_counts_at_call: Mutex::new(Vec::new()),
+                unfail_ids_at_call: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn error_with_results(responses: std::collections::HashMap<String, String>) -> Arc<Self> {
+            Arc::new(Self {
+                outage: false,
+                poison_txid: None,
+                responses,
+                reverse_results: false,
+                omitted_txids: Default::default(),
+                duplicate_response: None,
+                unsolicited_response: None,
+                empty_multi_txid_results: false,
+                singleton_results: Default::default(),
+                error_envelope: true,
+                observed_storage: None,
+                calls: Mutex::new(Vec::new()),
+                unfail_ids_at_call: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn falling_back(
+            responses: std::collections::HashMap<String, String>,
+            singleton_results: std::collections::HashMap<String, Vec<(String, String)>>,
+            observed_storage: Option<Arc<WalletStorageManager>>,
+        ) -> Arc<Self> {
+            Arc::new(Self {
+                outage: false,
+                poison_txid: None,
+                responses,
+                reverse_results: false,
+                omitted_txids: Default::default(),
+                duplicate_response: None,
+                unsolicited_response: None,
+                empty_multi_txid_results: true,
+                singleton_results,
+                error_envelope: false,
+                observed_storage,
+                calls: Mutex::new(Vec::new()),
+                unfail_ids_at_call: Mutex::new(Vec::new()),
             })
         }
     }
@@ -581,7 +649,7 @@ mod tests {
             // so the per-txid looping guarded against here would appear as separate calls.
             self.calls.lock().unwrap().push(txids.to_vec());
             if let Some(storage) = &self.observed_storage {
-                let unfails = storage
+                let mut unfail_ids: Vec<_> = storage
                     .find_proven_tx_reqs(&FindProvenTxReqsArgs {
                         partial: ProvenTxReqPartial::default(),
                         since: None,
@@ -590,8 +658,11 @@ mod tests {
                     })
                     .await
                     .unwrap()
-                    .len();
-                self.unfail_counts_at_call.lock().unwrap().push(unfails);
+                    .into_iter()
+                    .map(|req| req.proven_tx_req_id)
+                    .collect();
+                unfail_ids.sort_unstable();
+                self.unfail_ids_at_call.lock().unwrap().push(unfail_ids);
             }
             if self.outage
                 || self
@@ -606,22 +677,45 @@ mod tests {
                     results: vec![],
                 };
             }
+            if self.empty_multi_txid_results && txids.len() > 1 {
+                return GetStatusForTxidsResult {
+                    name: "mock".into(),
+                    status: "error".into(),
+                    error: Some("batch service outage".into()),
+                    results: vec![],
+                };
+            }
             let mut results: Vec<_> = txids
-                .iter()
-                .filter(|t| !self.omitted_txids.contains(*t))
-                .map(|t| {
-                    let status = self
-                        .responses
-                        .get(t)
-                        .cloned()
-                        .unwrap_or_else(|| "unknown".to_string());
-                    StatusForTxidResult {
-                        txid: t.clone(),
-                        depth: None,
-                        status,
-                    }
+                .first()
+                .filter(|_| txids.len() == 1)
+                .and_then(|txid| self.singleton_results.get(txid))
+                .map(|rows| {
+                    rows.iter()
+                        .map(|(txid, status)| StatusForTxidResult {
+                            txid: txid.clone(),
+                            depth: None,
+                            status: status.clone(),
+                        })
+                        .collect()
                 })
-                .collect();
+                .unwrap_or_else(|| {
+                    txids
+                        .iter()
+                        .filter(|t| !self.omitted_txids.contains(*t))
+                        .map(|t| {
+                            let status = self
+                                .responses
+                                .get(t)
+                                .cloned()
+                                .unwrap_or_else(|| "unknown".to_string());
+                            StatusForTxidResult {
+                                txid: t.clone(),
+                                depth: None,
+                                status,
+                            }
+                        })
+                        .collect()
+                });
             if self.reverse_results {
                 results.reverse();
             }
@@ -645,8 +739,14 @@ mod tests {
             }
             GetStatusForTxidsResult {
                 name: "mock".into(),
-                status: "success".into(),
-                error: None,
+                status: if self.error_envelope {
+                    "error".into()
+                } else {
+                    "success".into()
+                },
+                error: self
+                    .error_envelope
+                    .then(|| "scripted error envelope".into()),
                 results,
             }
         }
@@ -969,6 +1069,41 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_single_txid_error_without_rows_is_not_retried() {
+        let (mgr, storage) = make_manager_and_storage().await;
+        let old = Utc::now().naive_utc() - Duration::minutes(120);
+        let txid = "single_error_txid".to_string();
+        let id = insert_req(&storage, &txid, old, ProvenTxReqStatus::DoubleSpend).await;
+        let services = ScriptedStatusServices::outage();
+
+        let mut task = TaskReviewDoubleSpends::new(mgr.clone(), services.clone());
+        task.run_task().await.unwrap();
+
+        assert_eq!(*services.calls.lock().unwrap(), vec![vec![txid]]);
+        assert_eq!(req_status(&mgr, id).await, ProvenTxReqStatus::DoubleSpend);
+        let checkpoint = latest_checkpoint(&mgr).await;
+        assert_eq!(checkpoint.expected_proven_tx_req_id, Some(id));
+        assert_eq!(checkpoint.resume_offset, 0);
+        assert_eq!(checkpoint.unfails, 0);
+    }
+
+    #[tokio::test]
+    async fn test_result_bearing_error_envelope_is_processed() {
+        let (mgr, storage) = make_manager_and_storage().await;
+        let old = Utc::now().naive_utc() - Duration::minutes(120);
+        let txid = "result_bearing_error_txid".to_string();
+        let id = insert_req(&storage, &txid, old, ProvenTxReqStatus::DoubleSpend).await;
+        let responses = [(txid.clone(), "mined".to_string())].into_iter().collect();
+        let services = ScriptedStatusServices::error_with_results(responses);
+
+        let mut task = TaskReviewDoubleSpends::new(mgr.clone(), services.clone());
+        task.run_task().await.unwrap();
+
+        assert_eq!(*services.calls.lock().unwrap(), vec![vec![txid]]);
+        assert_eq!(req_status(&mgr, id).await, ProvenTxReqStatus::Unfail);
+    }
+
     /// Checkpoint persistence: after a run that found eligible reqs, a
     /// ReviewDoubleSpends monitor_event row is written with the correct
     /// `reviewed` count serialized in JSON details.
@@ -1142,6 +1277,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_exact_chunk_multiples_and_remainder() {
+        for request_count in [STATUS_TXID_CHUNK_SIZE * 2, STATUS_TXID_CHUNK_SIZE * 2 + 1] {
+            let (mgr, storage) = make_manager_and_storage().await;
+            let old = Utc::now().naive_utc() - Duration::minutes(120);
+            let txids: Vec<_> = (0..request_count)
+                .map(|i| format!("exact_{request_count}_txid_{i:02}"))
+                .collect();
+            let mut ids = Vec::new();
+            let mut responses = std::collections::HashMap::new();
+            for (i, txid) in txids.iter().enumerate() {
+                ids.push(insert_req(&storage, txid, old, ProvenTxReqStatus::DoubleSpend).await);
+                let status = if i % 2 == 0 { "mined" } else { "unknown" };
+                responses.insert(txid.clone(), status.to_string());
+            }
+
+            let services = ScriptedStatusServices::success(responses);
+            let mut task = TaskReviewDoubleSpends::new(mgr.clone(), services.clone());
+            task.run_task().await.unwrap();
+
+            let expected_calls: Vec<Vec<String>> = txids
+                .chunks(STATUS_TXID_CHUNK_SIZE)
+                .map(<[String]>::to_vec)
+                .collect();
+            assert_eq!(*services.calls.lock().unwrap(), expected_calls);
+            assert_eq!(
+                services
+                    .calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(Vec::len)
+                    .collect::<Vec<_>>(),
+                if request_count == STATUS_TXID_CHUNK_SIZE * 2 {
+                    vec![STATUS_TXID_CHUNK_SIZE, STATUS_TXID_CHUNK_SIZE]
+                } else {
+                    vec![STATUS_TXID_CHUNK_SIZE, STATUS_TXID_CHUNK_SIZE, 1]
+                }
+            );
+
+            for (i, id) in ids.into_iter().enumerate() {
+                let expected = if i % 2 == 0 {
+                    ProvenTxReqStatus::Unfail
+                } else {
+                    ProvenTxReqStatus::DoubleSpend
+                };
+                assert_eq!(req_status(&mgr, id).await, expected);
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn test_middle_chunk_failure_falls_back_only_for_that_window() {
         let (mgr, storage) = make_manager_and_storage().await;
         let old = Utc::now().naive_utc() - Duration::minutes(120);
@@ -1210,6 +1396,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_fallback_duplicate_and_foreign_rows_are_scoped_first_wins() {
+        let (mgr, storage) = make_manager_and_storage().await;
+        let old = Utc::now().naive_utc() - Duration::minutes(120);
+        let txid_a = "fallback_anomaly_a".to_string();
+        let txid_b = "fallback_anomaly_b".to_string();
+        let txid_c = "fallback_anomaly_c".to_string();
+        let id_a = insert_req(&storage, &txid_a, old, ProvenTxReqStatus::DoubleSpend).await;
+        let id_b = insert_req(&storage, &txid_b, old, ProvenTxReqStatus::DoubleSpend).await;
+        let id_c = insert_req(&storage, &txid_c, old, ProvenTxReqStatus::DoubleSpend).await;
+        let singleton_results = [
+            (
+                txid_a.clone(),
+                vec![
+                    (txid_a.clone(), "unknown".to_string()),
+                    (txid_a.clone(), "mined".to_string()),
+                    (txid_c.clone(), "mined".to_string()),
+                ],
+            ),
+            (
+                txid_b.clone(),
+                vec![(txid_b.clone(), "unknown".to_string())],
+            ),
+            (
+                txid_c.clone(),
+                vec![(txid_c.clone(), "unknown".to_string())],
+            ),
+        ]
+        .into_iter()
+        .collect();
+        let services =
+            ScriptedStatusServices::falling_back(Default::default(), singleton_results, None);
+
+        let mut task = TaskReviewDoubleSpends::new(mgr.clone(), services.clone());
+        task.run_task().await.unwrap();
+
+        assert_eq!(
+            *services.calls.lock().unwrap(),
+            vec![
+                vec![txid_a.clone(), txid_b.clone(), txid_c.clone()],
+                vec![txid_a],
+                vec![txid_b],
+                vec![txid_c]
+            ]
+        );
+        assert_eq!(
+            req_status(&mgr, id_a).await,
+            ProvenTxReqStatus::DoubleSpend,
+            "the first singleton row for A must win"
+        );
+        assert_eq!(
+            req_status(&mgr, id_b).await,
+            ProvenTxReqStatus::DoubleSpend,
+            "B's own singleton row must decide its status"
+        );
+        assert_eq!(
+            req_status(&mgr, id_c).await,
+            ProvenTxReqStatus::DoubleSpend,
+            "A's foreign row for C must be ignored so C's own singleton row decides"
+        );
+    }
+
+    #[tokio::test]
     async fn test_unsolicited_response_txids_are_ignored() {
         let (mgr, storage) = make_manager_and_storage().await;
         let old = Utc::now().naive_utc() - Duration::minutes(120);
@@ -1220,28 +1468,26 @@ mod tests {
         let trigger_txid = txids[STATUS_TXID_CHUNK_SIZE].clone();
         let mut ids = Vec::new();
         let mut responses = std::collections::HashMap::new();
-        for (i, txid) in txids.iter().enumerate() {
+        for txid in &txids {
             ids.push(insert_req(&storage, txid, old, ProvenTxReqStatus::DoubleSpend).await);
-            let status = if i == 0 { "unknown" } else { "mined" };
-            responses.insert(txid.clone(), status.to_string());
+            responses.insert(txid.clone(), "mined".to_string());
         }
 
         let services = ScriptedStatusServices::with_unsolicited(
             responses,
             trigger_txid,
             foreign_txid,
-            "mined".to_string(),
+            "unknown".to_string(),
         );
         let mut task = TaskReviewDoubleSpends::new(mgr.clone(), services);
         task.run_task().await.unwrap();
 
-        assert_eq!(
-            req_status(&mgr, ids[0]).await,
-            ProvenTxReqStatus::DoubleSpend,
-            "a later window must not overwrite an earlier window's status"
-        );
-        for id in &ids[1..] {
-            assert_eq!(req_status(&mgr, *id).await, ProvenTxReqStatus::Unfail);
+        for id in ids {
+            assert_eq!(
+                req_status(&mgr, id).await,
+                ProvenTxReqStatus::Unfail,
+                "a foreign unknown row must not affect any requested txid"
+            );
         }
     }
 
@@ -1252,9 +1498,10 @@ mod tests {
         let txids: Vec<_> = (0..STATUS_TXID_CHUNK_SIZE + 1)
             .map(|i| format!("interleave_txid_{i:02}"))
             .collect();
+        let mut ids = Vec::new();
         let mut responses = std::collections::HashMap::new();
         for txid in &txids {
-            insert_req(&storage, txid, old, ProvenTxReqStatus::DoubleSpend).await;
+            ids.push(insert_req(&storage, txid, old, ProvenTxReqStatus::DoubleSpend).await);
             responses.insert(txid.clone(), "mined".to_string());
         }
 
@@ -1263,10 +1510,36 @@ mod tests {
         task.run_task().await.unwrap();
 
         assert_eq!(
-            *services.unfail_counts_at_call.lock().unwrap(),
-            vec![0, STATUS_TXID_CHUNK_SIZE],
+            *services.unfail_ids_at_call.lock().unwrap(),
+            vec![vec![], ids[..STATUS_TXID_CHUNK_SIZE].to_vec()],
             "the first window's writes must be visible before the second fetch"
         );
+    }
+
+    #[tokio::test]
+    async fn test_fallback_writes_interleave_with_singleton_fetches() {
+        let (mgr, storage) = make_manager_and_storage().await;
+        let old = Utc::now().naive_utc() - Duration::minutes(120);
+        let txid_a = "fallback_interleave_a".to_string();
+        let txid_b = "fallback_interleave_b".to_string();
+        let id_a = insert_req(&storage, &txid_a, old, ProvenTxReqStatus::DoubleSpend).await;
+        let id_b = insert_req(&storage, &txid_b, old, ProvenTxReqStatus::DoubleSpend).await;
+        let responses = [(txid_a, "mined".to_string()), (txid_b, "mined".to_string())]
+            .into_iter()
+            .collect();
+        let services =
+            ScriptedStatusServices::falling_back(responses, Default::default(), Some(mgr.clone()));
+
+        let mut task = TaskReviewDoubleSpends::new(mgr.clone(), services.clone());
+        task.run_task().await.unwrap();
+
+        assert_eq!(
+            *services.unfail_ids_at_call.lock().unwrap(),
+            vec![vec![], vec![], vec![id_a]],
+            "A's write must be visible before B's singleton fetch"
+        );
+        assert_eq!(req_status(&mgr, id_a).await, ProvenTxReqStatus::Unfail);
+        assert_eq!(req_status(&mgr, id_b).await, ProvenTxReqStatus::Unfail);
     }
 
     #[tokio::test]
