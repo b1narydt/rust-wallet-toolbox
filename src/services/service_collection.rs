@@ -5,6 +5,7 @@
 //! (per-provider success/failure/error counts), and provider reordering.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
@@ -16,14 +17,16 @@ use crate::error::WalletError;
 
 /// A named service provider entry in the collection.
 struct NamedService<T: ?Sized> {
-    name: String,
-    service: Box<T>,
+    name: Arc<str>,
+    service: Arc<T>,
 }
 
 /// Generic collection of service providers with round-robin failover
 /// and per-provider call history tracking.
 ///
 /// Type parameter `T` is a provider trait (e.g., `dyn GetMerklePathProvider`).
+/// Intentionally not `Clone`: although `Arc` providers make it structurally
+/// cloneable, copies would share providers while cursors and call histories diverged.
 pub struct ServiceCollection<T: ?Sized> {
     service_name: String,
     services: Vec<NamedService<T>>,
@@ -55,9 +58,9 @@ impl<T: ?Sized> ServiceCollection<T> {
     }
 
     /// Add a provider to the collection.
-    pub fn add(&mut self, name: &str, service: Box<T>) {
+    pub fn add(&mut self, name: &str, service: Arc<T>) {
         self.services.push(NamedService {
-            name: name.to_string(),
+            name: Arc::from(name),
             service,
         });
     }
@@ -70,15 +73,6 @@ impl<T: ?Sized> ServiceCollection<T> {
     /// Whether the collection is empty.
     pub fn is_empty(&self) -> bool {
         self.services.is_empty()
-    }
-
-    /// Returns the current provider and its name, or None if empty.
-    pub fn service_to_call(&self) -> Option<(&T, &str)> {
-        if self.services.is_empty() {
-            return None;
-        }
-        let entry = &self.services[self.index];
-        Some((&*entry.service, &entry.name))
     }
 
     /// Returns the service name of this collection.
@@ -102,20 +96,39 @@ impl<T: ?Sized> ServiceCollection<T> {
         self.index
     }
 
-    /// Iterate over all providers and their names.
-    pub fn all_services(&self) -> impl Iterator<Item = (&T, &str)> {
-        self.services
-            .iter()
-            .map(|entry| (&*entry.service, entry.name.as_str()))
+    /// Providers in dispatch order: index 0 is the provider the round-robin cursor
+    /// currently points at, followed by the rest in round-robin order.
+    ///
+    /// This is a SNAPSHOT. Concurrent `next()` or `move_service_to_last()` calls
+    /// affect subsequent dispatches, not a walk already in progress over this Vec.
+    /// Returning the pre-rotated order in a single call is deliberate: callers must
+    /// not be able to pair a cursor index with a provider list read under a
+    /// different lock acquisition, which would index an order that had since rotated.
+    pub fn call_order(&self) -> Vec<(Arc<T>, Arc<str>)> {
+        let n = self.services.len();
+        (0..n)
+            .map(|i| {
+                let entry = &self.services[(self.index + i) % n];
+                (Arc::clone(&entry.service), Arc::clone(&entry.name))
+            })
+            .collect()
     }
 
     /// Move a named provider to the end of the list, preserving others' order.
     /// Used to de-prioritize a failing provider.
     pub fn move_service_to_last(&mut self, provider_name: &str) {
-        if let Some(pos) = self.services.iter().position(|s| s.name == provider_name) {
+        if let Some(pos) = self
+            .services
+            .iter()
+            .position(|s| s.name.as_ref() == provider_name)
+        {
             let entry = self.services.remove(pos);
             self.services.push(entry);
-            // Reset index to 0 so next call starts from the new front
+            // Deliberately leave the cursor alone here. Since remove/push preserves
+            // the length, the guard below cannot fire; the cursor can still point at
+            // the de-prioritized provider, so the next dispatch may try it first.
+            // This known defect is tracked separately, and `call_order()` now makes
+            // it fixable inside the type.
             if self.index >= self.services.len() {
                 self.index = 0;
             }

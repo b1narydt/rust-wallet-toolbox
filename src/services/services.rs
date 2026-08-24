@@ -5,6 +5,7 @@
 //!
 //! Ported from wallet-toolbox/src/services/Services.ts.
 
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -71,14 +72,14 @@ impl Services {
             config.whats_on_chain_api_key.clone(),
             client.clone(),
         );
-        get_merkle_path_coll.add("WhatsOnChain", Box::new(woc_merkle));
+        get_merkle_path_coll.add("WhatsOnChain", Arc::new(woc_merkle));
         if has_bitails {
             let bitails = Bitails::new(
                 chain.clone(),
                 config.bitails_api_key.clone(),
                 client.clone(),
             );
-            get_merkle_path_coll.add("Bitails", Box::new(bitails));
+            get_merkle_path_coll.add("Bitails", Arc::new(bitails));
         }
 
         // -- getRawTx collection --
@@ -88,7 +89,7 @@ impl Services {
             config.whats_on_chain_api_key.clone(),
             client.clone(),
         );
-        get_raw_tx_coll.add("WhatsOnChain", Box::new(woc_raw));
+        get_raw_tx_coll.add("WhatsOnChain", Arc::new(woc_raw));
 
         // -- postBeef collection --
         // Arcade is the primary broadcaster when configured, followed by the
@@ -99,14 +100,14 @@ impl Services {
             if !arcade_url.is_empty() {
                 let arcade_config = config.arcade_config.clone().unwrap_or_default();
                 let arcade = ArcadeProvider::new(arcade_url, arcade_config, client.clone());
-                post_beef_coll.add("ArcadeBeef", Box::new(arcade));
+                post_beef_coll.add("ArcadeBeef", Arc::new(arcade));
             }
         }
 
         if let Some(ref gp_url) = config.arc_gorilla_pool_url {
             let gp_config = config.arc_gorilla_pool_config.clone().unwrap_or_default();
             let arc_gp = ArcProvider::new("GorillaPoolArcBeef", gp_url, gp_config, client.clone());
-            post_beef_coll.add("GorillaPoolArcBeef", Box::new(arc_gp));
+            post_beef_coll.add("GorillaPoolArcBeef", Arc::new(arc_gp));
         }
 
         let arc_taal = ArcProvider::new(
@@ -115,7 +116,7 @@ impl Services {
             config.arc_config.clone(),
             client.clone(),
         );
-        post_beef_coll.add("TaalArcBeef", Box::new(arc_taal));
+        post_beef_coll.add("TaalArcBeef", Arc::new(arc_taal));
 
         if has_bitails {
             let bitails_beef = Bitails::new(
@@ -123,7 +124,7 @@ impl Services {
                 config.bitails_api_key.clone(),
                 client.clone(),
             );
-            post_beef_coll.add("Bitails", Box::new(bitails_beef));
+            post_beef_coll.add("Bitails", Arc::new(bitails_beef));
         }
 
         let woc_beef = WhatsOnChain::new(
@@ -131,7 +132,7 @@ impl Services {
             config.whats_on_chain_api_key.clone(),
             client.clone(),
         );
-        post_beef_coll.add("WhatsOnChain", Box::new(woc_beef));
+        post_beef_coll.add("WhatsOnChain", Arc::new(woc_beef));
 
         // -- getUtxoStatus collection --
         let mut get_utxo_status_coll =
@@ -141,7 +142,7 @@ impl Services {
             config.whats_on_chain_api_key.clone(),
             client.clone(),
         );
-        get_utxo_status_coll.add("WhatsOnChain", Box::new(woc_utxo));
+        get_utxo_status_coll.add("WhatsOnChain", Arc::new(woc_utxo));
 
         // -- getStatusForTxids collection --
         let mut get_status_for_txids_coll =
@@ -151,7 +152,7 @@ impl Services {
             config.whats_on_chain_api_key.clone(),
             client.clone(),
         );
-        get_status_for_txids_coll.add("WhatsOnChain", Box::new(woc_status));
+        get_status_for_txids_coll.add("WhatsOnChain", Arc::new(woc_status));
 
         // -- getScriptHashHistory collection --
         let mut get_script_hash_history_coll =
@@ -161,7 +162,7 @@ impl Services {
             config.whats_on_chain_api_key.clone(),
             client.clone(),
         );
-        get_script_hash_history_coll.add("WhatsOnChain", Box::new(woc_history));
+        get_script_hash_history_coll.add("WhatsOnChain", Arc::new(woc_history));
 
         // -- ChainTracker --
         let chaintracks_url = config.chaintracks_url.as_deref();
@@ -251,21 +252,21 @@ impl WalletServices for Services {
     }
 
     async fn get_merkle_path(&self, txid: &str, use_next: bool) -> GetMerklePathResult {
-        let mut coll = self.get_merkle_path.lock().await;
-        if use_next {
-            coll.next();
-        }
-
-        let count = coll.len();
+        // Snapshot the pre-rotated dispatch order so the collection mutex is never held
+        // across a provider `.await`. Walk that order instead of re-reading the cursor:
+        // concurrent callers mutate it mid-walk, which could otherwise make one call hit
+        // a provider twice and never reach a healthy one. The in-loop `coll.next()` only
+        // advances the shared cursor for other callers; it cannot change this owned walk.
+        let providers = {
+            let mut coll = self.get_merkle_path.lock().await;
+            if use_next {
+                coll.next();
+            }
+            coll.call_order()
+        };
         let mut r0 = GetMerklePathResult::default();
 
-        for _tries in 0..count {
-            let (provider, provider_name) = match coll.service_to_call() {
-                Some(p) => p,
-                None => break,
-            };
-            let provider_name = provider_name.to_string();
-
+        for (provider, provider_name) in providers {
             let start = Utc::now();
             let result = provider.get_merkle_path(txid, self).await;
             let elapsed = Utc::now().signed_duration_since(start).num_milliseconds();
@@ -282,59 +283,54 @@ impl WalletServices for Services {
                     result: None,
                     error: None,
                 };
-                coll.add_service_call_success(&provider_name, call, None);
+                self.get_merkle_path.lock().await.add_service_call_success(
+                    &provider_name,
+                    call,
+                    None,
+                );
                 return result;
             }
 
-            if let Some(ref err_str) = result.error {
-                let call = ServiceCall {
-                    when: start,
-                    msecs: elapsed,
-                    success: false,
-                    result: None,
-                    error: None,
-                };
-                let err = WalletError::Internal(err_str.clone());
-                coll.add_service_call_error(&provider_name, call, &err);
-                if r0.error.is_none() {
-                    r0.error = result.error.clone();
+            let call = ServiceCall {
+                when: start,
+                msecs: elapsed,
+                success: false,
+                result: None,
+                error: None,
+            };
+            {
+                let mut coll = self.get_merkle_path.lock().await;
+                if let Some(ref err_str) = result.error {
+                    let err = WalletError::Internal(err_str.clone());
+                    coll.add_service_call_error(&provider_name, call, &err);
+                    if r0.error.is_none() {
+                        r0.error = result.error.clone();
+                    }
+                } else {
+                    coll.add_service_call_failure(&provider_name, call);
                 }
-            } else {
-                let call = ServiceCall {
-                    when: start,
-                    msecs: elapsed,
-                    success: false,
-                    result: None,
-                    error: None,
-                };
-                coll.add_service_call_failure(&provider_name, call);
+                coll.next();
             }
-
-            coll.next();
         }
 
         r0
     }
 
     async fn get_raw_tx(&self, txid: &str, use_next: bool) -> GetRawTxResult {
-        let mut coll = self.get_raw_tx.lock().await;
-        if use_next {
-            coll.next();
-        }
-
-        let count = coll.len();
+        // See `get_merkle_path`: snapshot before provider awaits and keep this walk independent of shared cursor updates.
+        let providers = {
+            let mut coll = self.get_raw_tx.lock().await;
+            if use_next {
+                coll.next();
+            }
+            coll.call_order()
+        };
         let mut r0 = GetRawTxResult {
             txid: txid.to_string(),
             ..Default::default()
         };
 
-        for _tries in 0..count {
-            let (provider, provider_name) = match coll.service_to_call() {
-                Some(p) => p,
-                None => break,
-            };
-            let provider_name = provider_name.to_string();
-
+        for (provider, provider_name) in providers {
             let start = Utc::now();
             let result = provider.get_raw_tx(txid).await;
             let elapsed = Utc::now().signed_duration_since(start).num_milliseconds();
@@ -347,52 +343,60 @@ impl WalletServices for Services {
                     result: None,
                     error: None,
                 };
-                coll.add_service_call_success(&provider_name, call, None);
+                self.get_raw_tx
+                    .lock()
+                    .await
+                    .add_service_call_success(&provider_name, call, None);
                 return result;
             }
 
-            if let Some(ref err_str) = result.error {
-                let call = ServiceCall {
-                    when: start,
-                    msecs: elapsed,
-                    success: false,
-                    result: None,
-                    error: None,
-                };
-                let err = WalletError::Internal(err_str.clone());
-                coll.add_service_call_error(&provider_name, call, &err);
-                if r0.error.is_none() {
-                    r0.error = result.error.clone();
+            {
+                let mut coll = self.get_raw_tx.lock().await;
+                if let Some(ref err_str) = result.error {
+                    let call = ServiceCall {
+                        when: start,
+                        msecs: elapsed,
+                        success: false,
+                        result: None,
+                        error: None,
+                    };
+                    let err = WalletError::Internal(err_str.clone());
+                    coll.add_service_call_error(&provider_name, call, &err);
+                    if r0.error.is_none() {
+                        r0.error = result.error.clone();
+                    }
+                } else if result.raw_tx.is_none() {
+                    // Not found -- still a success for the provider
+                    let call = ServiceCall {
+                        when: start,
+                        msecs: elapsed,
+                        success: true,
+                        result: Some("not found".to_string()),
+                        error: None,
+                    };
+                    coll.add_service_call_success(
+                        &provider_name,
+                        call,
+                        Some("not found".to_string()),
+                    );
+                } else {
+                    let call = ServiceCall {
+                        when: start,
+                        msecs: elapsed,
+                        success: false,
+                        result: None,
+                        error: None,
+                    };
+                    coll.add_service_call_failure(&provider_name, call);
                 }
-            } else if result.raw_tx.is_none() {
-                // Not found -- still a success for the provider
-                let call = ServiceCall {
-                    when: start,
-                    msecs: elapsed,
-                    success: true,
-                    result: Some("not found".to_string()),
-                    error: None,
-                };
-                coll.add_service_call_success(&provider_name, call, Some("not found".to_string()));
-            } else {
-                let call = ServiceCall {
-                    when: start,
-                    msecs: elapsed,
-                    success: false,
-                    result: None,
-                    error: None,
-                };
-                coll.add_service_call_failure(&provider_name, call);
+                coll.next();
             }
-
-            coll.next();
         }
 
         r0
     }
 
     async fn post_beef(&self, beef: &[u8], txids: &[String]) -> Vec<PostBeefResult> {
-        // Implemented in Task 2
         self.post_beef_impl(beef, txids).await
     }
 
@@ -403,12 +407,14 @@ impl WalletServices for Services {
         outpoint: Option<&str>,
         use_next: bool,
     ) -> GetUtxoStatusResult {
-        let mut coll = self.get_utxo_status.lock().await;
-        if use_next {
-            coll.next();
-        }
-
-        let count = coll.len();
+        // See `get_merkle_path`: snapshot before provider awaits and keep this walk independent of shared cursor updates.
+        let providers = {
+            let mut coll = self.get_utxo_status.lock().await;
+            if use_next {
+                coll.next();
+            }
+            coll.call_order()
+        };
         let mut r0 = GetUtxoStatusResult {
             name: "<noservices>".to_string(),
             status: "error".to_string(),
@@ -417,15 +423,11 @@ impl WalletServices for Services {
             details: Vec::new(),
         };
 
-        // Double retry loop (2 outer retries with 2000ms wait) matching TS
+        // The two outer attempts and 2000ms delay match TS. The inner walk
+        // deliberately diverges: TS re-reads `serviceToCall` live, while this
+        // replays one frozen snapshot and does not retake it for the second attempt.
         for _retry in 0..2u32 {
-            for _tries in 0..count {
-                let (provider, provider_name) = match coll.service_to_call() {
-                    Some(p) => p,
-                    None => break,
-                };
-                let provider_name = provider_name.to_string();
-
+            for (provider, provider_name) in &providers {
                 let start = Utc::now();
                 let result = provider
                     .get_utxo_status(output, output_format.clone(), outpoint)
@@ -440,33 +442,34 @@ impl WalletServices for Services {
                         result: None,
                         error: None,
                     };
-                    coll.add_service_call_success(&provider_name, call, None);
+                    self.get_utxo_status.lock().await.add_service_call_success(
+                        provider_name,
+                        call,
+                        None,
+                    );
                     return result;
                 }
 
-                if let Some(ref err_str) = result.error {
-                    let call = ServiceCall {
-                        when: start,
-                        msecs: elapsed,
-                        success: false,
-                        result: None,
-                        error: None,
-                    };
-                    let err = WalletError::Internal(err_str.clone());
-                    coll.add_service_call_error(&provider_name, call, &err);
-                } else {
-                    let call = ServiceCall {
-                        when: start,
-                        msecs: elapsed,
-                        success: false,
-                        result: None,
-                        error: None,
-                    };
-                    coll.add_service_call_failure(&provider_name, call);
+                let call = ServiceCall {
+                    when: start,
+                    msecs: elapsed,
+                    success: false,
+                    result: None,
+                    error: None,
+                };
+                {
+                    let mut coll = self.get_utxo_status.lock().await;
+                    if let Some(ref err_str) = result.error {
+                        let err = WalletError::Internal(err_str.clone());
+                        coll.add_service_call_error(provider_name, call, &err);
+                    } else {
+                        coll.add_service_call_failure(provider_name, call);
+                    }
+
+                    coll.next();
                 }
 
                 r0 = result;
-                coll.next();
             }
 
             if r0.status == "success" {
@@ -483,12 +486,14 @@ impl WalletServices for Services {
         txids: &[String],
         use_next: bool,
     ) -> GetStatusForTxidsResult {
-        let mut coll = self.get_status_for_txids.lock().await;
-        if use_next {
-            coll.next();
-        }
-
-        let count = coll.len();
+        // See `get_merkle_path`: snapshot before provider awaits and keep this walk independent of shared cursor updates.
+        let providers = {
+            let mut coll = self.get_status_for_txids.lock().await;
+            if use_next {
+                coll.next();
+            }
+            coll.call_order()
+        };
         let mut r0 = GetStatusForTxidsResult {
             name: "<noservices>".to_string(),
             status: "error".to_string(),
@@ -496,13 +501,7 @@ impl WalletServices for Services {
             results: Vec::new(),
         };
 
-        for _tries in 0..count {
-            let (provider, provider_name) = match coll.service_to_call() {
-                Some(p) => p,
-                None => break,
-            };
-            let provider_name = provider_name.to_string();
-
+        for (provider, provider_name) in providers {
             let start = Utc::now();
             let result = provider.get_status_for_txids(txids).await;
             let elapsed = Utc::now().signed_duration_since(start).num_milliseconds();
@@ -515,33 +514,33 @@ impl WalletServices for Services {
                     result: None,
                     error: None,
                 };
-                coll.add_service_call_success(&provider_name, call, None);
+                self.get_status_for_txids
+                    .lock()
+                    .await
+                    .add_service_call_success(&provider_name, call, None);
                 return result;
             }
 
-            if let Some(ref err_str) = result.error {
-                let call = ServiceCall {
-                    when: start,
-                    msecs: elapsed,
-                    success: false,
-                    result: None,
-                    error: None,
-                };
-                let err = WalletError::Internal(err_str.clone());
-                coll.add_service_call_error(&provider_name, call, &err);
-            } else {
-                let call = ServiceCall {
-                    when: start,
-                    msecs: elapsed,
-                    success: false,
-                    result: None,
-                    error: None,
-                };
-                coll.add_service_call_failure(&provider_name, call);
+            let call = ServiceCall {
+                when: start,
+                msecs: elapsed,
+                success: false,
+                result: None,
+                error: None,
+            };
+            {
+                let mut coll = self.get_status_for_txids.lock().await;
+                if let Some(ref err_str) = result.error {
+                    let err = WalletError::Internal(err_str.clone());
+                    coll.add_service_call_error(&provider_name, call, &err);
+                } else {
+                    coll.add_service_call_failure(&provider_name, call);
+                }
+
+                coll.next();
             }
 
             r0 = result;
-            coll.next();
         }
 
         r0
@@ -552,12 +551,14 @@ impl WalletServices for Services {
         hash: &str,
         use_next: bool,
     ) -> GetScriptHashHistoryResult {
-        let mut coll = self.get_script_hash_history.lock().await;
-        if use_next {
-            coll.next();
-        }
-
-        let count = coll.len();
+        // See `get_merkle_path`: snapshot before provider awaits and keep this walk independent of shared cursor updates.
+        let providers = {
+            let mut coll = self.get_script_hash_history.lock().await;
+            if use_next {
+                coll.next();
+            }
+            coll.call_order()
+        };
         let mut r0 = GetScriptHashHistoryResult {
             name: "<noservices>".to_string(),
             status: "error".to_string(),
@@ -565,13 +566,7 @@ impl WalletServices for Services {
             history: Vec::new(),
         };
 
-        for _tries in 0..count {
-            let (provider, provider_name) = match coll.service_to_call() {
-                Some(p) => p,
-                None => break,
-            };
-            let provider_name = provider_name.to_string();
-
+        for (provider, provider_name) in providers {
             let start = Utc::now();
             let result = provider.get_script_hash_history(hash).await;
             let elapsed = Utc::now().signed_duration_since(start).num_milliseconds();
@@ -584,33 +579,33 @@ impl WalletServices for Services {
                     result: None,
                     error: None,
                 };
-                coll.add_service_call_success(&provider_name, call, None);
+                self.get_script_hash_history
+                    .lock()
+                    .await
+                    .add_service_call_success(&provider_name, call, None);
                 return result;
             }
 
-            if let Some(ref err_str) = result.error {
-                let call = ServiceCall {
-                    when: start,
-                    msecs: elapsed,
-                    success: false,
-                    result: None,
-                    error: None,
-                };
-                let err = WalletError::Internal(err_str.clone());
-                coll.add_service_call_error(&provider_name, call, &err);
-            } else {
-                let call = ServiceCall {
-                    when: start,
-                    msecs: elapsed,
-                    success: false,
-                    result: None,
-                    error: None,
-                };
-                coll.add_service_call_failure(&provider_name, call);
+            let call = ServiceCall {
+                when: start,
+                msecs: elapsed,
+                success: false,
+                result: None,
+                error: None,
+            };
+            {
+                let mut coll = self.get_script_hash_history.lock().await;
+                if let Some(ref err_str) = result.error {
+                    let err = WalletError::Internal(err_str.clone());
+                    coll.add_service_call_error(&provider_name, call, &err);
+                } else {
+                    coll.add_service_call_failure(&provider_name, call);
+                }
+
+                coll.next();
             }
 
             r0 = result;
-            coll.next();
         }
 
         r0
@@ -772,61 +767,26 @@ impl Services {
     ) -> Vec<PostBeefResult> {
         let mut results: Vec<PostBeefResult> = Vec::new();
 
-        // Collect all provider names and references upfront, then release lock
-        let provider_names: Vec<String> = {
+        // See `get_merkle_path`: snapshot before provider awaits and keep this walk independent of shared cursor updates.
+        let providers = {
             let coll = self.post_beef.lock().await;
-            coll.all_services()
-                .map(|(_, name)| name.to_string())
-                .collect()
+            coll.call_order()
         };
 
-        for _provider_name in &provider_names {
-            // Get the current provider from the collection
-            let (prov_name, prov_ref_result) = {
-                let coll = self.post_beef.lock().await;
-                match coll.service_to_call() {
-                    Some((_provider, name)) => {
-                        let name = name.to_string();
-                        (name, true)
-                    }
-                    None => (String::new(), false),
-                }
-            };
-
-            if !prov_ref_result {
-                break;
-            }
-
-            // Call provider with soft timeout, releasing the mutex
+        for (provider, provider_name) in providers {
             let start = Utc::now();
-            let result = {
-                let coll = self.post_beef.lock().await;
-                match coll.service_to_call() {
-                    Some((provider, _)) => {
-                        let beef_owned = beef.to_vec();
-                        let txids_owned = txids.to_vec();
-                        // We need to call the provider without holding the lock.
-                        // Unfortunately, the provider is behind a reference tied to
-                        // the MutexGuard. We must hold the lock for the call duration
-                        // in UntilSuccess mode since we only call one at a time.
-                        if soft_timeout_ms > 0 {
-                            match tokio::time::timeout(
-                                Duration::from_millis(soft_timeout_ms),
-                                provider.post_beef(&beef_owned, &txids_owned),
-                            )
-                            .await
-                            {
-                                Ok(r) => r,
-                                Err(_) => {
-                                    PostBeefResult::timeout(&prov_name, txids, soft_timeout_ms)
-                                }
-                            }
-                        } else {
-                            provider.post_beef(&beef_owned, &txids_owned).await
-                        }
-                    }
-                    None => break,
+            let result = if soft_timeout_ms > 0 {
+                match tokio::time::timeout(
+                    Duration::from_millis(soft_timeout_ms),
+                    provider.post_beef(beef, txids),
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(_) => PostBeefResult::timeout(&provider_name, txids, soft_timeout_ms),
                 }
+            } else {
+                provider.post_beef(beef, txids).await
             };
             let elapsed = Utc::now().signed_duration_since(start).num_milliseconds();
 
@@ -837,7 +797,11 @@ impl Services {
                 .map(|e| e.contains("timeout"))
                 .unwrap_or(false);
 
-            // Record call history
+            let all_service_error = result
+                .txid_results
+                .iter()
+                .all(|tx_result| tx_result.service_error == Some(true));
+
             {
                 let mut coll = self.post_beef.lock().await;
                 let call = ServiceCall {
@@ -848,12 +812,19 @@ impl Services {
                     error: None,
                 };
                 if is_success {
-                    coll.add_service_call_success(&prov_name, call, None);
+                    coll.add_service_call_success(&provider_name, call, None);
                 } else if let Some(ref err_str) = result.error {
                     let err = WalletError::Internal(err_str.clone());
-                    coll.add_service_call_error(&prov_name, call, &err);
+                    coll.add_service_call_error(&provider_name, call, &err);
                 } else {
-                    coll.add_service_call_failure(&prov_name, call);
+                    coll.add_service_call_failure(&provider_name, call);
+                }
+
+                if !is_success {
+                    if !is_timeout && all_service_error {
+                        coll.move_service_to_last(&provider_name);
+                    }
+                    coll.next();
                 }
             }
 
@@ -861,28 +832,6 @@ impl Services {
 
             if is_success {
                 break;
-            }
-
-            // On non-timeout service error, move provider to last
-            if !is_timeout {
-                let mut coll = self.post_beef.lock().await;
-                let all_service_error = results
-                    .last()
-                    .map(|r| {
-                        r.txid_results
-                            .iter()
-                            .all(|tr| tr.service_error == Some(true))
-                    })
-                    .unwrap_or(false);
-                if all_service_error {
-                    coll.move_service_to_last(&prov_name);
-                }
-            }
-
-            // Advance to next provider
-            {
-                let mut coll = self.post_beef.lock().await;
-                coll.next();
             }
         }
 
@@ -900,13 +849,12 @@ impl Services {
 
     /// PromiseAll mode: call all providers concurrently and collect results.
     async fn post_beef_promise_all(&self, beef: &[u8], txids: &[String]) -> Vec<PostBeefResult> {
-        // Collect provider info while holding the lock briefly
-        let provider_count = {
+        let providers = {
             let coll = self.post_beef.lock().await;
-            coll.len()
+            coll.call_order()
         };
 
-        if provider_count == 0 {
+        if providers.is_empty() {
             return vec![PostBeefResult {
                 name: "<noservices>".to_string(),
                 status: "error".to_string(),
@@ -915,42 +863,15 @@ impl Services {
             }];
         }
 
-        // For PromiseAll we need to call all providers concurrently.
-        // We hold the lock for each individual call since each provider
-        // reference is behind the collection's mutex.
-        let beef_bytes = beef.to_vec();
-        let txids_vec = txids.to_vec();
-
-        // Since we can't easily extract providers from the collection without
-        // holding the lock, we iterate sequentially but spawn each call.
-        // With the current architecture, we call each provider one at a time
-        // from the collection (acquiring/releasing the lock for each).
-        // For true concurrency we'd need Arc<dyn PostBeefProvider> stored separately.
-        // Instead, we hold the lock and call all providers, which is the pragmatic
-        // approach matching the TS pattern (which also doesn't truly parallelize
-        // the mutex access).
-
-        let mut results = Vec::new();
-        {
-            let coll = self.post_beef.lock().await;
-            let providers: Vec<(&dyn PostBeefProvider, String)> = coll
-                .all_services()
-                .map(|(p, name)| (p, name.to_string()))
-                .collect();
-
-            // We must release the lock before calling providers... but we can't
-            // because the provider references borrow from the guard.
-            // For PromiseAll, we'll hold the lock and call sequentially.
-            // This is a known limitation; a future refactor could use Arc<dyn>.
-            for (provider, name) in &providers {
+        let results =
+            futures::future::join_all(providers.into_iter().map(|(provider, name)| async move {
                 let start = Utc::now();
-                let result = provider.post_beef(&beef_bytes, &txids_vec).await;
+                let result = provider.post_beef(beef, txids).await;
                 let elapsed = Utc::now().signed_duration_since(start).num_milliseconds();
-                results.push((name.clone(), start, elapsed, result));
-            }
-        }
+                (name, start, elapsed, result)
+            }))
+            .await;
 
-        // Record history for all results
         {
             let mut coll = self.post_beef.lock().await;
             for (name, start, elapsed, ref result) in &results {
@@ -1292,7 +1213,907 @@ mod beef_builder_tests {
     use bsv::transaction::merkle_path::{MerklePath, MerklePathLeaf};
     use bsv::transaction::transaction_input::TransactionInput;
     use std::collections::HashMap;
+    use std::future::Future;
     use std::io::Cursor;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::time;
+
+    const CONCURRENT_CALLS: usize = 4;
+    type VisitLog = Arc<Mutex<HashMap<String, Vec<String>>>>;
+
+    async fn record_visit(visits: &VisitLog, walk_id: &str, provider_name: &str) {
+        visits
+            .lock()
+            .await
+            .entry(walk_id.to_string())
+            .or_default()
+            .push(provider_name.to_string());
+    }
+
+    async fn assert_walk_visits(visits: &VisitLog, walk_ids: &[&str]) {
+        let visits = visits.lock().await;
+        for walk_id in walk_ids {
+            let providers: Vec<&str> = visits
+                .get(*walk_id)
+                .unwrap_or_else(|| panic!("missing visits for {walk_id}"))
+                .iter()
+                .map(String::as_str)
+                .collect();
+            assert_eq!(
+                providers,
+                vec!["AlwaysFails", "AlwaysSucceeds"],
+                "unexpected provider walk for {walk_id}"
+            );
+        }
+    }
+
+    #[derive(Default)]
+    struct InFlightTracker {
+        current: AtomicUsize,
+        high_water: AtomicUsize,
+    }
+
+    impl InFlightTracker {
+        async fn track_call(&self) {
+            let current = self.current.fetch_add(1, Ordering::SeqCst) + 1;
+            self.high_water.fetch_max(current, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            self.current.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+
+    struct ConcurrentProvider {
+        tracker: Arc<InFlightTracker>,
+    }
+
+    #[async_trait]
+    impl GetMerklePathProvider for ConcurrentProvider {
+        fn name(&self) -> &str {
+            "ConcurrentMock"
+        }
+
+        async fn get_merkle_path(
+            &self,
+            _txid: &str,
+            _services: &dyn WalletServices,
+        ) -> GetMerklePathResult {
+            self.tracker.track_call().await;
+            GetMerklePathResult {
+                name: Some("ConcurrentMock".to_string()),
+                merkle_path: Some(vec![1]),
+                header: None,
+                error: None,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl GetRawTxProvider for ConcurrentProvider {
+        fn name(&self) -> &str {
+            "ConcurrentMock"
+        }
+
+        async fn get_raw_tx(&self, txid: &str) -> GetRawTxResult {
+            self.tracker.track_call().await;
+            GetRawTxResult {
+                txid: txid.to_string(),
+                name: Some("ConcurrentMock".to_string()),
+                raw_tx: Some(vec![1]),
+                error: None,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl GetUtxoStatusProvider for ConcurrentProvider {
+        fn name(&self) -> &str {
+            "ConcurrentMock"
+        }
+
+        async fn get_utxo_status(
+            &self,
+            _output: &str,
+            _output_format: Option<GetUtxoStatusOutputFormat>,
+            _outpoint: Option<&str>,
+        ) -> GetUtxoStatusResult {
+            self.tracker.track_call().await;
+            GetUtxoStatusResult {
+                name: "ConcurrentMock".to_string(),
+                status: "success".to_string(),
+                error: None,
+                is_utxo: Some(true),
+                details: Vec::new(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl GetStatusForTxidsProvider for ConcurrentProvider {
+        fn name(&self) -> &str {
+            "ConcurrentMock"
+        }
+
+        async fn get_status_for_txids(&self, _txids: &[String]) -> GetStatusForTxidsResult {
+            self.tracker.track_call().await;
+            GetStatusForTxidsResult {
+                name: "ConcurrentMock".to_string(),
+                status: "success".to_string(),
+                error: None,
+                results: Vec::new(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl GetScriptHashHistoryProvider for ConcurrentProvider {
+        fn name(&self) -> &str {
+            "ConcurrentMock"
+        }
+
+        async fn get_script_hash_history(&self, _hash: &str) -> GetScriptHashHistoryResult {
+            self.tracker.track_call().await;
+            GetScriptHashHistoryResult {
+                name: "ConcurrentMock".to_string(),
+                status: "success".to_string(),
+                error: None,
+                history: Vec::new(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl PostBeefProvider for ConcurrentProvider {
+        fn name(&self) -> &str {
+            "ConcurrentMock"
+        }
+
+        async fn post_beef(&self, _beef: &[u8], _txids: &[String]) -> PostBeefResult {
+            self.tracker.track_call().await;
+            PostBeefResult {
+                name: "ConcurrentMock".to_string(),
+                status: "success".to_string(),
+                error: None,
+                txid_results: Vec::new(),
+            }
+        }
+    }
+
+    async fn assert_overlapping_calls<F, Fut, T>(tracker: &InFlightTracker, call: F)
+    where
+        F: Fn() -> Fut,
+        Fut: Future<Output = T>,
+    {
+        time::timeout(
+            Duration::from_secs(5),
+            futures::future::join_all((0..CONCURRENT_CALLS).map(|_| call())),
+        )
+        .await
+        .expect("concurrent service calls wedged on a provider collection lock");
+        assert_eq!(
+            tracker.high_water.load(Ordering::SeqCst),
+            CONCURRENT_CALLS,
+            "not all provider calls overlapped"
+        );
+    }
+
+    // Returns (success, failure, error). `add_service_call_error` increments both
+    // failure and error, so a provider that errors N times has counts (0, N, N).
+    fn provider_history_counts<T: ?Sized>(
+        collection: &mut ServiceCollection<T>,
+        provider_name: &str,
+    ) -> (u32, u32, u32) {
+        let history = collection.get_service_call_history(false);
+        let counts = &history
+            .history_by_provider
+            .get(provider_name)
+            .expect("provider history")
+            .total_counts;
+        (counts.success, counts.failure, counts.error)
+    }
+
+    // Paused virtual time auto-advances only when all tasks are idle. The five-second
+    // timeout is therefore a deadlock detector, not a wall-clock guard, and the
+    // overlap assertions remain valid.
+    #[tokio::test(start_paused = true)]
+    async fn concurrent_service_calls_do_not_hold_collection_locks_across_awaits() {
+        let services = Services::from_chain(Chain::Test);
+
+        let merkle_tracker = Arc::new(InFlightTracker::default());
+        {
+            let mut providers = services.get_merkle_path.lock().await;
+            *providers = ServiceCollection::new("getMerklePath");
+            providers.add(
+                "ConcurrentMock",
+                Arc::new(ConcurrentProvider {
+                    tracker: Arc::clone(&merkle_tracker),
+                }),
+            );
+        }
+        assert_overlapping_calls(&merkle_tracker, || {
+            services.get_merkle_path("test-txid", false)
+        })
+        .await;
+        {
+            let mut providers = services.get_merkle_path.lock().await;
+            assert_eq!(
+                provider_history_counts(&mut providers, "ConcurrentMock"),
+                (4, 0, 0)
+            );
+        }
+
+        let raw_tx_tracker = Arc::new(InFlightTracker::default());
+        {
+            let mut providers = services.get_raw_tx.lock().await;
+            *providers = ServiceCollection::new("getRawTx");
+            providers.add(
+                "ConcurrentMock",
+                Arc::new(ConcurrentProvider {
+                    tracker: Arc::clone(&raw_tx_tracker),
+                }),
+            );
+        }
+        assert_overlapping_calls(&raw_tx_tracker, || services.get_raw_tx("test-txid", false)).await;
+        {
+            let mut providers = services.get_raw_tx.lock().await;
+            assert_eq!(
+                provider_history_counts(&mut providers, "ConcurrentMock"),
+                (4, 0, 0)
+            );
+        }
+
+        let utxo_tracker = Arc::new(InFlightTracker::default());
+        {
+            let mut providers = services.get_utxo_status.lock().await;
+            *providers = ServiceCollection::new("getUtxoStatus");
+            providers.add(
+                "ConcurrentMock",
+                Arc::new(ConcurrentProvider {
+                    tracker: Arc::clone(&utxo_tracker),
+                }),
+            );
+        }
+        assert_overlapping_calls(&utxo_tracker, || {
+            services.get_utxo_status("output", None, Some("txid.0"), false)
+        })
+        .await;
+        {
+            let mut providers = services.get_utxo_status.lock().await;
+            assert_eq!(
+                provider_history_counts(&mut providers, "ConcurrentMock"),
+                (4, 0, 0)
+            );
+        }
+
+        let status_tracker = Arc::new(InFlightTracker::default());
+        {
+            let mut providers = services.get_status_for_txids.lock().await;
+            *providers = ServiceCollection::new("getStatusForTxids");
+            providers.add(
+                "ConcurrentMock",
+                Arc::new(ConcurrentProvider {
+                    tracker: Arc::clone(&status_tracker),
+                }),
+            );
+        }
+        let txids = vec!["test-txid".to_string()];
+        assert_overlapping_calls(&status_tracker, || {
+            services.get_status_for_txids(&txids, false)
+        })
+        .await;
+        {
+            let mut providers = services.get_status_for_txids.lock().await;
+            assert_eq!(
+                provider_history_counts(&mut providers, "ConcurrentMock"),
+                (4, 0, 0)
+            );
+        }
+
+        let script_history_tracker = Arc::new(InFlightTracker::default());
+        {
+            let mut providers = services.get_script_hash_history.lock().await;
+            *providers = ServiceCollection::new("getScriptHashHistory");
+            providers.add(
+                "ConcurrentMock",
+                Arc::new(ConcurrentProvider {
+                    tracker: Arc::clone(&script_history_tracker),
+                }),
+            );
+        }
+        assert_overlapping_calls(&script_history_tracker, || {
+            services.get_script_hash_history("script-hash", false)
+        })
+        .await;
+        {
+            let mut providers = services.get_script_hash_history.lock().await;
+            assert_eq!(
+                provider_history_counts(&mut providers, "ConcurrentMock"),
+                (4, 0, 0)
+            );
+        }
+
+        let post_beef_tracker = Arc::new(InFlightTracker::default());
+        {
+            let mut providers = services.post_beef.lock().await;
+            *providers = ServiceCollection::new("postBeef");
+            providers.add(
+                "ConcurrentMock",
+                Arc::new(ConcurrentProvider {
+                    tracker: Arc::clone(&post_beef_tracker),
+                }),
+            );
+        }
+        assert_overlapping_calls(&post_beef_tracker, || services.post_beef(&[1], &txids)).await;
+        {
+            let mut providers = services.post_beef.lock().await;
+            assert_eq!(
+                provider_history_counts(&mut providers, "ConcurrentMock"),
+                (4, 0, 0)
+            );
+        }
+    }
+
+    struct PromiseAllPostBeefProvider {
+        provider_name: &'static str,
+        tracker: Arc<InFlightTracker>,
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl PostBeefProvider for PromiseAllPostBeefProvider {
+        fn name(&self) -> &str {
+            self.provider_name
+        }
+
+        async fn post_beef(&self, _beef: &[u8], _txids: &[String]) -> PostBeefResult {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.tracker.track_call().await;
+            PostBeefResult {
+                name: self.name().to_string(),
+                status: "success".to_string(),
+                error: None,
+                txid_results: Vec::new(),
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn post_beef_promise_all_calls_every_provider_concurrently() {
+        const PROVIDER_NAMES: [&str; 3] = ["PromiseAll-0", "PromiseAll-1", "PromiseAll-2"];
+
+        let mut services = Services::from_chain(Chain::Test);
+        services.set_post_beef_mode(PostBeefMode::PromiseAll);
+        let tracker = Arc::new(InFlightTracker::default());
+        let calls: Vec<Arc<AtomicUsize>> = PROVIDER_NAMES
+            .iter()
+            .map(|_| Arc::new(AtomicUsize::new(0)))
+            .collect();
+        {
+            let mut providers = services.post_beef.lock().await;
+            *providers = ServiceCollection::new("postBeef");
+            for (provider_name, provider_calls) in PROVIDER_NAMES.iter().zip(&calls) {
+                providers.add(
+                    provider_name,
+                    Arc::new(PromiseAllPostBeefProvider {
+                        provider_name,
+                        tracker: Arc::clone(&tracker),
+                        calls: Arc::clone(provider_calls),
+                    }),
+                );
+            }
+        }
+        let services = Arc::new(services);
+        let txids = vec!["test-txid".to_string()];
+
+        let results = time::timeout(Duration::from_secs(5), services.post_beef(&[1], &txids))
+            .await
+            .expect("PromiseAll post_beef providers wedged");
+
+        assert_eq!(
+            tracker.high_water.load(Ordering::SeqCst),
+            PROVIDER_NAMES.len()
+        );
+        assert!(calls
+            .iter()
+            .all(|provider_calls| provider_calls.load(Ordering::SeqCst) == 1));
+        assert_eq!(results.len(), PROVIDER_NAMES.len());
+        assert_eq!(
+            results
+                .iter()
+                .map(|result| result.name.as_str())
+                .collect::<Vec<_>>(),
+            PROVIDER_NAMES
+        );
+        assert!(results.iter().all(|result| result.status == "success"));
+
+        let mut providers = services.post_beef.lock().await;
+        for provider_name in PROVIDER_NAMES {
+            assert_eq!(
+                provider_history_counts(&mut providers, provider_name),
+                (1, 0, 0)
+            );
+        }
+    }
+
+    struct FailingMerklePathProvider {
+        calls: Arc<AtomicUsize>,
+        visits: VisitLog,
+    }
+
+    #[async_trait]
+    impl GetMerklePathProvider for FailingMerklePathProvider {
+        fn name(&self) -> &str {
+            "AlwaysFails"
+        }
+
+        async fn get_merkle_path(
+            &self,
+            txid: &str,
+            _services: &dyn WalletServices,
+        ) -> GetMerklePathResult {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            record_visit(&self.visits, txid, self.name()).await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            GetMerklePathResult {
+                name: Some(self.name().to_string()),
+                ..Default::default()
+            }
+        }
+    }
+
+    struct SuccessfulMerklePathProvider {
+        calls: Arc<AtomicUsize>,
+        visits: VisitLog,
+    }
+
+    #[async_trait]
+    impl GetMerklePathProvider for SuccessfulMerklePathProvider {
+        fn name(&self) -> &str {
+            "AlwaysSucceeds"
+        }
+
+        async fn get_merkle_path(
+            &self,
+            txid: &str,
+            _services: &dyn WalletServices,
+        ) -> GetMerklePathResult {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            record_visit(&self.visits, txid, self.name()).await;
+            GetMerklePathResult {
+                name: Some(self.name().to_string()),
+                merkle_path: Some(vec![1]),
+                header: None,
+                error: None,
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn concurrent_failover_visits_every_merkle_path_provider_once() {
+        let services = Services::from_chain(Chain::Test);
+        let failing_calls = Arc::new(AtomicUsize::new(0));
+        let successful_calls = Arc::new(AtomicUsize::new(0));
+        let visits = Arc::new(Mutex::new(HashMap::new()));
+        {
+            let mut providers = services.get_merkle_path.lock().await;
+            *providers = ServiceCollection::new("getMerklePath");
+            providers.add(
+                "AlwaysFails",
+                Arc::new(FailingMerklePathProvider {
+                    calls: Arc::clone(&failing_calls),
+                    visits: Arc::clone(&visits),
+                }),
+            );
+            providers.add(
+                "AlwaysSucceeds",
+                Arc::new(SuccessfulMerklePathProvider {
+                    calls: Arc::clone(&successful_calls),
+                    visits: Arc::clone(&visits),
+                }),
+            );
+        }
+
+        let txids = ["txid-0", "txid-1"];
+        let results = time::timeout(
+            Duration::from_secs(5),
+            futures::future::join_all(
+                txids
+                    .iter()
+                    .map(|txid| services.get_merkle_path(txid, false)),
+            ),
+        )
+        .await
+        .expect("concurrent merkle-path failover wedged");
+
+        assert!(results.iter().all(|result| result.merkle_path.is_some()));
+        assert_walk_visits(&visits, &txids).await;
+        assert_eq!(failing_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(successful_calls.load(Ordering::SeqCst), 2);
+
+        let mut providers = services.get_merkle_path.lock().await;
+        assert_eq!(
+            provider_history_counts(&mut providers, "AlwaysFails"),
+            (0, 2, 0)
+        );
+        assert_eq!(
+            provider_history_counts(&mut providers, "AlwaysSucceeds"),
+            (2, 0, 0)
+        );
+    }
+
+    struct FailoverProvider {
+        provider_name: &'static str,
+        succeeds: bool,
+        visits: VisitLog,
+    }
+
+    impl FailoverProvider {
+        async fn visit(&self, walk_id: &str) {
+            record_visit(&self.visits, walk_id, self.provider_name).await;
+            if !self.succeeds {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        }
+
+        fn status(&self) -> String {
+            if self.succeeds {
+                "success".to_string()
+            } else {
+                "error".to_string()
+            }
+        }
+
+        fn error(&self) -> Option<String> {
+            (!self.succeeds).then(|| "mock provider failure".to_string())
+        }
+    }
+
+    #[async_trait]
+    impl GetRawTxProvider for FailoverProvider {
+        fn name(&self) -> &str {
+            self.provider_name
+        }
+
+        async fn get_raw_tx(&self, txid: &str) -> GetRawTxResult {
+            self.visit(txid).await;
+            GetRawTxResult {
+                txid: txid.to_string(),
+                name: Some(self.provider_name.to_string()),
+                raw_tx: self.succeeds.then(|| vec![1]),
+                error: self.error(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl GetUtxoStatusProvider for FailoverProvider {
+        fn name(&self) -> &str {
+            self.provider_name
+        }
+
+        async fn get_utxo_status(
+            &self,
+            output: &str,
+            _output_format: Option<GetUtxoStatusOutputFormat>,
+            _outpoint: Option<&str>,
+        ) -> GetUtxoStatusResult {
+            self.visit(output).await;
+            GetUtxoStatusResult {
+                name: self.provider_name.to_string(),
+                status: self.status(),
+                error: self.error(),
+                is_utxo: self.succeeds.then_some(true),
+                details: Vec::new(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl GetStatusForTxidsProvider for FailoverProvider {
+        fn name(&self) -> &str {
+            self.provider_name
+        }
+
+        async fn get_status_for_txids(&self, txids: &[String]) -> GetStatusForTxidsResult {
+            let walk_id = txids.first().map(String::as_str).unwrap_or("<missing>");
+            self.visit(walk_id).await;
+            GetStatusForTxidsResult {
+                name: self.provider_name.to_string(),
+                status: self.status(),
+                error: self.error(),
+                results: Vec::new(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl GetScriptHashHistoryProvider for FailoverProvider {
+        fn name(&self) -> &str {
+            self.provider_name
+        }
+
+        async fn get_script_hash_history(&self, hash: &str) -> GetScriptHashHistoryResult {
+            self.visit(hash).await;
+            GetScriptHashHistoryResult {
+                name: self.provider_name.to_string(),
+                status: self.status(),
+                error: self.error(),
+                history: Vec::new(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl PostBeefProvider for FailoverProvider {
+        fn name(&self) -> &str {
+            self.provider_name
+        }
+
+        async fn post_beef(&self, _beef: &[u8], txids: &[String]) -> PostBeefResult {
+            let walk_id = txids.first().map(String::as_str).unwrap_or("<missing>");
+            self.visit(walk_id).await;
+            if self.succeeds {
+                PostBeefResult {
+                    name: self.provider_name.to_string(),
+                    status: "success".to_string(),
+                    error: None,
+                    txid_results: Vec::new(),
+                }
+            } else {
+                PostBeefResult::timeout(self.provider_name, txids, 100)
+            }
+        }
+    }
+
+    fn failover_provider_pair(visits: &VisitLog) -> (Arc<FailoverProvider>, Arc<FailoverProvider>) {
+        (
+            Arc::new(FailoverProvider {
+                provider_name: "AlwaysFails",
+                succeeds: false,
+                visits: Arc::clone(visits),
+            }),
+            Arc::new(FailoverProvider {
+                provider_name: "AlwaysSucceeds",
+                succeeds: true,
+                visits: Arc::clone(visits),
+            }),
+        )
+    }
+
+    fn add_failover_providers<T: ?Sized>(
+        providers: &mut ServiceCollection<T>,
+        failing: Arc<T>,
+        successful: Arc<T>,
+    ) {
+        providers.add("AlwaysFails", failing);
+        providers.add("AlwaysSucceeds", successful);
+    }
+
+    async fn assert_concurrent_failover<F, Fut>(
+        service_name: &str,
+        visits: &VisitLog,
+        walk_ids: &[&str],
+        call: F,
+    ) where
+        F: Fn(String) -> Fut,
+        Fut: Future<Output = bool>,
+    {
+        let results = time::timeout(
+            Duration::from_secs(5),
+            futures::future::join_all(walk_ids.iter().map(|walk_id| call((*walk_id).to_string()))),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("concurrent {service_name} failover wedged"));
+        assert!(
+            results.into_iter().all(|succeeded| succeeded),
+            "{service_name} did not fail over successfully"
+        );
+        assert_walk_visits(visits, walk_ids).await;
+    }
+
+    fn assert_failover_history<T: ?Sized>(providers: &mut ServiceCollection<T>) {
+        assert_eq!(provider_history_counts(providers, "AlwaysFails"), (0, 2, 2));
+        assert_eq!(
+            provider_history_counts(providers, "AlwaysSucceeds"),
+            (2, 0, 0)
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn concurrent_failover_visits_every_provider_once_for_all_other_service_methods() {
+        let services = Services::from_chain(Chain::Test);
+        let visits = Arc::new(Mutex::new(HashMap::new()));
+        let (failing, successful) = failover_provider_pair(&visits);
+        let services = &services;
+
+        {
+            let mut providers = services.get_raw_tx.lock().await;
+            *providers = ServiceCollection::new("getRawTx");
+            add_failover_providers(&mut providers, failing.clone(), successful.clone());
+        }
+        let walk_ids = ["raw-txid-0", "raw-txid-1"];
+        assert_concurrent_failover("raw-tx", &visits, &walk_ids, |walk_id| async move {
+            services.get_raw_tx(&walk_id, false).await.raw_tx.is_some()
+        })
+        .await;
+        {
+            let mut providers = services.get_raw_tx.lock().await;
+            assert_failover_history(&mut providers);
+        }
+
+        {
+            let mut providers = services.get_utxo_status.lock().await;
+            *providers = ServiceCollection::new("getUtxoStatus");
+            add_failover_providers(&mut providers, failing.clone(), successful.clone());
+        }
+        let walk_ids = ["utxo-output-0", "utxo-output-1"];
+        assert_concurrent_failover("UTXO-status", &visits, &walk_ids, |walk_id| async move {
+            services
+                .get_utxo_status(&walk_id, None, None, false)
+                .await
+                .is_utxo
+                == Some(true)
+        })
+        .await;
+        {
+            let mut providers = services.get_utxo_status.lock().await;
+            assert_failover_history(&mut providers);
+        }
+
+        {
+            let mut providers = services.get_status_for_txids.lock().await;
+            *providers = ServiceCollection::new("getStatusForTxids");
+            add_failover_providers(&mut providers, failing.clone(), successful.clone());
+        }
+        let walk_ids = ["status-txid-0", "status-txid-1"];
+        assert_concurrent_failover("txid-status", &visits, &walk_ids, |walk_id| async move {
+            services
+                .get_status_for_txids(&[walk_id], false)
+                .await
+                .status
+                == "success"
+        })
+        .await;
+        {
+            let mut providers = services.get_status_for_txids.lock().await;
+            assert_failover_history(&mut providers);
+        }
+
+        {
+            let mut providers = services.get_script_hash_history.lock().await;
+            *providers = ServiceCollection::new("getScriptHashHistory");
+            add_failover_providers(&mut providers, failing.clone(), successful.clone());
+        }
+        let walk_ids = ["script-hash-0", "script-hash-1"];
+        assert_concurrent_failover(
+            "script-hash-history",
+            &visits,
+            &walk_ids,
+            |walk_id| async move {
+                services
+                    .get_script_hash_history(&walk_id, false)
+                    .await
+                    .status
+                    == "success"
+            },
+        )
+        .await;
+        {
+            let mut providers = services.get_script_hash_history.lock().await;
+            assert_failover_history(&mut providers);
+        }
+
+        {
+            let mut providers = services.post_beef.lock().await;
+            *providers = ServiceCollection::new("postBeef");
+            add_failover_providers(&mut providers, failing, successful);
+        }
+        let walk_ids = ["post-txid-0", "post-txid-1"];
+        assert_concurrent_failover("post-beef", &visits, &walk_ids, |walk_id| async move {
+            services
+                .post_beef(&[1], &[walk_id])
+                .await
+                .last()
+                .is_some_and(|result| result.status == "success")
+        })
+        .await;
+        {
+            let mut providers = services.post_beef.lock().await;
+            assert_failover_history(&mut providers);
+        }
+    }
+
+    struct ServiceErrorPostBeefProvider {
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl PostBeefProvider for ServiceErrorPostBeefProvider {
+        fn name(&self) -> &str {
+            "PostFails"
+        }
+
+        async fn post_beef(&self, _beef: &[u8], txids: &[String]) -> PostBeefResult {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let mut result = PostBeefResult::timeout(self.name(), txids, 100);
+            result.error = Some("mock service error".to_string());
+            result
+        }
+    }
+
+    struct SuccessfulPostBeefProvider {
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl PostBeefProvider for SuccessfulPostBeefProvider {
+        fn name(&self) -> &str {
+            "PostSucceeds"
+        }
+
+        async fn post_beef(&self, _beef: &[u8], _txids: &[String]) -> PostBeefResult {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            PostBeefResult {
+                name: self.name().to_string(),
+                status: "success".to_string(),
+                error: None,
+                txid_results: Vec::new(),
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn post_beef_failover_uses_snapshot_when_failure_reorders_collection() {
+        let services = Services::from_chain(Chain::Test);
+        let failing_calls = Arc::new(AtomicUsize::new(0));
+        let successful_calls = Arc::new(AtomicUsize::new(0));
+        {
+            let mut providers = services.post_beef.lock().await;
+            *providers = ServiceCollection::new("postBeef");
+            providers.add(
+                "PostFails",
+                Arc::new(ServiceErrorPostBeefProvider {
+                    calls: Arc::clone(&failing_calls),
+                }),
+            );
+            providers.add(
+                "PostSucceeds",
+                Arc::new(SuccessfulPostBeefProvider {
+                    calls: Arc::clone(&successful_calls),
+                }),
+            );
+        }
+
+        let txids = vec!["test-txid".to_string()];
+        let results = services.post_beef_until_success(&[1], &txids, 0).await;
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(
+            results.last().map(|result| result.status.as_str()),
+            Some("success")
+        );
+        assert_eq!(failing_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(successful_calls.load(Ordering::SeqCst), 1);
+
+        let mut providers = services.post_beef.lock().await;
+        assert_eq!(
+            provider_history_counts(&mut providers, "PostFails"),
+            (0, 1, 1)
+        );
+        assert_eq!(
+            provider_history_counts(&mut providers, "PostSucceeds"),
+            (1, 0, 0)
+        );
+        let provider_order: Vec<String> = providers
+            .call_order()
+            .into_iter()
+            .map(|(_, name)| name.to_string())
+            .collect();
+        // Pins CURRENTLY-DEFECTIVE behavior: after `move_service_to_last`, the cursor
+        // still points at the just-de-prioritized provider, so `call_order()[0]` is
+        // "PostFails" instead of the new front "PostSucceeds". Fixing that defect
+        // should flip this expectation; change the code, not this assertion.
+        assert_eq!(provider_order, vec!["PostFails", "PostSucceeds"]);
+    }
 
     #[tokio::test]
     async fn arcade_sse_defaults_install_primary_broadcaster_with_same_token() {
@@ -1319,7 +2140,8 @@ mod beef_builder_tests {
             .post_beef
             .lock()
             .await
-            .all_services()
+            .call_order()
+            .into_iter()
             .map(|(_, name)| name.to_string())
             .collect();
         assert_eq!(providers.first().map(String::as_str), Some("ArcadeBeef"));
