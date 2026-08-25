@@ -64,4 +64,7 @@ tokio = { version = "1", features = ["full"] }
 dotenvy = "0.15"
 # Faucet funding for the funded conformance recorder (tests/record_funded_vectors.rs)
 # only — dev-dependency so the toolbox gains no runtime dependency.
-bsv-messagebox-client = "0.4.1"
+# Local until the release train publishes sdk 0.8 -> authsocket -> messagebox-client.
+# The crates.io 0.4.1 pulls bsv-sdk 0.7 transitively, which puts two bsv-sdk crates
+# in the graph and makes `Wallet: WalletInterface` unsatisfiable.
+bsv-messagebox-client = { path = "/Users/donot/PARAGON/wt/mbc-sdk08" }

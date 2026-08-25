@@ -1613,41 +1613,10 @@ async fn run_relinquish_vector(
         .await;
     }
 
-    // Vectors 1, 6, 8 name basket "default": phase A pins the same Rust-SDK
-    // reserved-basket rejection documented at `DEFAULT_BASKET_REJECTION`
-    // (the TS reference accepts "default" here too), then phase B renames
-    // the basket — a field the lookup provably ignores in BOTH
-    // implementations (TS StorageProvider.ts relinquishOutput finds by
-    // {userId, txid, vout} only; the Rust port is line-for-line the same) —
-    // so the storage path still runs.
-    let default_basket = v.input.args["basket"].as_str() == Some("default");
-    let mut args_json = v.input.args.clone();
-    if default_basket && !expect_error {
-        let as_vendored: RelinquishOutputArgs =
-            serde_json::from_value(args_json.clone()).expect("relinquish args");
-        match w
-            .setup
-            .wallet
-            .relinquish_output(as_vendored, v.input.originator.as_deref())
-            .await
-        {
-            Ok(_) => failures.push(format!(
-                "{}: as-vendored basket 'default' was ACCEPTED — the pinned \
-                 default-basket divergence has resolved; collapse phase A/B",
-                v.id
-            )),
-            Err(e) => {
-                let msg = e.to_string();
-                if !msg.contains(DEFAULT_BASKET_REJECTION) {
-                    failures.push(format!(
-                        "{}: as-vendored rejection changed shape: {msg}",
-                        v.id
-                    ));
-                }
-            }
-        }
-        args_json["basket"] = Value::String("seeded".to_string());
-    }
+    // sdk 0.8 accepts the reserved basket "default" here, matching the TS
+    // reference, so the divergence this used to pin (phase A) and work around
+    // by renaming the basket (phase B) is gone. Run the vector as vendored.
+    let args_json = v.input.args.clone();
 
     let args: RelinquishOutputArgs = match serde_json::from_value(args_json) {
         Ok(a) => a,

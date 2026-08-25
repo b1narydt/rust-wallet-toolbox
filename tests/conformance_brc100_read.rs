@@ -1035,7 +1035,7 @@ async fn provecertificate_conformance() {
 
             // Round-trip: the produced keyring must decrypt, as the verifier,
             // back to the plaintext fields the vector's certificate carries.
-            let mut vc = VerifiableCertificate::new(
+            let vc = VerifiableCertificate::new(
                 seeded.sdk_certificate.clone(),
                 r.keyring_for_verifier.clone(),
             );
