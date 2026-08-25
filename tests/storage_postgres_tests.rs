@@ -46,6 +46,10 @@ mod storage_postgres {
         NaiveDateTime::parse_from_str("2024-01-15 10:30:00", "%Y-%m-%d %H:%M:%S").unwrap()
     }
 
+    fn update_datetime() -> NaiveDateTime {
+        NaiveDateTime::parse_from_str("2025-02-03 04:05:06.123", "%Y-%m-%d %H:%M:%S%.3f").unwrap()
+    }
+
     async fn insert_pg_user(storage: &PgStorage, identity_key: &str) -> i64 {
         let now = test_datetime();
         storage
@@ -138,6 +142,264 @@ mod storage_postgres {
             )
             .await
             .unwrap()
+    }
+
+    struct UpdateFixture {
+        settings_identity_key: String,
+        user_id: i64,
+        certificate_id: i64,
+        certificate_field_name: String,
+        commission_id: i64,
+        monitor_event_id: i64,
+        basket_id: i64,
+        output_tag_id: i64,
+        output_id: i64,
+        proven_tx_id: i64,
+        proven_tx_req_id: i64,
+        transaction_id: i64,
+        tx_label_id: i64,
+        sync_state_id: i64,
+    }
+
+    async fn setup_pg_update_fixture() -> (PgStorage, UpdateFixture) {
+        let storage = setup_pg_storage().await.unwrap();
+        let settings = storage.make_available().await.unwrap();
+        let now = test_datetime();
+        let user_id = insert_pg_user(&storage, "pg-update-user").await;
+        let transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Unprocessed,
+            "pg-update-transaction",
+        )
+        .await;
+        let certificate_id = storage
+            .insert_certificate(
+                &Certificate {
+                    created_at: now,
+                    updated_at: now,
+                    certificate_id: 0,
+                    user_id,
+                    cert_type: "identity".to_string(),
+                    serial_number: "pg-update-certificate".to_string(),
+                    certifier: "certifier".to_string(),
+                    subject: "subject".to_string(),
+                    verifier: None,
+                    revocation_outpoint: "outpoint.0".to_string(),
+                    signature: "old-signature".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let certificate_field_name = "name".to_string();
+        storage
+            .insert_certificate_field(
+                &CertificateField {
+                    created_at: now,
+                    updated_at: now,
+                    user_id,
+                    certificate_id,
+                    field_name: certificate_field_name.clone(),
+                    field_value: "old-value".to_string(),
+                    master_key: "master-key".to_string(),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let commission_id = storage
+            .insert_commission(
+                &Commission {
+                    created_at: now,
+                    updated_at: now,
+                    commission_id: 0,
+                    user_id,
+                    transaction_id,
+                    satoshis: 100,
+                    key_offset: "offset".to_string(),
+                    is_redeemed: false,
+                    locking_script: vec![0x51],
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let monitor_event_id = storage
+            .insert_monitor_event(
+                &MonitorEvent {
+                    created_at: now,
+                    updated_at: now,
+                    id: 0,
+                    event: "old-event".to_string(),
+                    details: Some("{}".to_string()),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let basket_id = storage
+            .insert_output_basket(
+                &OutputBasket {
+                    created_at: now,
+                    updated_at: now,
+                    basket_id: 0,
+                    user_id,
+                    name: "old-basket".to_string(),
+                    number_of_desired_utxos: 6,
+                    minimum_desired_utxo_value: 1_000,
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let output_id = insert_pg_output(
+            &storage,
+            user_id,
+            transaction_id,
+            0,
+            true,
+            None,
+            Some(vec![0x51]),
+        )
+        .await;
+        let output_tag_id = storage
+            .insert_output_tag(
+                &OutputTag {
+                    created_at: now,
+                    updated_at: now,
+                    output_tag_id: 0,
+                    user_id,
+                    tag: "old-tag".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_output_tag_map(
+                &OutputTagMap {
+                    created_at: now,
+                    updated_at: now,
+                    output_tag_id,
+                    output_id,
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let proven_tx_id = storage
+            .insert_proven_tx(
+                &ProvenTx {
+                    created_at: now,
+                    updated_at: now,
+                    proven_tx_id: 0,
+                    txid: "pg-update-proven-tx".to_string(),
+                    height: 800_000,
+                    index: 1,
+                    merkle_path: vec![1, 2, 3],
+                    raw_tx: vec![4, 5, 6],
+                    block_hash: "old-block-hash".to_string(),
+                    merkle_root: "merkle-root".to_string(),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let proven_tx_req_id = storage
+            .insert_proven_tx_req(
+                &ProvenTxReq {
+                    created_at: now,
+                    updated_at: now,
+                    proven_tx_req_id: 0,
+                    proven_tx_id: None,
+                    status: ProvenTxReqStatus::Unprocessed,
+                    attempts: 0,
+                    notified: false,
+                    txid: "pg-update-proven-tx-req".to_string(),
+                    batch: None,
+                    history: "{}".to_string(),
+                    notify: "{}".to_string(),
+                    raw_tx: vec![1, 2, 3],
+                    input_beef: None,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let tx_label_id = storage
+            .insert_tx_label(
+                &TxLabel {
+                    created_at: now,
+                    updated_at: now,
+                    tx_label_id: 0,
+                    user_id,
+                    label: "old-label".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_tx_label_map(
+                &TxLabelMap {
+                    created_at: now,
+                    updated_at: now,
+                    tx_label_id,
+                    transaction_id,
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let sync_state_id = storage
+            .insert_sync_state(
+                &SyncState {
+                    created_at: now,
+                    updated_at: now,
+                    sync_state_id: 0,
+                    user_id,
+                    storage_identity_key: "pg-update-remote-key".to_string(),
+                    storage_name: "remote".to_string(),
+                    status: SyncStatus::Unknown,
+                    init: false,
+                    ref_num: "pg-update-sync-state".to_string(),
+                    sync_map: "{}".to_string(),
+                    when: None,
+                    satoshis: None,
+                    error_local: None,
+                    error_other: None,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        (
+            storage,
+            UpdateFixture {
+                settings_identity_key: settings.storage_identity_key,
+                user_id,
+                certificate_id,
+                certificate_field_name,
+                commission_id,
+                monitor_event_id,
+                basket_id,
+                output_tag_id,
+                output_id,
+                proven_tx_id,
+                proven_tx_req_id,
+                transaction_id,
+                tx_label_id,
+                sync_state_id,
+            },
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -1753,5 +2015,778 @@ mod storage_postgres {
             .unwrap();
         storage.commit_transaction(after).await.unwrap();
         assert_eq!(reacquired.len(), 1, "lock must be released on commit");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_user_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_user(
+                fixture.user_id,
+                &UserPartial {
+                    identity_key: Some("pg-updated-user".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_users(
+                &FindUsersArgs {
+                    partial: UserPartial {
+                        user_id: Some(fixture.user_id),
+                        ..Default::default()
+                    },
+                    since: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].identity_key, "pg-updated-user");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_certificate_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_certificate(
+                fixture.certificate_id,
+                &CertificatePartial {
+                    signature: Some("new-signature".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_certificates(
+                &FindCertificatesArgs {
+                    partial: CertificatePartial {
+                        certificate_id: Some(fixture.certificate_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].signature, "new-signature");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_certificate_field_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_certificate_field(
+                fixture.certificate_id,
+                &fixture.certificate_field_name,
+                &CertificateFieldPartial {
+                    field_value: Some("new-value".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_certificate_fields(
+                &FindCertificateFieldsArgs {
+                    partial: CertificateFieldPartial {
+                        certificate_id: Some(fixture.certificate_id),
+                        field_name: Some(fixture.certificate_field_name),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].field_value, "new-value");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_commission_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_commission(
+                fixture.commission_id,
+                &CommissionPartial {
+                    is_redeemed: Some(true),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_commissions(
+                &FindCommissionsArgs {
+                    partial: CommissionPartial {
+                        commission_id: Some(fixture.commission_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].is_redeemed);
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_monitor_event_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_monitor_event(
+                fixture.monitor_event_id,
+                &MonitorEventPartial {
+                    event: Some("new-event".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_monitor_events(
+                &FindMonitorEventsArgs {
+                    partial: MonitorEventPartial {
+                        id: Some(fixture.monitor_event_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].event, "new-event");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_output_basket_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_output_basket(
+                fixture.basket_id,
+                &OutputBasketPartial {
+                    name: Some("new-basket".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_output_baskets(
+                &FindOutputBasketsArgs {
+                    partial: OutputBasketPartial {
+                        basket_id: Some(fixture.basket_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "new-basket");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_output_tag_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_output_tag(
+                fixture.output_tag_id,
+                &OutputTagPartial {
+                    tag: Some("new-tag".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_output_tags(
+                &FindOutputTagsArgs {
+                    partial: OutputTagPartial {
+                        output_tag_id: Some(fixture.output_tag_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tag, "new-tag");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_output_tag_map_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_output_tag_map(
+                fixture.output_id,
+                fixture.output_tag_id,
+                &OutputTagMapPartial {
+                    is_deleted: Some(true),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_output_tag_maps(
+                &FindOutputTagMapsArgs {
+                    partial: OutputTagMapPartial {
+                        output_id: Some(fixture.output_id),
+                        output_tag_id: Some(fixture.output_tag_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].is_deleted);
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_output_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_output(
+                fixture.output_id,
+                &OutputPartial {
+                    output_description: Some("new-output-description".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        output_id: Some(fixture.output_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].output_description.as_deref(),
+            Some("new-output-description")
+        );
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_mark_inputs_spent_claims_only_eligible_rows_once() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-mark-inputs-user").await;
+        let other_user_id = insert_pg_user(&storage, "pg-mark-inputs-other-user").await;
+        let source_transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-mark-inputs-source",
+        )
+        .await;
+        let other_source_transaction_id = insert_pg_transaction(
+            &storage,
+            other_user_id,
+            TransactionStatus::Completed,
+            "pg-mark-inputs-other-source",
+        )
+        .await;
+        let previous_spender_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-mark-inputs-previous",
+        )
+        .await;
+        let spending_transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-mark-inputs-spending",
+        )
+        .await;
+        let eligible_one = insert_pg_output(
+            &storage,
+            user_id,
+            source_transaction_id,
+            0,
+            true,
+            None,
+            None,
+        )
+        .await;
+        let eligible_two = insert_pg_output(
+            &storage,
+            user_id,
+            source_transaction_id,
+            1,
+            true,
+            None,
+            None,
+        )
+        .await;
+        let already_spent = insert_pg_output(
+            &storage,
+            user_id,
+            source_transaction_id,
+            2,
+            true,
+            Some(previous_spender_id),
+            None,
+        )
+        .await;
+        let other_users_output = insert_pg_output(
+            &storage,
+            other_user_id,
+            other_source_transaction_id,
+            3,
+            true,
+            None,
+            None,
+        )
+        .await;
+        let requested = [
+            eligible_one,
+            eligible_two,
+            already_spent,
+            other_users_output,
+        ];
+
+        let affected = storage
+            .mark_inputs_spent(&requested, spending_transaction_id, user_id, None)
+            .await
+            .unwrap();
+        assert_eq!(affected, 2);
+        let second = storage
+            .mark_inputs_spent(&requested, spending_transaction_id, user_id, None)
+            .await
+            .unwrap();
+        assert_eq!(second, 0);
+
+        let rows = storage
+            .find_outputs(&FindOutputsArgs::default(), None)
+            .await
+            .unwrap();
+        let find = |id| rows.iter().find(|row| row.output_id == id).unwrap();
+        for output_id in [eligible_one, eligible_two] {
+            let row = find(output_id);
+            assert!(!row.spendable);
+            assert_eq!(row.spent_by, Some(spending_transaction_id));
+        }
+        let row = find(already_spent);
+        assert!(row.spendable);
+        assert_eq!(row.spent_by, Some(previous_spender_id));
+        let row = find(other_users_output);
+        assert!(row.spendable);
+        assert_eq!(row.spent_by, None);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_release_inputs_only_releases_matching_claimant() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-release-inputs-user").await;
+        let source_transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-release-inputs-source",
+        )
+        .await;
+        let transaction_a = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Failed,
+            "pg-release-inputs-a",
+        )
+        .await;
+        let transaction_b = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Unsigned,
+            "pg-release-inputs-b",
+        )
+        .await;
+        let claimed_by_a = insert_pg_output(
+            &storage,
+            user_id,
+            source_transaction_id,
+            0,
+            false,
+            Some(transaction_a),
+            None,
+        )
+        .await;
+        let claimed_by_b = insert_pg_output(
+            &storage,
+            user_id,
+            source_transaction_id,
+            1,
+            false,
+            Some(transaction_b),
+            None,
+        )
+        .await;
+
+        let released = storage
+            .release_inputs_spent_by(&[claimed_by_a, claimed_by_b], transaction_a, None)
+            .await
+            .unwrap();
+        assert_eq!(released, 1);
+
+        let rows = storage
+            .find_outputs(&FindOutputsArgs::default(), None)
+            .await
+            .unwrap();
+        let released_a = rows
+            .iter()
+            .find(|row| row.output_id == claimed_by_a)
+            .unwrap();
+        assert!(released_a.spendable);
+        assert!(released_a.spent_by.is_none());
+        let retained_b = rows
+            .iter()
+            .find(|row| row.output_id == claimed_by_b)
+            .unwrap();
+        assert!(!retained_b.spendable);
+        assert_eq!(retained_b.spent_by, Some(transaction_b));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_proven_tx_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_proven_tx(
+                fixture.proven_tx_id,
+                &ProvenTxPartial {
+                    height: Some(800_123),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_proven_txs(
+                &FindProvenTxsArgs {
+                    partial: ProvenTxPartial {
+                        proven_tx_id: Some(fixture.proven_tx_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].height, 800_123);
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_proven_tx_req_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_proven_tx_req(
+                fixture.proven_tx_req_id,
+                &ProvenTxReqPartial {
+                    notified: Some(true),
+                    attempts: Some(3),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_proven_tx_reqs(
+                &FindProvenTxReqsArgs {
+                    partial: ProvenTxReqPartial {
+                        proven_tx_req_id: Some(fixture.proven_tx_req_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].notified);
+        assert_eq!(rows[0].attempts, 3);
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_settings_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_settings(
+                &SettingsPartial {
+                    storage_name: Some("pg-updated-storage".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_settings(
+                &FindSettingsArgs {
+                    partial: SettingsPartial {
+                        storage_identity_key: Some(fixture.settings_identity_key),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].storage_name, "pg-updated-storage");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_transaction_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_transaction(
+                fixture.transaction_id,
+                &TransactionPartial {
+                    description: Some("new-transaction-description".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_transactions(
+                &FindTransactionsArgs {
+                    partial: TransactionPartial {
+                        transaction_id: Some(fixture.transaction_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].description, "new-transaction-description");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_tx_label_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_tx_label(
+                fixture.tx_label_id,
+                &TxLabelPartial {
+                    label: Some("new-label".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_tx_labels(
+                &FindTxLabelsArgs {
+                    partial: TxLabelPartial {
+                        tx_label_id: Some(fixture.tx_label_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].label, "new-label");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_tx_label_map_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_tx_label_map(
+                fixture.transaction_id,
+                fixture.tx_label_id,
+                &TxLabelMapPartial {
+                    is_deleted: Some(true),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_tx_label_maps(
+                &FindTxLabelMapsArgs {
+                    partial: TxLabelMapPartial {
+                        transaction_id: Some(fixture.transaction_id),
+                        tx_label_id: Some(fixture.tx_label_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].is_deleted);
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_sync_state_with_when_and_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let when =
+            NaiveDateTime::parse_from_str("2025-02-03 03:04:05.456", "%Y-%m-%d %H:%M:%S%.3f")
+                .unwrap();
+        let affected = storage
+            .update_sync_state(
+                fixture.sync_state_id,
+                &SyncStatePartial {
+                    sync_map: Some("{\"users\":1}".to_string()),
+                    when: Some(when),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_sync_states(
+                &FindSyncStatesArgs {
+                    partial: SyncStatePartial {
+                        sync_state_id: Some(fixture.sync_state_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].sync_map, "{\"users\":1}");
+        assert_eq!(rows[0].when, Some(when));
+        assert_eq!(rows[0].updated_at, updated_at);
     }
 }

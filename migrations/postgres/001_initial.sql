@@ -108,7 +108,7 @@ CREATE TABLE commissions (
     "commissionId" BIGSERIAL PRIMARY KEY,
     "userId" BIGINT NOT NULL REFERENCES users("userId"),
     "transactionId" BIGINT NOT NULL UNIQUE REFERENCES transactions("transactionId"),
-    satoshis INTEGER NOT NULL,
+    satoshis BIGINT NOT NULL,
     "keyOffset" VARCHAR(130) NOT NULL,
     "isRedeemed" BOOLEAN NOT NULL DEFAULT FALSE,
     "lockingScript" BYTEA NOT NULL

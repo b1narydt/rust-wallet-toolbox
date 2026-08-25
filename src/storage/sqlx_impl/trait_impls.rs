@@ -293,6 +293,16 @@ mod sqlite_impl {
                 .await
         }
 
+        async fn release_inputs_spent_by(
+            &self,
+            output_ids: &[i64],
+            transaction_id: i64,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
+            self.release_inputs_spent_by_impl(output_ids, transaction_id, trx)
+                .await
+        }
+
         async fn update_proven_tx(
             &self,
             id: i64,
@@ -430,20 +440,10 @@ mod sqlite_impl {
                 )
                 .await?;
 
-            for output in &outputs {
-                self.update_output_impl(
-                    output.output_id,
-                    &OutputPartial {
-                        spendable: Some(true),
-                        spent_by: Some(0),
-                        ..Default::default()
-                    },
-                    trx,
-                )
-                .await?;
-            }
-
-            Ok(outputs.len() as u64)
+            let output_ids: Vec<i64> = outputs.iter().map(|output| output.output_id).collect();
+            Ok(self
+                .release_inputs_spent_by_impl(&output_ids, tx_id, trx)
+                .await? as u64)
         }
 
         async fn update_transactions_status(
@@ -1226,6 +1226,15 @@ macro_rules! impl_storage_rw_and_provider {
                     self.mark_inputs_spent_impl(output_ids, transaction_id, user_id, trx)
                         .await
                 }
+                async fn release_inputs_spent_by(
+                    &self,
+                    output_ids: &[i64],
+                    transaction_id: i64,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.release_inputs_spent_by_impl(output_ids, transaction_id, trx)
+                        .await
+                }
                 async fn update_proven_tx(
                     &self,
                     id: i64,
@@ -1281,6 +1290,30 @@ macro_rules! impl_storage_rw_and_provider {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
                     self.update_sync_state_impl(id, u, trx).await
+                }
+
+                async fn restore_consumed_inputs(
+                    &self,
+                    tx_id: i64,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<u64> {
+                    let outputs = self
+                        .find_outputs(
+                            &FindOutputsArgs {
+                                partial: OutputPartial {
+                                    spent_by: Some(tx_id),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                            trx,
+                        )
+                        .await?;
+                    let output_ids: Vec<i64> =
+                        outputs.iter().map(|output| output.output_id).collect();
+                    Ok(self
+                        .release_inputs_spent_by_impl(&output_ids, tx_id, trx)
+                        .await? as u64)
                 }
             }
 

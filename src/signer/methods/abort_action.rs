@@ -18,13 +18,7 @@ use crate::storage::manager::WalletStorageManager;
 /// 1. Find the transaction by reference
 /// 2. Verify it is in unsigned or unprocessed status
 /// 3. Update transaction status to failed
-/// 4. Release all locked UTXOs (set spendable=true)
-///
-/// NOTE: The current OutputPartial update pattern cannot set spent_by to NULL
-/// (None means "don't update"). Released UTXOs are marked spendable=true but
-/// retain their spent_by reference. The create_action allocation filter uses
-/// `spent_by.is_none()` so a future enhancement should add a nullable update
-/// mechanism. For now, the transaction being failed prevents double-spending.
+/// 4. Release all UTXOs still claimed by this transaction
 pub async fn signer_abort_action(
     storage: &WalletStorageManager,
     auth: &str,
@@ -88,19 +82,14 @@ pub async fn signer_abort_action(
     };
     let spent_outputs = storage.find_outputs(&find_spent_args).await?;
 
-    for output in &spent_outputs {
-        // Only release outputs that belong to a different transaction
-        // (i.e., they are inputs being consumed, not outputs being created)
-        if output.transaction_id != transaction_id {
-            let output_update = OutputPartial {
-                spendable: Some(true),
-                ..Default::default()
-            };
-            storage
-                .update_output(output.output_id, &output_update)
-                .await?;
-        }
-    }
+    let spent_output_ids: Vec<i64> = spent_outputs
+        .iter()
+        .filter(|output| output.transaction_id != transaction_id)
+        .map(|output| output.output_id)
+        .collect();
+    storage
+        .release_inputs_spent_by_trx(&spent_output_ids, transaction_id, None)
+        .await?;
 
     Ok(AbortActionResult { aborted: true })
 }

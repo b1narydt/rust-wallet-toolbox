@@ -1261,6 +1261,19 @@ impl WalletStorageManager {
         active.update_output_trx(id, update, trx).await
     }
 
+    /// Atomically release output IDs claimed by the transaction or unclaimed.
+    pub async fn release_inputs_spent_by_trx(
+        &self,
+        output_ids: &[i64],
+        transaction_id: i64,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
+        let active = self.get_active().await?;
+        active
+            .release_inputs_spent_by_trx(output_ids, transaction_id, trx)
+            .await
+    }
+
     pub async fn update_proven_tx_req_trx(
         &self,
         id: i64,

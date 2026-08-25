@@ -208,7 +208,6 @@ impl WhereBuilder {
     ///
     /// Used for filtering outputs by their parent transaction's status.
     /// An empty list emits `1 = 0` and matches nothing; callers must not guard the empty case.
-    #[allow(dead_code)]
     pub fn add_subquery_in(
         &mut self,
         table: &str,

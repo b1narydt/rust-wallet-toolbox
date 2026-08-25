@@ -166,19 +166,10 @@ pub async fn abort_action(
         }
     }
 
-    for input in &inputs {
-        storage
-            .update_output(
-                input.output_id,
-                &OutputPartial {
-                    spendable: Some(true),
-                    spent_by: Some(0), // 0 = unset
-                    ..Default::default()
-                },
-                trx,
-            )
-            .await?;
-    }
+    let input_ids: Vec<i64> = inputs.iter().map(|input| input.output_id).collect();
+    storage
+        .release_inputs_spent_by(&input_ids, tx.transaction_id, trx)
+        .await?;
 
     // Outputs created by the failed transaction cannot remain spendable, and
     // no later transaction may remain recorded as their spender.

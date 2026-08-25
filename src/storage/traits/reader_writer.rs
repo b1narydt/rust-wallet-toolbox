@@ -232,6 +232,16 @@ pub trait StorageReaderWriter: StorageReader {
         trx: Option<&TrxToken>,
     ) -> WalletResult<i64>;
 
+    /// Atomically release outputs claimed by this transaction or currently
+    /// unclaimed. Returns the number of outputs actually released. Rows claimed
+    /// by another transaction must remain unchanged.
+    async fn release_inputs_spent_by(
+        &self,
+        output_ids: &[i64],
+        transaction_id: i64,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64>;
+
     /// Update a proven transaction by ID. Returns the number of rows affected.
     async fn update_proven_tx(
         &self,

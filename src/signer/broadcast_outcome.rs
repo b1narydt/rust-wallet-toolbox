@@ -546,19 +546,9 @@ pub async fn handle_permanent_broadcast_failure(
     let restored_count: usize = match &effective {
         BroadcastOutcome::DoubleSpend { .. } => {
             let safe_ids = double_spend_safe_ids.as_deref().unwrap_or(&[]);
-            for output_id in safe_ids {
-                storage
-                    .update_output_trx(
-                        *output_id,
-                        &OutputPartial {
-                            spendable: Some(true),
-                            ..Default::default()
-                        },
-                        Some(&db_trx),
-                    )
-                    .await?;
-            }
-            safe_ids.len()
+            storage
+                .release_inputs_spent_by_trx(safe_ids, tx.transaction_id, Some(&db_trx))
+                .await? as usize
         }
         BroadcastOutcome::InvalidTx { .. } => {
             let consumed_inputs = storage
@@ -574,19 +564,13 @@ pub async fn handle_permanent_broadcast_failure(
                     Some(&db_trx),
                 )
                 .await?;
-            for input_output in &consumed_inputs {
-                storage
-                    .update_output_trx(
-                        input_output.output_id,
-                        &OutputPartial {
-                            spendable: Some(true),
-                            ..Default::default()
-                        },
-                        Some(&db_trx),
-                    )
-                    .await?;
-            }
-            consumed_inputs.len()
+            let consumed_input_ids: Vec<i64> = consumed_inputs
+                .iter()
+                .map(|input| input.output_id)
+                .collect();
+            storage
+                .release_inputs_spent_by_trx(&consumed_input_ids, tx.transaction_id, Some(&db_trx))
+                .await? as usize
         }
         _ => 0,
     };

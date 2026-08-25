@@ -661,6 +661,19 @@ pub trait WalletStorageProvider: Send + Sync {
         Err(WalletError::NotImplemented("update_output_trx".into()))
     }
 
+    /// Atomically release output IDs claimed by the transaction or unclaimed.
+    async fn release_inputs_spent_by_trx(
+        &self,
+        output_ids: &[i64],
+        transaction_id: i64,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
+        let _ = (output_ids, transaction_id, trx);
+        Err(WalletError::NotImplemented(
+            "release_inputs_spent_by_trx".into(),
+        ))
+    }
+
     /// Update a proven-tx-req inside an optional open transaction.
     async fn update_proven_tx_req_trx(
         &self,
@@ -1458,6 +1471,15 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         trx: Option<&TrxToken>,
     ) -> WalletResult<i64> {
         StorageReaderWriter::update_output(self, id, update, trx).await
+    }
+
+    async fn release_inputs_spent_by_trx(
+        &self,
+        output_ids: &[i64],
+        transaction_id: i64,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
+        StorageReaderWriter::release_inputs_spent_by(self, output_ids, transaction_id, trx).await
     }
 
     async fn update_proven_tx_req_trx(

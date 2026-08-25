@@ -440,7 +440,12 @@ mod sqlite_impl {
                 sets.push("senderIdentityKey = ?");
                 binds.push(BindVal::String(v.clone()));
             }
-            if let Some(v) = &update.spent_by {
+            if update.spendable == Some(true) {
+                // A spendable output cannot retain an allocation claim. Keep
+                // this invariant at the shared update boundary as well as in
+                // the guarded release primitive below.
+                sets.push("spentBy = NULL");
+            } else if let Some(v) = &update.spent_by {
                 if *v == 0 {
                     // Convention: spent_by=0 means "clear to NULL" (TS sets spentBy=undefined→NULL).
                     // Transaction IDs are auto-incrementing from 1, so 0 is never valid.
@@ -511,6 +516,28 @@ mod sqlite_impl {
             binds.extend(output_ids.iter().copied().map(BindVal::Int64));
             binds.push(BindVal::Bool(true));
             binds.push(BindVal::Int64(user_id));
+            exec_update(self, &sql, &binds, trx).await
+        }
+
+        pub(crate) async fn release_inputs_spent_by_impl(
+            &self,
+            output_ids: &[i64],
+            transaction_id: i64,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
+            if output_ids.is_empty() {
+                return Ok(0);
+            }
+
+            let placeholders = vec!["?"; output_ids.len()].join(", ");
+            let sql = format!(
+                "UPDATE outputs SET spendable = ?, spentBy = NULL, updated_at = datetime('now') \
+                 WHERE outputId IN ({placeholders}) AND (spentBy = ? OR spentBy IS NULL)"
+            );
+            let mut binds = Vec::with_capacity(output_ids.len() + 2);
+            binds.push(BindVal::Bool(true));
+            binds.extend(output_ids.iter().copied().map(BindVal::Int64));
+            binds.push(BindVal::Int64(transaction_id));
             exec_update(self, &sql, &binds, trx).await
         }
 
@@ -877,6 +904,7 @@ macro_rules! impl_update_methods {
                 String(String),
                 Bool(bool),
                 Bytes(Vec<u8>),
+                DateTime(chrono::NaiveDateTime),
             }
 
             async fn exec_update(
@@ -899,6 +927,7 @@ macro_rules! impl_update_methods {
                             BindVal::String(v) => q.bind(v.as_str()),
                             BindVal::Bool(v) => q.bind(*v),
                             BindVal::Bytes(v) => q.bind(v.as_slice()),
+                            BindVal::DateTime(v) => q.bind(*v),
                         };
                     }
                     let result = q.execute(&mut **tx).await?;
@@ -912,6 +941,7 @@ macro_rules! impl_update_methods {
                             BindVal::String(v) => q.bind(v.as_str()),
                             BindVal::Bool(v) => q.bind(*v),
                             BindVal::Bytes(v) => q.bind(v.as_slice()),
+                            BindVal::DateTime(v) => q.bind(*v),
                         };
                     }
                     let result = q.execute(&storage.write_pool).await?;
@@ -953,9 +983,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1028,9 +1056,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1069,9 +1095,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1130,9 +1154,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1165,9 +1187,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1220,9 +1240,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1265,9 +1283,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1301,9 +1317,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1399,7 +1413,10 @@ macro_rules! impl_update_methods {
                         sets.push(format!("{} = {}", qc("senderIdentityKey"), ph(idx)));
                         binds.push(BindVal::String(v.clone()));
                     }
-                    if let Some(v) = &update.spent_by {
+                    if update.spendable == Some(true) {
+                        // A spendable output cannot retain an allocation claim.
+                        sets.push(format!("{} = NULL", qc("spentBy")));
+                    } else if let Some(v) = &update.spent_by {
                         if *v == 0 {
                             // Convention: spent_by=0 means "clear to NULL" (matches TS spentBy=undefined→NULL)
                             sets.push(format!("{} = NULL", qc("spentBy")));
@@ -1443,9 +1460,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1506,6 +1521,46 @@ macro_rules! impl_update_methods {
                     exec_update(self, &sql, &binds, trx).await
                 }
 
+                pub(crate) async fn release_inputs_spent_by_impl(&self, output_ids: &[i64], transaction_id: i64, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                    if output_ids.is_empty() {
+                        return Ok(0);
+                    }
+
+                    let mut binds = Vec::with_capacity(output_ids.len() + 2);
+                    let mut idx = 0usize;
+
+                    idx += 1;
+                    let spendable_true = ph(idx);
+                    binds.push(BindVal::Bool(true));
+
+                    let mut output_id_placeholders = Vec::with_capacity(output_ids.len());
+                    for output_id in output_ids {
+                        idx += 1;
+                        output_id_placeholders.push(ph(idx));
+                        binds.push(BindVal::Int64(*output_id));
+                    }
+
+                    idx += 1;
+                    let transaction_id_placeholder = ph(idx);
+                    binds.push(BindVal::Int64(transaction_id));
+
+                    let claim_predicate = format!(
+                        "({} = {transaction_id_placeholder} OR {} IS NULL)",
+                        qc("spentBy"),
+                        qc("spentBy"),
+                    );
+                    let sql = format!(
+                        "UPDATE outputs SET {} = {spendable_true}, {} = NULL, {} = {} WHERE {} IN ({}) AND {claim_predicate}",
+                        qc("spendable"),
+                        qc("spentBy"),
+                        qc("updated_at"),
+                        $now_expr,
+                        qc("outputId"),
+                        output_id_placeholders.join(", "),
+                    );
+                    exec_update(self, &sql, &binds, trx).await
+                }
+
                 pub(crate) async fn update_proven_tx_impl(
                     &self,
                     id: i64,
@@ -1534,9 +1589,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1599,9 +1652,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1648,9 +1699,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1732,9 +1781,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1777,9 +1824,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1813,9 +1858,7 @@ macro_rules! impl_update_methods {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
@@ -1879,17 +1922,13 @@ macro_rules! impl_update_methods {
                     if let Some(v) = &update.when {
                         idx += 1;
                         sets.push(format!("{} = {}", qc("when"), ph(idx)));
-                        binds.push(BindVal::String(
-                            v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                        ));
+                        binds.push(BindVal::DateTime(*v));
                     }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
                             sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
-                            binds.push(BindVal::String(
-                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
-                            ));
+                            binds.push(BindVal::DateTime(*v));
                         }
                         None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }

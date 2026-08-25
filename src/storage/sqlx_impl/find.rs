@@ -1685,6 +1685,7 @@ macro_rules! impl_storage_reader_find {
                 Int32(i32),
                 String(String),
                 Bool(bool),
+                DateTime(chrono::NaiveDateTime),
             }
 
             fn bind_value<'q, T>(
@@ -1699,6 +1700,7 @@ macro_rules! impl_storage_reader_find {
                     BindVal::Int32(v) => q.bind(*v),
                     BindVal::String(v) => q.bind(v.as_str()),
                     BindVal::Bool(v) => q.bind(*v),
+                    BindVal::DateTime(v) => q.bind(*v),
                 }
             }
 
@@ -1711,6 +1713,7 @@ macro_rules! impl_storage_reader_find {
                     BindVal::Int32(v) => q.bind(*v),
                     BindVal::String(v) => q.bind(v.as_str()),
                     BindVal::Bool(v) => q.bind(*v),
+                    BindVal::DateTime(v) => q.bind(*v),
                 }
             }
 
@@ -1801,7 +1804,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -1856,7 +1859,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -1898,7 +1901,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -1942,7 +1945,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -1968,7 +1971,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -2004,7 +2007,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -2036,7 +2039,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -2072,7 +2075,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -2194,7 +2197,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 Ok((w.build_where(), binds))
             }
@@ -2372,7 +2375,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -2420,7 +2423,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -2452,7 +2455,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -2494,7 +2497,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -2546,7 +2549,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -2582,7 +2585,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -2626,7 +2629,7 @@ macro_rules! impl_storage_reader_find {
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
-                    binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                    binds.push(BindVal::DateTime(*v));
                 }
                 (w.build_where(), binds)
             }
@@ -3049,7 +3052,7 @@ macro_rules! impl_storage_reader_find {
                     let mut binds = vec![BindVal::Int64(args.user_id)];
                     if let Some(v) = &args.since {
                         sql.push_str(&format!(" AND pt.{} >= {}", qc("updated_at"), ph(2)));
-                        binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                        binds.push(BindVal::DateTime(*v));
                     }
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
@@ -3079,7 +3082,7 @@ macro_rules! impl_storage_reader_find {
                     let mut binds = vec![BindVal::Int64(args.user_id)];
                     if let Some(v) = &args.since {
                         sql.push_str(&format!(" AND ptr.{} >= {}", qc("updated_at"), ph(2)));
-                        binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                        binds.push(BindVal::DateTime(*v));
                     }
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
@@ -3109,7 +3112,7 @@ macro_rules! impl_storage_reader_find {
                     let mut binds = vec![BindVal::Int64(args.user_id)];
                     if let Some(v) = &args.since {
                         sql.push_str(&format!(" AND tlm.{} >= {}", qc("updated_at"), ph(2)));
-                        binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                        binds.push(BindVal::DateTime(*v));
                     }
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
@@ -3139,7 +3142,7 @@ macro_rules! impl_storage_reader_find {
                     let mut binds = vec![BindVal::Int64(args.user_id)];
                     if let Some(v) = &args.since {
                         sql.push_str(&format!(" AND otm.{} >= {}", qc("updated_at"), ph(2)));
-                        binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
+                        binds.push(BindVal::DateTime(*v));
                     }
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
