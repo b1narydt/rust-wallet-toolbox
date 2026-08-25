@@ -12,6 +12,7 @@ BSV wallet implementation in Rust, translating the TypeScript wallet-toolbox int
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
 - [Feature Flags](#feature-flags)
+- [Testing against MySQL / PostgreSQL](#testing-against-mysql--postgresql)
 - [Subsystems](#subsystems)
   - [Storage](#storage)
   - [Services](#services)
@@ -169,6 +170,30 @@ let builder = WalletBuilder::new()
     // or
     // .with_postgres("postgres://user:pass@localhost/wallet_db");
 ```
+
+## Testing against MySQL / PostgreSQL
+
+Run the ignored server-backend integration suites against local Docker containers with one
+command:
+
+```sh
+./scripts/test-server-backends.sh
+```
+
+Pass `postgres` or `mysql` to run only one suite. The script starts PostgreSQL 16 and MySQL 8.4,
+waits for both services to become healthy, and sets `POSTGRES_DATABASE_URL` and
+`MYSQL_DATABASE_URL` to their local test databases. It leaves the containers running for
+inspection and prints the teardown command when testing finishes.
+
+The suites run with `--test-threads=1` because each test clears all database data, so concurrent
+tests would interfere with one another. `--nocapture` is passed so the probe tests that record
+server behaviour rather than assert it (empty `IN ()` list, `LIMIT 0`, `LIMIT -1`) print what the
+server actually did. They remain marked `#[ignore]`, which keeps normal test runs—and developers
+without Docker—unaffected.
+
+Note: build the server suites with an explicit `--test <name>` target. A bare
+`cargo build --no-default-features --features postgres --tests` fails on pre-existing unit tests in
+`src/monitor/tasks/` and `tests/migration_tests.rs` that import sqlite-only items unconditionally.
 
 ## Subsystems
 
