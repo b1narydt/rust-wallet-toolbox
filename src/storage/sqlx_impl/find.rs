@@ -8,19 +8,51 @@
 //! `impl_storage_reader_find!` macro to avoid massive code duplication.
 //! The key difference is placeholder style: `?` for SQLite/MySQL, `$N` for PostgreSQL.
 
-const OUTPUTS_WITHOUT_LOCKING_SCRIPT: &str = "created_at, updated_at, outputId, userId, \
-    transactionId, basketId, spendable, change, vout, satoshis, providedBy, purpose, type, \
-    outputDescription, txid, senderIdentityKey, derivationPrefix, derivationSuffix, \
-    customInstructions, spentBy, sequenceNumber, spendingDescription, scriptLength, \
-    scriptOffset, NULL AS lockingScript";
+use crate::storage::sqlx_impl::dialect::Dialect;
 
-#[cfg_attr(not(feature = "postgres"), allow(dead_code))]
-const POSTGRES_OUTPUTS_WITHOUT_LOCKING_SCRIPT: &str = "\"created_at\", \"updated_at\", \
-    \"outputId\", \"userId\", \"transactionId\", \"basketId\", \"spendable\", \"change\", \
-    \"vout\", \"satoshis\", \"providedBy\", \"purpose\", \"type\", \"outputDescription\", \
-    \"txid\", \"senderIdentityKey\", \"derivationPrefix\", \"derivationSuffix\", \
-    \"customInstructions\", \"spentBy\", \"sequenceNumber\", \"spendingDescription\", \
-    \"scriptLength\", \"scriptOffset\", NULL AS \"lockingScript\"";
+/// Every `outputs` column except `lockingScript`, in schema order.
+///
+/// Kept as bare names and quoted per-dialect at use: `change` is a reserved word
+/// in MySQL, so an unquoted projection is a hard syntax error there (ERROR 1064)
+/// while SQLite accepts it silently. The migrations already backtick it; this
+/// list exists so the read path cannot drift from that.
+const OUTPUTS_COLUMNS_WITHOUT_LOCKING_SCRIPT: &[&str] = &[
+    "created_at",
+    "updated_at",
+    "outputId",
+    "userId",
+    "transactionId",
+    "basketId",
+    "spendable",
+    "change",
+    "vout",
+    "satoshis",
+    "providedBy",
+    "purpose",
+    "type",
+    "outputDescription",
+    "txid",
+    "senderIdentityKey",
+    "derivationPrefix",
+    "derivationSuffix",
+    "customInstructions",
+    "spentBy",
+    "sequenceNumber",
+    "spendingDescription",
+    "scriptLength",
+    "scriptOffset",
+];
+
+/// Build the `no_script` projection for `dialect`, quoting every identifier so
+/// reserved words are safe on all three backends.
+fn outputs_without_locking_script(dialect: Dialect) -> String {
+    let mut cols: Vec<String> = OUTPUTS_COLUMNS_WITHOUT_LOCKING_SCRIPT
+        .iter()
+        .map(|c| dialect.quote_column(c))
+        .collect();
+    cols.push(format!("NULL AS {}", dialect.quote_column("lockingScript")));
+    cols.join(", ")
+}
 
 #[cfg(feature = "sqlite")]
 mod sqlite_impl {
@@ -49,6 +81,7 @@ mod sqlite_impl {
         binds: Vec<SqliteBindValue>,
         trx: Option<&TrxToken>,
     ) -> WalletResult<Vec<T>> {
+        storage.record_sql_statement();
         if let Some(trx_token) = trx {
             let inner = StorageSqlx::<Sqlite>::extract_sqlite_trx(trx_token)?;
             let mut guard = inner.lock().await;
@@ -79,6 +112,7 @@ mod sqlite_impl {
         binds: Vec<SqliteBindValue>,
         trx: Option<&TrxToken>,
     ) -> WalletResult<i64> {
+        storage.record_sql_statement();
         if let Some(trx_token) = trx {
             let inner = StorageSqlx::<Sqlite>::extract_sqlite_trx(trx_token)?;
             let mut guard = inner.lock().await;
@@ -148,6 +182,9 @@ mod sqlite_impl {
 
     // -----------------------------------------------------------------------
     // WHERE clause builders for each table's partial args
+    //
+    // Paging is appended only by find queries; counts intentionally ignore it
+    // and cover the entire filtered set.
     // -----------------------------------------------------------------------
 
     fn build_users_where(args: &FindUsersArgs) -> (String, Vec<SqliteBindValue>) {
@@ -171,15 +208,12 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["userId"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_users_count_query(args: &FindUsersArgs) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_users_where(args);
+        (format!("SELECT COUNT(*) FROM users{where_clause}"), binds)
     }
 
     fn build_certificates_where(args: &FindCertificatesArgs) -> (String, Vec<SqliteBindValue>) {
@@ -231,15 +265,17 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["certificateId"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_certificates_count_query(
+        args: &FindCertificatesArgs,
+    ) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_certificates_where(args);
+        (
+            format!("SELECT COUNT(*) FROM certificates{where_clause}"),
+            binds,
+        )
     }
 
     fn build_certificate_fields_where(
@@ -273,15 +309,17 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["certificateId", "fieldName"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_certificate_fields_count_query(
+        args: &FindCertificateFieldsArgs,
+    ) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_certificate_fields_where(args);
+        (
+            format!("SELECT COUNT(*) FROM certificate_fields{where_clause}"),
+            binds,
+        )
     }
 
     fn build_commissions_where(args: &FindCommissionsArgs) -> (String, Vec<SqliteBindValue>) {
@@ -317,15 +355,15 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["commissionId"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_commissions_count_query(args: &FindCommissionsArgs) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_commissions_where(args);
+        (
+            format!("SELECT COUNT(*) FROM commissions{where_clause}"),
+            binds,
+        )
     }
 
     fn build_monitor_events_where(args: &FindMonitorEventsArgs) -> (String, Vec<SqliteBindValue>) {
@@ -345,15 +383,17 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["id"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_monitor_events_count_query(
+        args: &FindMonitorEventsArgs,
+    ) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_monitor_events_where(args);
+        (
+            format!("SELECT COUNT(*) FROM monitor_events{where_clause}"),
+            binds,
+        )
     }
 
     fn build_output_baskets_where(args: &FindOutputBasketsArgs) -> (String, Vec<SqliteBindValue>) {
@@ -381,15 +421,17 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["basketId"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_output_baskets_count_query(
+        args: &FindOutputBasketsArgs,
+    ) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_output_baskets_where(args);
+        (
+            format!("SELECT COUNT(*) FROM output_baskets{where_clause}"),
+            binds,
+        )
     }
 
     fn build_output_tag_maps_where(args: &FindOutputTagMapsArgs) -> (String, Vec<SqliteBindValue>) {
@@ -413,15 +455,17 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["outputId", "outputTagId"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_output_tag_maps_count_query(
+        args: &FindOutputTagMapsArgs,
+    ) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_output_tag_maps_where(args);
+        (
+            format!("SELECT COUNT(*) FROM output_tags_map{where_clause}"),
+            binds,
+        )
     }
 
     fn build_output_tags_where(args: &FindOutputTagsArgs) -> (String, Vec<SqliteBindValue>) {
@@ -449,15 +493,15 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["outputTagId"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_output_tags_count_query(args: &FindOutputTagsArgs) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_output_tags_where(args);
+        (
+            format!("SELECT COUNT(*) FROM output_tags{where_clause}"),
+            binds,
+        )
     }
 
     fn build_outputs_where(args: &FindOutputsArgs) -> WalletResult<(String, Vec<SqliteBindValue>)> {
@@ -480,6 +524,10 @@ mod sqlite_impl {
         if let Some(v) = &args.partial.transaction_id {
             wb.add_eq("transactionId");
             binds.push(SqliteBindValue::Int64(*v));
+        }
+        if let Some(ids) = &args.transaction_ids {
+            wb.add_in("transactionId", ids.len());
+            binds.extend(ids.iter().copied().map(SqliteBindValue::Int64));
         }
         if let Some(v) = &args.partial.basket_id {
             wb.add_eq("basketId");
@@ -525,6 +573,10 @@ mod sqlite_impl {
             wb.add_eq("spentBy");
             binds.push(SqliteBindValue::Int64(*v));
         }
+        if let Some(ids) = &args.spent_by_ids {
+            wb.add_in("spentBy", ids.len());
+            binds.extend(ids.iter().copied().map(SqliteBindValue::Int64));
+        }
         if let Some(v) = &args.partial.output_description {
             wb.add_eq("outputDescription");
             binds.push(SqliteBindValue::String(v.clone()));
@@ -546,18 +598,16 @@ mod sqlite_impl {
             binds.push(SqliteBindValue::Int64(*v));
         }
         if let Some(statuses) = &args.tx_status {
-            if !statuses.is_empty() {
-                wb.add_subquery_in(
-                    "transactions",
-                    "status",
-                    "transactionId",
-                    "outputs",
-                    "transactionId",
-                    statuses.len(),
-                );
-                for s in statuses {
-                    binds.push(SqliteBindValue::String(s.to_string()));
-                }
+            wb.add_subquery_in(
+                "transactions",
+                "status",
+                "transactionId",
+                "outputs",
+                "transactionId",
+                statuses.len(),
+            );
+            for s in statuses {
+                binds.push(SqliteBindValue::String(s.to_string()));
             }
         }
         if let Some(v) = &args.since {
@@ -566,15 +616,140 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["outputId"],
-                paged,
-            ));
-        }
-        Ok((sql, binds))
+        Ok((wb.build_where(), binds))
+    }
+
+    fn build_outputs_find_query(
+        args: &FindOutputsArgs,
+    ) -> WalletResult<(String, Vec<SqliteBindValue>)> {
+        let (where_clause, binds) = build_outputs_where(args)?;
+        let columns = if args.no_script {
+            super::outputs_without_locking_script(Dialect::Sqlite)
+        } else {
+            "*".to_string()
+        };
+        let ordered_page = args.paged.as_ref().map_or_else(String::new, |paged| {
+            WhereBuilder::build_ordered_page(Dialect::Sqlite, &["outputId"], paged)
+        });
+        // Preserve the base per-transaction output order without adding it to counts.
+        let batch_order = if args.paged.is_none() && args.transaction_ids.is_some() {
+            format!(" ORDER BY {}", Dialect::Sqlite.quote_column("vout"))
+        } else {
+            String::new()
+        };
+        Ok((
+            format!("SELECT {columns} FROM outputs{where_clause}{ordered_page}{batch_order}"),
+            binds,
+        ))
+    }
+
+    fn build_outputs_count_query(
+        args: &FindOutputsArgs,
+    ) -> WalletResult<(String, Vec<SqliteBindValue>)> {
+        let (where_clause, binds) = build_outputs_where(args)?;
+        // Counts intentionally ignore paging and cover the entire filtered set.
+        Ok((format!("SELECT COUNT(*) FROM outputs{where_clause}"), binds))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn outputs_find_sql(args: &FindOutputsArgs) -> WalletResult<String> {
+        build_outputs_find_query(args).map(|(sql, _)| sql)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn outputs_count_sql(args: &FindOutputsArgs) -> WalletResult<String> {
+        build_outputs_count_query(args).map(|(sql, _)| sql)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn all_count_sqls(
+        paged: Option<Paged>,
+    ) -> WalletResult<Vec<(&'static str, String)>> {
+        let (users_sql, _) = build_users_count_query(&FindUsersArgs {
+            paged: paged.clone(),
+            ..Default::default()
+        });
+        let (certificates_sql, _) = build_certificates_count_query(&FindCertificatesArgs {
+            paged: paged.clone(),
+            ..Default::default()
+        });
+        let (certificate_fields_sql, _) =
+            build_certificate_fields_count_query(&FindCertificateFieldsArgs {
+                paged: paged.clone(),
+                ..Default::default()
+            });
+        let (commissions_sql, _) = build_commissions_count_query(&FindCommissionsArgs {
+            paged: paged.clone(),
+            ..Default::default()
+        });
+        let (monitor_events_sql, _) = build_monitor_events_count_query(&FindMonitorEventsArgs {
+            paged: paged.clone(),
+            ..Default::default()
+        });
+        let (output_baskets_sql, _) = build_output_baskets_count_query(&FindOutputBasketsArgs {
+            paged: paged.clone(),
+            ..Default::default()
+        });
+        let (output_tag_maps_sql, _) = build_output_tag_maps_count_query(&FindOutputTagMapsArgs {
+            paged: paged.clone(),
+            ..Default::default()
+        });
+        let (output_tags_sql, _) = build_output_tags_count_query(&FindOutputTagsArgs {
+            paged: paged.clone(),
+            ..Default::default()
+        });
+        let (outputs_sql, _) = build_outputs_count_query(&FindOutputsArgs {
+            transaction_ids: Some(vec![11, 12]),
+            paged: paged.clone(),
+            ..Default::default()
+        })?;
+        let (proven_txs_sql, _) = build_proven_txs_count_query(&FindProvenTxsArgs {
+            paged: paged.clone(),
+            ..Default::default()
+        });
+        let (proven_tx_reqs_sql, _) = build_proven_tx_reqs_count_query(&FindProvenTxReqsArgs {
+            paged: paged.clone(),
+            ..Default::default()
+        });
+        let (settings_sql, _) = build_settings_count_query(&FindSettingsArgs {
+            paged: paged.clone(),
+            ..Default::default()
+        });
+        let (sync_states_sql, _) = build_sync_states_count_query(&FindSyncStatesArgs {
+            paged: paged.clone(),
+            ..Default::default()
+        });
+        let (transactions_sql, _) = build_transactions_count_query(&FindTransactionsArgs {
+            paged: paged.clone(),
+            ..Default::default()
+        });
+        let (tx_label_maps_sql, _) = build_tx_label_maps_count_query(&FindTxLabelMapsArgs {
+            paged: paged.clone(),
+            ..Default::default()
+        });
+        let (tx_labels_sql, _) = build_tx_labels_count_query(&FindTxLabelsArgs {
+            paged,
+            ..Default::default()
+        });
+
+        Ok(vec![
+            ("count_users", users_sql),
+            ("count_certificates", certificates_sql),
+            ("count_certificate_fields", certificate_fields_sql),
+            ("count_commissions", commissions_sql),
+            ("count_monitor_events", monitor_events_sql),
+            ("count_output_baskets", output_baskets_sql),
+            ("count_output_tag_maps", output_tag_maps_sql),
+            ("count_output_tags", output_tags_sql),
+            ("count_outputs", outputs_sql),
+            ("count_proven_txs", proven_txs_sql),
+            ("count_proven_tx_reqs", proven_tx_reqs_sql),
+            ("count_settings", settings_sql),
+            ("count_sync_states", sync_states_sql),
+            ("count_transactions", transactions_sql),
+            ("count_tx_label_maps", tx_label_maps_sql),
+            ("count_tx_labels", tx_labels_sql),
+        ])
     }
 
     fn build_proven_txs_where(args: &FindProvenTxsArgs) -> (String, Vec<SqliteBindValue>) {
@@ -602,15 +777,15 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["provenTxId"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_proven_txs_count_query(args: &FindProvenTxsArgs) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_proven_txs_where(args);
+        (
+            format!("SELECT COUNT(*) FROM proven_txs{where_clause}"),
+            binds,
+        )
     }
 
     fn build_proven_tx_reqs_where(args: &FindProvenTxReqsArgs) -> (String, Vec<SqliteBindValue>) {
@@ -626,11 +801,9 @@ mod sqlite_impl {
         }
         // Multi-status filter takes precedence over single partial.status
         if let Some(statuses) = &args.statuses {
-            if !statuses.is_empty() {
-                wb.add_in("status", statuses.len());
-                for s in statuses {
-                    binds.push(SqliteBindValue::String(s.to_string()));
-                }
+            wb.add_in("status", statuses.len());
+            for s in statuses {
+                binds.push(SqliteBindValue::String(s.to_string()));
             }
         } else if let Some(v) = &args.partial.status {
             wb.add_eq("status");
@@ -654,15 +827,17 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["provenTxReqId"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_proven_tx_reqs_count_query(
+        args: &FindProvenTxReqsArgs,
+    ) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_proven_tx_reqs_where(args);
+        (
+            format!("SELECT COUNT(*) FROM proven_tx_reqs{where_clause}"),
+            binds,
+        )
     }
 
     fn build_settings_where(args: &FindSettingsArgs) -> (String, Vec<SqliteBindValue>) {
@@ -686,15 +861,15 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["storageIdentityKey"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_settings_count_query(args: &FindSettingsArgs) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_settings_where(args);
+        (
+            format!("SELECT COUNT(*) FROM settings{where_clause}"),
+            binds,
+        )
     }
 
     fn build_sync_states_where(args: &FindSyncStatesArgs) -> (String, Vec<SqliteBindValue>) {
@@ -730,15 +905,15 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["syncStateId"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_sync_states_count_query(args: &FindSyncStatesArgs) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_sync_states_where(args);
+        (
+            format!("SELECT COUNT(*) FROM sync_states{where_clause}"),
+            binds,
+        )
     }
 
     fn build_transactions_where(args: &FindTransactionsArgs) -> (String, Vec<SqliteBindValue>) {
@@ -758,11 +933,9 @@ mod sqlite_impl {
         }
         // Multi-status filter takes precedence over single partial.status
         if let Some(statuses) = &args.status {
-            if !statuses.is_empty() {
-                wb.add_in("status", statuses.len());
-                for s in statuses {
-                    binds.push(SqliteBindValue::String(s.to_string()));
-                }
+            wb.add_in("status", statuses.len());
+            for s in statuses {
+                binds.push(SqliteBindValue::String(s.to_string()));
             }
         } else if let Some(v) = &args.partial.status {
             wb.add_eq("status");
@@ -786,15 +959,17 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["transactionId"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_transactions_count_query(
+        args: &FindTransactionsArgs,
+    ) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_transactions_where(args);
+        (
+            format!("SELECT COUNT(*) FROM transactions{where_clause}"),
+            binds,
+        )
     }
 
     fn build_tx_label_maps_where(args: &FindTxLabelMapsArgs) -> (String, Vec<SqliteBindValue>) {
@@ -808,6 +983,10 @@ mod sqlite_impl {
             wb.add_eq("transactionId");
             binds.push(SqliteBindValue::Int64(*v));
         }
+        if let Some(ids) = &args.transaction_ids {
+            wb.add_in("transactionId", ids.len());
+            binds.extend(ids.iter().copied().map(SqliteBindValue::Int64));
+        }
         if let Some(v) = &args.partial.is_deleted {
             wb.add_eq("isDeleted");
             binds.push(SqliteBindValue::Bool(*v));
@@ -818,15 +997,17 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["transactionId", "txLabelId"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_tx_label_maps_count_query(
+        args: &FindTxLabelMapsArgs,
+    ) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_tx_label_maps_where(args);
+        (
+            format!("SELECT COUNT(*) FROM tx_labels_map{where_clause}"),
+            binds,
+        )
     }
 
     fn build_tx_labels_where(args: &FindTxLabelsArgs) -> (String, Vec<SqliteBindValue>) {
@@ -835,6 +1016,14 @@ mod sqlite_impl {
         if let Some(v) = &args.partial.tx_label_id {
             wb.add_eq("txLabelId");
             binds.push(SqliteBindValue::Int64(*v));
+        }
+        if let Some(ids) = &args.tx_label_ids {
+            wb.add_in("txLabelId", ids.len());
+            binds.extend(ids.iter().copied().map(SqliteBindValue::Int64));
+        }
+        if let Some(labels) = &args.labels {
+            wb.add_in("label", labels.len());
+            binds.extend(labels.iter().cloned().map(SqliteBindValue::String));
         }
         if let Some(v) = &args.partial.user_id {
             wb.add_eq("userId");
@@ -854,15 +1043,15 @@ mod sqlite_impl {
                 v.format("%Y-%m-%d %H:%M:%S").to_string(),
             ));
         }
-        let mut sql = wb.build_where();
-        if let Some(paged) = &args.paged {
-            sql.push_str(&WhereBuilder::build_ordered_page(
-                Dialect::Sqlite,
-                &["txLabelId"],
-                paged,
-            ));
-        }
-        (sql, binds)
+        (wb.build_where(), binds)
+    }
+
+    fn build_tx_labels_count_query(args: &FindTxLabelsArgs) -> (String, Vec<SqliteBindValue>) {
+        let (where_clause, binds) = build_tx_labels_where(args);
+        (
+            format!("SELECT COUNT(*) FROM tx_labels{where_clause}"),
+            binds,
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -904,7 +1093,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<User>> {
             let (where_clause, binds) = build_users_where(args);
-            let sql = format!("SELECT * FROM users{where_clause}");
+            let mut sql = format!("SELECT * FROM users{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["userId"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -913,8 +1109,7 @@ mod sqlite_impl {
             args: &FindUsersArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_users_where(args);
-            let sql = format!("SELECT COUNT(*) FROM users{where_clause}");
+            let (sql, binds) = build_users_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -924,7 +1119,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<Certificate>> {
             let (where_clause, binds) = build_certificates_where(args);
-            let sql = format!("SELECT * FROM certificates{where_clause}");
+            let mut sql = format!("SELECT * FROM certificates{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["certificateId"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -933,8 +1135,7 @@ mod sqlite_impl {
             args: &FindCertificatesArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_certificates_where(args);
-            let sql = format!("SELECT COUNT(*) FROM certificates{where_clause}");
+            let (sql, binds) = build_certificates_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -944,7 +1145,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<CertificateField>> {
             let (where_clause, binds) = build_certificate_fields_where(args);
-            let sql = format!("SELECT * FROM certificate_fields{where_clause}");
+            let mut sql = format!("SELECT * FROM certificate_fields{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["certificateId", "fieldName"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -953,8 +1161,7 @@ mod sqlite_impl {
             args: &FindCertificateFieldsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_certificate_fields_where(args);
-            let sql = format!("SELECT COUNT(*) FROM certificate_fields{where_clause}");
+            let (sql, binds) = build_certificate_fields_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -964,7 +1171,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<Commission>> {
             let (where_clause, binds) = build_commissions_where(args);
-            let sql = format!("SELECT * FROM commissions{where_clause}");
+            let mut sql = format!("SELECT * FROM commissions{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["commissionId"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -973,8 +1187,7 @@ mod sqlite_impl {
             args: &FindCommissionsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_commissions_where(args);
-            let sql = format!("SELECT COUNT(*) FROM commissions{where_clause}");
+            let (sql, binds) = build_commissions_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -984,7 +1197,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<MonitorEvent>> {
             let (where_clause, binds) = build_monitor_events_where(args);
-            let sql = format!("SELECT * FROM monitor_events{where_clause}");
+            let mut sql = format!("SELECT * FROM monitor_events{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["id"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -993,8 +1213,7 @@ mod sqlite_impl {
             args: &FindMonitorEventsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_monitor_events_where(args);
-            let sql = format!("SELECT COUNT(*) FROM monitor_events{where_clause}");
+            let (sql, binds) = build_monitor_events_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1004,7 +1223,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<OutputBasket>> {
             let (where_clause, binds) = build_output_baskets_where(args);
-            let sql = format!("SELECT * FROM output_baskets{where_clause}");
+            let mut sql = format!("SELECT * FROM output_baskets{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["basketId"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1013,8 +1239,7 @@ mod sqlite_impl {
             args: &FindOutputBasketsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_output_baskets_where(args);
-            let sql = format!("SELECT COUNT(*) FROM output_baskets{where_clause}");
+            let (sql, binds) = build_output_baskets_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1024,7 +1249,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<OutputTagMap>> {
             let (where_clause, binds) = build_output_tag_maps_where(args);
-            let sql = format!("SELECT * FROM output_tags_map{where_clause}");
+            let mut sql = format!("SELECT * FROM output_tags_map{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["outputId", "outputTagId"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1033,8 +1265,7 @@ mod sqlite_impl {
             args: &FindOutputTagMapsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_output_tag_maps_where(args);
-            let sql = format!("SELECT COUNT(*) FROM output_tags_map{where_clause}");
+            let (sql, binds) = build_output_tag_maps_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1044,7 +1275,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<OutputTag>> {
             let (where_clause, binds) = build_output_tags_where(args);
-            let sql = format!("SELECT * FROM output_tags{where_clause}");
+            let mut sql = format!("SELECT * FROM output_tags{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["outputTagId"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1053,8 +1291,7 @@ mod sqlite_impl {
             args: &FindOutputTagsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_output_tags_where(args);
-            let sql = format!("SELECT COUNT(*) FROM output_tags{where_clause}");
+            let (sql, binds) = build_output_tags_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1063,13 +1300,7 @@ mod sqlite_impl {
             args: &FindOutputsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<Output>> {
-            let (where_clause, binds) = build_outputs_where(args)?;
-            let columns = if args.no_script {
-                super::OUTPUTS_WITHOUT_LOCKING_SCRIPT
-            } else {
-                "*"
-            };
-            let sql = format!("SELECT {columns} FROM outputs{where_clause}");
+            let (sql, binds) = build_outputs_find_query(args)?;
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1078,8 +1309,7 @@ mod sqlite_impl {
             args: &FindOutputsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_outputs_where(args)?;
-            let sql = format!("SELECT COUNT(*) FROM outputs{where_clause}");
+            let (sql, binds) = build_outputs_count_query(args)?;
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1089,7 +1319,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<ProvenTx>> {
             let (where_clause, binds) = build_proven_txs_where(args);
-            let sql = format!("SELECT * FROM proven_txs{where_clause}");
+            let mut sql = format!("SELECT * FROM proven_txs{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["provenTxId"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1098,8 +1335,7 @@ mod sqlite_impl {
             args: &FindProvenTxsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_proven_txs_where(args);
-            let sql = format!("SELECT COUNT(*) FROM proven_txs{where_clause}");
+            let (sql, binds) = build_proven_txs_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1109,7 +1345,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<ProvenTxReq>> {
             let (where_clause, binds) = build_proven_tx_reqs_where(args);
-            let sql = format!("SELECT * FROM proven_tx_reqs{where_clause}");
+            let mut sql = format!("SELECT * FROM proven_tx_reqs{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["provenTxReqId"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1118,8 +1361,7 @@ mod sqlite_impl {
             args: &FindProvenTxReqsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_proven_tx_reqs_where(args);
-            let sql = format!("SELECT COUNT(*) FROM proven_tx_reqs{where_clause}");
+            let (sql, binds) = build_proven_tx_reqs_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1129,7 +1371,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<Settings>> {
             let (where_clause, binds) = build_settings_where(args);
-            let sql = format!("SELECT * FROM settings{where_clause}");
+            let mut sql = format!("SELECT * FROM settings{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["storageIdentityKey"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1138,8 +1387,7 @@ mod sqlite_impl {
             args: &FindSettingsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_settings_where(args);
-            let sql = format!("SELECT COUNT(*) FROM settings{where_clause}");
+            let (sql, binds) = build_settings_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1149,7 +1397,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<SyncState>> {
             let (where_clause, binds) = build_sync_states_where(args);
-            let sql = format!("SELECT * FROM sync_states{where_clause}");
+            let mut sql = format!("SELECT * FROM sync_states{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["syncStateId"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1158,8 +1413,7 @@ mod sqlite_impl {
             args: &FindSyncStatesArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_sync_states_where(args);
-            let sql = format!("SELECT COUNT(*) FROM sync_states{where_clause}");
+            let (sql, binds) = build_sync_states_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1169,7 +1423,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<Transaction>> {
             let (where_clause, binds) = build_transactions_where(args);
-            let sql = format!("SELECT * FROM transactions{where_clause}");
+            let mut sql = format!("SELECT * FROM transactions{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["transactionId"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1178,8 +1439,7 @@ mod sqlite_impl {
             args: &FindTransactionsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_transactions_where(args);
-            let sql = format!("SELECT COUNT(*) FROM transactions{where_clause}");
+            let (sql, binds) = build_transactions_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1189,7 +1449,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<TxLabelMap>> {
             let (where_clause, binds) = build_tx_label_maps_where(args);
-            let sql = format!("SELECT * FROM tx_labels_map{where_clause}");
+            let mut sql = format!("SELECT * FROM tx_labels_map{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["transactionId", "txLabelId"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1198,8 +1465,7 @@ mod sqlite_impl {
             args: &FindTxLabelMapsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_tx_label_maps_where(args);
-            let sql = format!("SELECT COUNT(*) FROM tx_labels_map{where_clause}");
+            let (sql, binds) = build_tx_label_maps_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1209,7 +1475,14 @@ mod sqlite_impl {
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<TxLabel>> {
             let (where_clause, binds) = build_tx_labels_where(args);
-            let sql = format!("SELECT * FROM tx_labels{where_clause}");
+            let mut sql = format!("SELECT * FROM tx_labels{where_clause}");
+            if let Some(paged) = &args.paged {
+                sql.push_str(&WhereBuilder::build_ordered_page(
+                    Dialect::Sqlite,
+                    &["txLabelId"],
+                    paged,
+                ));
+            }
             query_rows(self, &sql, binds, trx).await
         }
 
@@ -1218,8 +1491,7 @@ mod sqlite_impl {
             args: &FindTxLabelsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let (where_clause, binds) = build_tx_labels_where(args);
-            let sql = format!("SELECT COUNT(*) FROM tx_labels{where_clause}");
+            let (sql, binds) = build_tx_labels_count_query(args);
             query_count(self, &sql, binds, trx).await
         }
 
@@ -1428,6 +1700,7 @@ macro_rules! impl_storage_reader_find {
                 binds: Vec<BindVal>,
                 trx: Option<&TrxToken>,
             ) -> WalletResult<Vec<T>> {
+                storage.record_sql_statement();
                 if let Some(trx_token) = trx {
                     let inner = $extract(trx_token)?;
                     let mut guard = inner.lock().await;
@@ -1457,6 +1730,7 @@ macro_rules! impl_storage_reader_find {
                 binds: Vec<BindVal>,
                 trx: Option<&TrxToken>,
             ) -> WalletResult<i64> {
+                storage.record_sql_statement();
                 if let Some(trx_token) = trx {
                     let inner = $extract(trx_token)?;
                     let mut guard = inner.lock().await;
@@ -1482,7 +1756,9 @@ macro_rules! impl_storage_reader_find {
                 }
             }
 
-            // WHERE clause builders -- identical logic, just use dialect-aware WhereBuilder
+            // WHERE clause builders -- identical logic, just use dialect-aware WhereBuilder.
+            // Paging is appended only by find queries; counts intentionally ignore it
+            // and cover the entire filtered set.
 
             fn wb() -> WhereBuilder {
                 WhereBuilder::new($dialect)
@@ -1507,15 +1783,12 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["userId"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_users_count_query(args: &FindUsersArgs) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_users_where(args);
+                (format!("SELECT COUNT(*) FROM users{where_clause}"), binds)
             }
 
             fn build_certificates_where(args: &FindCertificatesArgs) -> (String, Vec<BindVal>) {
@@ -1565,15 +1838,17 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["certificateId"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_certificates_count_query(
+                args: &FindCertificatesArgs,
+            ) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_certificates_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM certificates{where_clause}"),
+                    binds,
+                )
             }
 
             fn build_certificate_fields_where(
@@ -1605,15 +1880,17 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["certificateId", "fieldName"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_certificate_fields_count_query(
+                args: &FindCertificateFieldsArgs,
+            ) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_certificate_fields_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM certificate_fields{where_clause}"),
+                    binds,
+                )
             }
 
             fn build_commissions_where(args: &FindCommissionsArgs) -> (String, Vec<BindVal>) {
@@ -1647,15 +1924,15 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["commissionId"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_commissions_count_query(args: &FindCommissionsArgs) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_commissions_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM commissions{where_clause}"),
+                    binds,
+                )
             }
 
             fn build_monitor_events_where(args: &FindMonitorEventsArgs) -> (String, Vec<BindVal>) {
@@ -1673,11 +1950,17 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["id"], paged));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_monitor_events_count_query(
+                args: &FindMonitorEventsArgs,
+            ) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_monitor_events_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM monitor_events{where_clause}"),
+                    binds,
+                )
             }
 
             fn build_output_baskets_where(args: &FindOutputBasketsArgs) -> (String, Vec<BindVal>) {
@@ -1703,15 +1986,17 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["basketId"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_output_baskets_count_query(
+                args: &FindOutputBasketsArgs,
+            ) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_output_baskets_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM output_baskets{where_clause}"),
+                    binds,
+                )
             }
 
             fn build_output_tag_maps_where(args: &FindOutputTagMapsArgs) -> (String, Vec<BindVal>) {
@@ -1733,15 +2018,17 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["outputId", "outputTagId"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_output_tag_maps_count_query(
+                args: &FindOutputTagMapsArgs,
+            ) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_output_tag_maps_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM output_tags_map{where_clause}"),
+                    binds,
+                )
             }
 
             fn build_output_tags_where(args: &FindOutputTagsArgs) -> (String, Vec<BindVal>) {
@@ -1767,15 +2054,15 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["outputTagId"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_output_tags_count_query(args: &FindOutputTagsArgs) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_output_tags_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM output_tags{where_clause}"),
+                    binds,
+                )
             }
 
             fn build_outputs_where(args: &FindOutputsArgs) -> WalletResult<(String, Vec<BindVal>)> {
@@ -1799,6 +2086,10 @@ macro_rules! impl_storage_reader_find {
                 if let Some(v) = &args.partial.transaction_id {
                     w.add_eq("transactionId");
                     binds.push(BindVal::Int64(*v));
+                }
+                if let Some(ids) = &args.transaction_ids {
+                    w.add_in("transactionId", ids.len());
+                    binds.extend(ids.iter().copied().map(BindVal::Int64));
                 }
                 if let Some(v) = &args.partial.basket_id {
                     w.add_eq("basketId");
@@ -1844,6 +2135,10 @@ macro_rules! impl_storage_reader_find {
                     w.add_eq("spentBy");
                     binds.push(BindVal::Int64(*v));
                 }
+                if let Some(ids) = &args.spent_by_ids {
+                    w.add_in("spentBy", ids.len());
+                    binds.extend(ids.iter().copied().map(BindVal::Int64));
+                }
                 if let Some(v) = &args.partial.output_description {
                     w.add_eq("outputDescription");
                     binds.push(BindVal::String(v.clone()));
@@ -1865,33 +2160,163 @@ macro_rules! impl_storage_reader_find {
                     binds.push(BindVal::Int64(*v));
                 }
                 if let Some(statuses) = &args.tx_status {
-                    if !statuses.is_empty() {
-                        w.add_subquery_in(
-                            "transactions",
-                            "status",
-                            "transactionId",
-                            "outputs",
-                            "transactionId",
-                            statuses.len(),
-                        );
-                        for s in statuses {
-                            binds.push(BindVal::String(s.to_string()));
-                        }
+                    w.add_subquery_in(
+                        "transactions",
+                        "status",
+                        "transactionId",
+                        "outputs",
+                        "transactionId",
+                        statuses.len(),
+                    );
+                    for s in statuses {
+                        binds.push(BindVal::String(s.to_string()));
                     }
                 }
                 if let Some(v) = &args.since {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["outputId"],
-                        paged,
-                    ));
-                }
-                Ok((sql, binds))
+                Ok((w.build_where(), binds))
+            }
+
+            fn build_outputs_find_query(
+                args: &FindOutputsArgs,
+            ) -> WalletResult<(String, Vec<BindVal>)> {
+                let (where_clause, binds) = build_outputs_where(args)?;
+                let columns = if args.no_script {
+                    super::outputs_without_locking_script($dialect)
+                } else {
+                    "*".to_string()
+                };
+                let ordered_page = args.paged.as_ref().map_or_else(String::new, |paged| {
+                    WhereBuilder::build_ordered_page($dialect, &["outputId"], paged)
+                });
+                // Preserve the base per-transaction output order without adding it to counts.
+                let batch_order = if args.paged.is_none() && args.transaction_ids.is_some() {
+                    format!(" ORDER BY {}", $dialect.quote_column("vout"))
+                } else {
+                    String::new()
+                };
+                Ok((
+                    format!(
+                        "SELECT {columns} FROM outputs{where_clause}{ordered_page}{batch_order}"
+                    ),
+                    binds,
+                ))
+            }
+
+            fn build_outputs_count_query(
+                args: &FindOutputsArgs,
+            ) -> WalletResult<(String, Vec<BindVal>)> {
+                let (where_clause, binds) = build_outputs_where(args)?;
+                // Counts intentionally ignore paging and cover the entire filtered set.
+                Ok((format!("SELECT COUNT(*) FROM outputs{where_clause}"), binds))
+            }
+
+            #[cfg(test)]
+            pub(crate) fn outputs_find_sql(args: &FindOutputsArgs) -> WalletResult<String> {
+                build_outputs_find_query(args).map(|(sql, _)| sql)
+            }
+
+            #[cfg(test)]
+            pub(crate) fn outputs_count_sql(args: &FindOutputsArgs) -> WalletResult<String> {
+                build_outputs_count_query(args).map(|(sql, _)| sql)
+            }
+
+            #[cfg(test)]
+            pub(crate) fn all_count_sqls(
+                paged: Option<Paged>,
+            ) -> WalletResult<Vec<(&'static str, String)>> {
+                let (users_sql, _) = build_users_count_query(&FindUsersArgs {
+                    paged: paged.clone(),
+                    ..Default::default()
+                });
+                let (certificates_sql, _) = build_certificates_count_query(&FindCertificatesArgs {
+                    paged: paged.clone(),
+                    ..Default::default()
+                });
+                let (certificate_fields_sql, _) =
+                    build_certificate_fields_count_query(&FindCertificateFieldsArgs {
+                        paged: paged.clone(),
+                        ..Default::default()
+                    });
+                let (commissions_sql, _) = build_commissions_count_query(&FindCommissionsArgs {
+                    paged: paged.clone(),
+                    ..Default::default()
+                });
+                let (monitor_events_sql, _) =
+                    build_monitor_events_count_query(&FindMonitorEventsArgs {
+                        paged: paged.clone(),
+                        ..Default::default()
+                    });
+                let (output_baskets_sql, _) =
+                    build_output_baskets_count_query(&FindOutputBasketsArgs {
+                        paged: paged.clone(),
+                        ..Default::default()
+                    });
+                let (output_tag_maps_sql, _) =
+                    build_output_tag_maps_count_query(&FindOutputTagMapsArgs {
+                        paged: paged.clone(),
+                        ..Default::default()
+                    });
+                let (output_tags_sql, _) = build_output_tags_count_query(&FindOutputTagsArgs {
+                    paged: paged.clone(),
+                    ..Default::default()
+                });
+                let (outputs_sql, _) = build_outputs_count_query(&FindOutputsArgs {
+                    transaction_ids: Some(vec![11, 12]),
+                    paged: paged.clone(),
+                    ..Default::default()
+                })?;
+                let (proven_txs_sql, _) = build_proven_txs_count_query(&FindProvenTxsArgs {
+                    paged: paged.clone(),
+                    ..Default::default()
+                });
+                let (proven_tx_reqs_sql, _) =
+                    build_proven_tx_reqs_count_query(&FindProvenTxReqsArgs {
+                        paged: paged.clone(),
+                        ..Default::default()
+                    });
+                let (settings_sql, _) = build_settings_count_query(&FindSettingsArgs {
+                    paged: paged.clone(),
+                    ..Default::default()
+                });
+                let (sync_states_sql, _) = build_sync_states_count_query(&FindSyncStatesArgs {
+                    paged: paged.clone(),
+                    ..Default::default()
+                });
+                let (transactions_sql, _) = build_transactions_count_query(&FindTransactionsArgs {
+                    paged: paged.clone(),
+                    ..Default::default()
+                });
+                let (tx_label_maps_sql, _) =
+                    build_tx_label_maps_count_query(&FindTxLabelMapsArgs {
+                        paged: paged.clone(),
+                        ..Default::default()
+                    });
+                let (tx_labels_sql, _) = build_tx_labels_count_query(&FindTxLabelsArgs {
+                    paged,
+                    ..Default::default()
+                });
+
+                Ok(vec![
+                    ("count_users", users_sql),
+                    ("count_certificates", certificates_sql),
+                    ("count_certificate_fields", certificate_fields_sql),
+                    ("count_commissions", commissions_sql),
+                    ("count_monitor_events", monitor_events_sql),
+                    ("count_output_baskets", output_baskets_sql),
+                    ("count_output_tag_maps", output_tag_maps_sql),
+                    ("count_output_tags", output_tags_sql),
+                    ("count_outputs", outputs_sql),
+                    ("count_proven_txs", proven_txs_sql),
+                    ("count_proven_tx_reqs", proven_tx_reqs_sql),
+                    ("count_settings", settings_sql),
+                    ("count_sync_states", sync_states_sql),
+                    ("count_transactions", transactions_sql),
+                    ("count_tx_label_maps", tx_label_maps_sql),
+                    ("count_tx_labels", tx_labels_sql),
+                ])
             }
 
             fn build_proven_txs_where(args: &FindProvenTxsArgs) -> (String, Vec<BindVal>) {
@@ -1917,15 +2342,15 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["provenTxId"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_proven_txs_count_query(args: &FindProvenTxsArgs) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_proven_txs_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM proven_txs{where_clause}"),
+                    binds,
+                )
             }
 
             fn build_proven_tx_reqs_where(args: &FindProvenTxReqsArgs) -> (String, Vec<BindVal>) {
@@ -1941,11 +2366,9 @@ macro_rules! impl_storage_reader_find {
                 }
                 // Multi-status filter takes precedence over single partial.status
                 if let Some(statuses) = &args.statuses {
-                    if !statuses.is_empty() {
-                        w.add_in("status", statuses.len());
-                        for s in statuses {
-                            binds.push(BindVal::String(s.to_string()));
-                        }
+                    w.add_in("status", statuses.len());
+                    for s in statuses {
+                        binds.push(BindVal::String(s.to_string()));
                     }
                 } else if let Some(v) = &args.partial.status {
                     w.add_eq("status");
@@ -1967,15 +2390,17 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["provenTxReqId"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_proven_tx_reqs_count_query(
+                args: &FindProvenTxReqsArgs,
+            ) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_proven_tx_reqs_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM proven_tx_reqs{where_clause}"),
+                    binds,
+                )
             }
 
             fn build_settings_where(args: &FindSettingsArgs) -> (String, Vec<BindVal>) {
@@ -1997,15 +2422,15 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["storageIdentityKey"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_settings_count_query(args: &FindSettingsArgs) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_settings_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM settings{where_clause}"),
+                    binds,
+                )
             }
 
             fn build_sync_states_where(args: &FindSyncStatesArgs) -> (String, Vec<BindVal>) {
@@ -2039,15 +2464,15 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["syncStateId"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_sync_states_count_query(args: &FindSyncStatesArgs) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_sync_states_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM sync_states{where_clause}"),
+                    binds,
+                )
             }
 
             fn build_transactions_where(args: &FindTransactionsArgs) -> (String, Vec<BindVal>) {
@@ -2067,11 +2492,9 @@ macro_rules! impl_storage_reader_find {
                 }
                 // Multi-status filter takes precedence over single partial.status
                 if let Some(statuses) = &args.status {
-                    if !statuses.is_empty() {
-                        w.add_in("status", statuses.len());
-                        for s in statuses {
-                            binds.push(BindVal::String(s.to_string()));
-                        }
+                    w.add_in("status", statuses.len());
+                    for s in statuses {
+                        binds.push(BindVal::String(s.to_string()));
                     }
                 } else if let Some(v) = &args.partial.status {
                     w.add_eq("status");
@@ -2093,15 +2516,17 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["transactionId"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_transactions_count_query(
+                args: &FindTransactionsArgs,
+            ) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_transactions_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM transactions{where_clause}"),
+                    binds,
+                )
             }
 
             fn build_tx_label_maps_where(args: &FindTxLabelMapsArgs) -> (String, Vec<BindVal>) {
@@ -2115,6 +2540,10 @@ macro_rules! impl_storage_reader_find {
                     w.add_eq("transactionId");
                     binds.push(BindVal::Int64(*v));
                 }
+                if let Some(ids) = &args.transaction_ids {
+                    w.add_in("transactionId", ids.len());
+                    binds.extend(ids.iter().copied().map(BindVal::Int64));
+                }
                 if let Some(v) = &args.partial.is_deleted {
                     w.add_eq("isDeleted");
                     binds.push(BindVal::Bool(*v));
@@ -2123,15 +2552,17 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["transactionId", "txLabelId"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_tx_label_maps_count_query(
+                args: &FindTxLabelMapsArgs,
+            ) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_tx_label_maps_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM tx_labels_map{where_clause}"),
+                    binds,
+                )
             }
 
             fn build_tx_labels_where(args: &FindTxLabelsArgs) -> (String, Vec<BindVal>) {
@@ -2140,6 +2571,14 @@ macro_rules! impl_storage_reader_find {
                 if let Some(v) = &args.partial.tx_label_id {
                     w.add_eq("txLabelId");
                     binds.push(BindVal::Int64(*v));
+                }
+                if let Some(ids) = &args.tx_label_ids {
+                    w.add_in("txLabelId", ids.len());
+                    binds.extend(ids.iter().copied().map(BindVal::Int64));
+                }
+                if let Some(labels) = &args.labels {
+                    w.add_in("label", labels.len());
+                    binds.extend(labels.iter().cloned().map(BindVal::String));
                 }
                 if let Some(v) = &args.partial.user_id {
                     w.add_eq("userId");
@@ -2157,15 +2596,15 @@ macro_rules! impl_storage_reader_find {
                     w.add_gte("updated_at");
                     binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                 }
-                let mut sql = w.build_where();
-                if let Some(paged) = &args.paged {
-                    sql.push_str(&WhereBuilder::build_ordered_page(
-                        $dialect,
-                        &["txLabelId"],
-                        paged,
-                    ));
-                }
-                (sql, binds)
+                (w.build_where(), binds)
+            }
+
+            fn build_tx_labels_count_query(args: &FindTxLabelsArgs) -> (String, Vec<BindVal>) {
+                let (where_clause, binds) = build_tx_labels_where(args);
+                (
+                    format!("SELECT COUNT(*) FROM tx_labels{where_clause}"),
+                    binds,
+                )
             }
 
             // -- For-user helper placeholder --
@@ -2182,15 +2621,23 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<User>> {
                     let (w, b) = build_users_where(args);
-                    query_rows(self, &format!("SELECT * FROM users{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM users{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["userId"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_users(
                     &self,
                     args: &FindUsersArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_users_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM users{}", w), b, trx).await
+                    let (sql, binds) = build_users_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_certificates(
                     &self,
@@ -2198,21 +2645,23 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<Certificate>> {
                     let (w, b) = build_certificates_where(args);
-                    query_rows(self, &format!("SELECT * FROM certificates{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM certificates{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["certificateId"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_certificates(
                     &self,
                     args: &FindCertificatesArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_certificates_where(args);
-                    query_count(
-                        self,
-                        &format!("SELECT COUNT(*) FROM certificates{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let (sql, binds) = build_certificates_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_certificate_fields(
                     &self,
@@ -2220,27 +2669,23 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<CertificateField>> {
                     let (w, b) = build_certificate_fields_where(args);
-                    query_rows(
-                        self,
-                        &format!("SELECT * FROM certificate_fields{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let mut sql = format!("SELECT * FROM certificate_fields{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["certificateId", "fieldName"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_certificate_fields(
                     &self,
                     args: &FindCertificateFieldsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_certificate_fields_where(args);
-                    query_count(
-                        self,
-                        &format!("SELECT COUNT(*) FROM certificate_fields{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let (sql, binds) = build_certificate_fields_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_commissions(
                     &self,
@@ -2248,21 +2693,23 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<Commission>> {
                     let (w, b) = build_commissions_where(args);
-                    query_rows(self, &format!("SELECT * FROM commissions{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM commissions{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["commissionId"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_commissions(
                     &self,
                     args: &FindCommissionsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_commissions_where(args);
-                    query_count(
-                        self,
-                        &format!("SELECT COUNT(*) FROM commissions{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let (sql, binds) = build_commissions_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_monitor_events(
                     &self,
@@ -2270,21 +2717,19 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<MonitorEvent>> {
                     let (w, b) = build_monitor_events_where(args);
-                    query_rows(self, &format!("SELECT * FROM monitor_events{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM monitor_events{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["id"], paged));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_monitor_events(
                     &self,
                     args: &FindMonitorEventsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_monitor_events_where(args);
-                    query_count(
-                        self,
-                        &format!("SELECT COUNT(*) FROM monitor_events{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let (sql, binds) = build_monitor_events_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_output_baskets(
                     &self,
@@ -2292,21 +2737,23 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<OutputBasket>> {
                     let (w, b) = build_output_baskets_where(args);
-                    query_rows(self, &format!("SELECT * FROM output_baskets{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM output_baskets{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["basketId"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_output_baskets(
                     &self,
                     args: &FindOutputBasketsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_output_baskets_where(args);
-                    query_count(
-                        self,
-                        &format!("SELECT COUNT(*) FROM output_baskets{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let (sql, binds) = build_output_baskets_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_output_tag_maps(
                     &self,
@@ -2314,21 +2761,23 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<OutputTagMap>> {
                     let (w, b) = build_output_tag_maps_where(args);
-                    query_rows(self, &format!("SELECT * FROM output_tags_map{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM output_tags_map{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["outputId", "outputTagId"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_output_tag_maps(
                     &self,
                     args: &FindOutputTagMapsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_output_tag_maps_where(args);
-                    query_count(
-                        self,
-                        &format!("SELECT COUNT(*) FROM output_tags_map{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let (sql, binds) = build_output_tag_maps_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_output_tags(
                     &self,
@@ -2336,45 +2785,39 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<OutputTag>> {
                     let (w, b) = build_output_tags_where(args);
-                    query_rows(self, &format!("SELECT * FROM output_tags{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM output_tags{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["outputTagId"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_output_tags(
                     &self,
                     args: &FindOutputTagsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_output_tags_where(args);
-                    query_count(
-                        self,
-                        &format!("SELECT COUNT(*) FROM output_tags{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let (sql, binds) = build_output_tags_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_outputs(
                     &self,
                     args: &FindOutputsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<Output>> {
-                    let (w, b) = build_outputs_where(args)?;
-                    let columns = if args.no_script {
-                        match $dialect {
-                            Dialect::Postgres => super::POSTGRES_OUTPUTS_WITHOUT_LOCKING_SCRIPT,
-                            _ => super::OUTPUTS_WITHOUT_LOCKING_SCRIPT,
-                        }
-                    } else {
-                        "*"
-                    };
-                    query_rows(self, &format!("SELECT {columns} FROM outputs{w}"), b, trx).await
+                    let (sql, b) = build_outputs_find_query(args)?;
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_outputs(
                     &self,
                     args: &FindOutputsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_outputs_where(args)?;
-                    query_count(self, &format!("SELECT COUNT(*) FROM outputs{}", w), b, trx).await
+                    let (sql, b) = build_outputs_count_query(args)?;
+                    query_count(self, &sql, b, trx).await
                 }
                 async fn find_proven_txs(
                     &self,
@@ -2382,21 +2825,23 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<ProvenTx>> {
                     let (w, b) = build_proven_txs_where(args);
-                    query_rows(self, &format!("SELECT * FROM proven_txs{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM proven_txs{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["provenTxId"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_proven_txs(
                     &self,
                     args: &FindProvenTxsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_proven_txs_where(args);
-                    query_count(
-                        self,
-                        &format!("SELECT COUNT(*) FROM proven_txs{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let (sql, binds) = build_proven_txs_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_proven_tx_reqs(
                     &self,
@@ -2404,21 +2849,23 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<ProvenTxReq>> {
                     let (w, b) = build_proven_tx_reqs_where(args);
-                    query_rows(self, &format!("SELECT * FROM proven_tx_reqs{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM proven_tx_reqs{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["provenTxReqId"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_proven_tx_reqs(
                     &self,
                     args: &FindProvenTxReqsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_proven_tx_reqs_where(args);
-                    query_count(
-                        self,
-                        &format!("SELECT COUNT(*) FROM proven_tx_reqs{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let (sql, binds) = build_proven_tx_reqs_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_settings(
                     &self,
@@ -2426,15 +2873,23 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<Settings>> {
                     let (w, b) = build_settings_where(args);
-                    query_rows(self, &format!("SELECT * FROM settings{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM settings{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["storageIdentityKey"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_settings(
                     &self,
                     args: &FindSettingsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_settings_where(args);
-                    query_count(self, &format!("SELECT COUNT(*) FROM settings{}", w), b, trx).await
+                    let (sql, binds) = build_settings_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_sync_states(
                     &self,
@@ -2442,21 +2897,23 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<SyncState>> {
                     let (w, b) = build_sync_states_where(args);
-                    query_rows(self, &format!("SELECT * FROM sync_states{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM sync_states{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["syncStateId"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_sync_states(
                     &self,
                     args: &FindSyncStatesArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_sync_states_where(args);
-                    query_count(
-                        self,
-                        &format!("SELECT COUNT(*) FROM sync_states{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let (sql, binds) = build_sync_states_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_transactions(
                     &self,
@@ -2464,21 +2921,23 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<Transaction>> {
                     let (w, b) = build_transactions_where(args);
-                    query_rows(self, &format!("SELECT * FROM transactions{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM transactions{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["transactionId"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_transactions(
                     &self,
                     args: &FindTransactionsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_transactions_where(args);
-                    query_count(
-                        self,
-                        &format!("SELECT COUNT(*) FROM transactions{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let (sql, binds) = build_transactions_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_tx_label_maps(
                     &self,
@@ -2486,21 +2945,23 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<TxLabelMap>> {
                     let (w, b) = build_tx_label_maps_where(args);
-                    query_rows(self, &format!("SELECT * FROM tx_labels_map{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM tx_labels_map{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["transactionId", "txLabelId"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_tx_label_maps(
                     &self,
                     args: &FindTxLabelMapsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_tx_label_maps_where(args);
-                    query_count(
-                        self,
-                        &format!("SELECT COUNT(*) FROM tx_labels_map{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let (sql, binds) = build_tx_label_maps_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
                 async fn find_tx_labels(
                     &self,
@@ -2508,21 +2969,23 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<TxLabel>> {
                     let (w, b) = build_tx_labels_where(args);
-                    query_rows(self, &format!("SELECT * FROM tx_labels{}", w), b, trx).await
+                    let mut sql = format!("SELECT * FROM tx_labels{}", w);
+                    if let Some(paged) = &args.paged {
+                        sql.push_str(&WhereBuilder::build_ordered_page(
+                            $dialect,
+                            &["txLabelId"],
+                            paged,
+                        ));
+                    }
+                    query_rows(self, &sql, b, trx).await
                 }
                 async fn count_tx_labels(
                     &self,
                     args: &FindTxLabelsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    let (w, b) = build_tx_labels_where(args);
-                    query_count(
-                        self,
-                        &format!("SELECT COUNT(*) FROM tx_labels{}", w),
-                        b,
-                        trx,
-                    )
-                    .await
+                    let (sql, binds) = build_tx_labels_count_query(args);
+                    query_count(self, &sql, binds, trx).await
                 }
 
                 // For-user methods use JOIN queries with dialect-specific placeholders
@@ -2872,4 +3335,299 @@ impl_storage_reader_find! {
     dialect = Dialect::Postgres,
     extract_trx = StorageSqlx::<sqlx::Postgres>::extract_pg_trx,
     trx_name = "PostgreSQL"
+}
+
+#[cfg(test)]
+mod output_sql_generation_tests {
+    use crate::error::WalletResult;
+    use crate::storage::find_args::{FindOutputsArgs, Paged};
+
+    type Generator = fn(&FindOutputsArgs) -> WalletResult<String>;
+    type AllCountGenerator = fn(Option<Paged>) -> WalletResult<Vec<(&'static str, String)>>;
+
+    const COUNT_METHODS: [&str; 16] = [
+        "count_users",
+        "count_certificates",
+        "count_certificate_fields",
+        "count_commissions",
+        "count_monitor_events",
+        "count_output_baskets",
+        "count_output_tag_maps",
+        "count_output_tags",
+        "count_outputs",
+        "count_proven_txs",
+        "count_proven_tx_reqs",
+        "count_settings",
+        "count_sync_states",
+        "count_transactions",
+        "count_tx_label_maps",
+        "count_tx_labels",
+    ];
+
+    fn all_count_generators() -> Vec<(&'static str, AllCountGenerator)> {
+        Vec::from([
+            #[cfg(feature = "sqlite")]
+            (
+                "sqlite",
+                super::sqlite_impl::all_count_sqls as AllCountGenerator,
+            ),
+            #[cfg(feature = "mysql")]
+            (
+                "mysql",
+                super::mysql_find_impl::all_count_sqls as AllCountGenerator,
+            ),
+            #[cfg(feature = "postgres")]
+            (
+                "postgres",
+                super::postgres_find_impl::all_count_sqls as AllCountGenerator,
+            ),
+        ])
+    }
+
+    fn assert_count_method_list_is_complete(actual_names: &[&str]) {
+        // Extend COUNT_METHODS and every dialect hook when StorageReader gains a count method.
+        assert_eq!(COUNT_METHODS.len(), 16);
+        assert_eq!(actual_names, COUNT_METHODS);
+
+        let trait_methods: Vec<_> = include_str!("../traits/reader.rs")
+            .lines()
+            .filter_map(|line| {
+                line.trim_start()
+                    .strip_prefix("async fn count_")
+                    .map(|suffix| format!("count_{}", suffix.split('(').next().unwrap()))
+            })
+            .collect();
+        assert_eq!(trait_methods, COUNT_METHODS);
+    }
+
+    /// Checks SQL from the real per-dialect count generators across all three dialects.
+    /// It cannot catch paging appended inside a `count_*` method after its generator returns;
+    /// `paged_count_ignores_paging_and_counts_whole_filtered_set` in
+    /// `tests/storage_sqlite_tests.rs` covers that behavior.
+    #[test]
+    fn every_paged_count_sql_omits_order_limit_and_offset() {
+        let paged = Some(Paged {
+            limit: 5,
+            offset: 2,
+        });
+
+        for (dialect, generator) in all_count_generators() {
+            let sqls = generator(paged.clone()).expect("count SQL builds");
+            let names: Vec<_> = sqls.iter().map(|(name, _)| *name).collect();
+            assert_count_method_list_is_complete(&names);
+
+            for (name, sql) in sqls {
+                for forbidden in ["ORDER BY", "LIMIT", "OFFSET"] {
+                    assert!(
+                        !sql.contains(forbidden),
+                        "{dialect} {name} contains {forbidden}: {sql}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn paged_and_unpaged_count_sql_are_identical() {
+        let paged = Some(Paged {
+            limit: 5,
+            offset: 2,
+        });
+
+        for (dialect, generator) in all_count_generators() {
+            assert_eq!(
+                generator(paged.clone()).expect("paged count SQL builds"),
+                generator(None).expect("unpaged count SQL builds"),
+                "{dialect} counts must ignore paging"
+            );
+        }
+    }
+
+    /// The `no_script` projection must quote every identifier.
+    ///
+    /// `change` is reserved in MySQL: an unquoted projection is ERROR 1064 there,
+    /// while SQLite accepts it, so this was invisible to the SQLite-only suite.
+    /// Verified against MySQL 8.4.11 — unquoted fails, quoted succeeds.
+    fn assert_no_script_projection_is_quoted(find_sql: Generator, quote: &str) {
+        let sql = find_sql(&FindOutputsArgs {
+            no_script: true,
+            ..Default::default()
+        })
+        .expect("no_script query builds");
+
+        for column in super::OUTPUTS_COLUMNS_WITHOUT_LOCKING_SCRIPT {
+            let quoted = format!("{quote}{column}{quote}");
+            assert!(
+                sql.contains(&quoted),
+                "no_script projection must quote {column} for this dialect; got: {sql}"
+            );
+        }
+        assert!(
+            sql.contains(&format!("NULL AS {quote}lockingScript{quote}")),
+            "lockingScript alias must be quoted; got: {sql}"
+        );
+        // Bare `change` outside backquotes is the MySQL syntax error.
+        assert!(
+            !sql.contains(", change,"),
+            "unquoted `change` in projection is ERROR 1064 on MySQL; got: {sql}"
+        );
+    }
+
+    fn assert_output_sql_for_dialect(
+        find_sql: Generator,
+        count_sql: Generator,
+        quote: &str,
+        placeholders: [&str; 2],
+    ) {
+        let q = |column: &str| format!("{quote}{column}{quote}");
+        let cases = [
+            (
+                FindOutputsArgs::default(),
+                "SELECT * FROM outputs".to_string(),
+                "SELECT COUNT(*) FROM outputs".to_string(),
+            ),
+            (
+                FindOutputsArgs {
+                    transaction_ids: Some(vec![11, 12]),
+                    ..Default::default()
+                },
+                format!(
+                    "SELECT * FROM outputs WHERE {} IN ({}, {}) ORDER BY {}",
+                    q("transactionId"),
+                    placeholders[0],
+                    placeholders[1],
+                    q("vout")
+                ),
+                format!(
+                    "SELECT COUNT(*) FROM outputs WHERE {} IN ({}, {})",
+                    q("transactionId"),
+                    placeholders[0],
+                    placeholders[1]
+                ),
+            ),
+            (
+                FindOutputsArgs {
+                    spent_by_ids: Some(vec![21, 22]),
+                    ..Default::default()
+                },
+                format!(
+                    "SELECT * FROM outputs WHERE {} IN ({}, {})",
+                    q("spentBy"),
+                    placeholders[0],
+                    placeholders[1]
+                ),
+                format!(
+                    "SELECT COUNT(*) FROM outputs WHERE {} IN ({}, {})",
+                    q("spentBy"),
+                    placeholders[0],
+                    placeholders[1]
+                ),
+            ),
+            (
+                FindOutputsArgs {
+                    transaction_ids: Some(Vec::new()),
+                    ..Default::default()
+                },
+                format!("SELECT * FROM outputs WHERE 1 = 0 ORDER BY {}", q("vout")),
+                "SELECT COUNT(*) FROM outputs WHERE 1 = 0".to_string(),
+            ),
+            (
+                FindOutputsArgs {
+                    spent_by_ids: Some(Vec::new()),
+                    ..Default::default()
+                },
+                "SELECT * FROM outputs WHERE 1 = 0".to_string(),
+                "SELECT COUNT(*) FROM outputs WHERE 1 = 0".to_string(),
+            ),
+        ];
+
+        for (args, expected_find, expected_count) in cases {
+            let actual_find = find_sql(&args).unwrap();
+            let actual_count = count_sql(&args).unwrap();
+            assert_eq!(actual_find, expected_find);
+            assert_eq!(actual_count, expected_count);
+            assert!(!actual_count.contains("ORDER BY"));
+            assert!(!actual_count.contains("LIMIT"));
+            assert!(!actual_count.contains("OFFSET"));
+        }
+
+        let paged_args = FindOutputsArgs {
+            transaction_ids: Some(vec![11, 12]),
+            paged: Some(Paged {
+                limit: 5,
+                offset: 2,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            find_sql(&paged_args).unwrap(),
+            format!(
+                "SELECT * FROM outputs WHERE {} IN ({}, {}) ORDER BY {} LIMIT 5 OFFSET 2",
+                q("transactionId"),
+                placeholders[0],
+                placeholders[1],
+                q("outputId")
+            )
+        );
+        assert_eq!(
+            count_sql(&paged_args).unwrap(),
+            format!(
+                "SELECT COUNT(*) FROM outputs WHERE {} IN ({}, {})",
+                q("transactionId"),
+                placeholders[0],
+                placeholders[1]
+            )
+        );
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[test]
+    fn sqlite_no_script_projection_is_quoted() {
+        assert_no_script_projection_is_quoted(super::sqlite_impl::outputs_find_sql, "`");
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[test]
+    fn sqlite_find_and_count_output_sql_is_exact() {
+        assert_output_sql_for_dialect(
+            super::sqlite_impl::outputs_find_sql,
+            super::sqlite_impl::outputs_count_sql,
+            "`",
+            ["?", "?"],
+        );
+    }
+
+    #[cfg(feature = "mysql")]
+    #[test]
+    fn mysql_no_script_projection_is_quoted() {
+        assert_no_script_projection_is_quoted(super::mysql_find_impl::outputs_find_sql, "`");
+    }
+
+    #[cfg(feature = "mysql")]
+    #[test]
+    fn mysql_find_and_count_output_sql_is_exact() {
+        assert_output_sql_for_dialect(
+            super::mysql_find_impl::outputs_find_sql,
+            super::mysql_find_impl::outputs_count_sql,
+            "`",
+            ["?", "?"],
+        );
+    }
+
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn postgres_no_script_projection_is_quoted() {
+        assert_no_script_projection_is_quoted(super::postgres_find_impl::outputs_find_sql, "\"");
+    }
+
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn postgres_find_and_count_output_sql_is_exact() {
+        assert_output_sql_for_dialect(
+            super::postgres_find_impl::outputs_find_sql,
+            super::postgres_find_impl::outputs_count_sql,
+            "\"",
+            ["$1", "$2"],
+        );
+    }
 }

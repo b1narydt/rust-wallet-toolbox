@@ -14,6 +14,7 @@ use crate::tables::*;
 /// Minimal read-only storage interface for the wallet.
 ///
 /// All methods accept an optional `TrxToken` for transaction participation.
+/// Count methods ignore paging in their arguments and count the entire filtered set.
 /// Implementations must be Send + Sync for use behind `Arc<dyn StorageProvider>`.
 #[async_trait]
 pub trait StorageReader: Send + Sync {
