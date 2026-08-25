@@ -17,7 +17,38 @@ pub enum Dialect {
     Postgres,
 }
 
+/// How a backend serialises two callers racing to claim the same outputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LockingStrategy {
+    /// Real row locks that skip rows another transaction holds
+    /// (PostgreSQL, MySQL >= 8.0.1).
+    SkipLocked,
+    /// The engine serialises writers, so a locking read adds nothing;
+    /// the guarded CAS is the control.
+    EngineSerialized,
+}
+
 impl Dialect {
+    /// Return the backend's output-claim locking strategy.
+    pub fn locking_strategy(self) -> LockingStrategy {
+        match self {
+            Dialect::Sqlite => LockingStrategy::EngineSerialized,
+            Dialect::Mysql => LockingStrategy::SkipLocked,
+            Dialect::Postgres => LockingStrategy::SkipLocked,
+        }
+    }
+
+    /// Return the suffix for a candidate read that claims rows from `table`.
+    ///
+    /// Naming the table confines the lock to the rows being claimed, excluding
+    /// rows read only through correlated subqueries.
+    pub fn locking_clause(self, table: &str) -> String {
+        match self.locking_strategy() {
+            LockingStrategy::SkipLocked => format!(" FOR UPDATE OF {table} SKIP LOCKED"),
+            LockingStrategy::EngineSerialized => String::new(),
+        }
+    }
+
     /// Return the appropriate SQL expression for "current timestamp" in this dialect.
     pub fn now_expr(self) -> &'static str {
         match self {
@@ -159,10 +190,11 @@ impl WhereBuilder {
         self.clauses.push(format!("{qc} LIKE {ph}"));
     }
 
-    /// Add an IN condition: `` `column` IN (?, ?, ...) ``
-    #[allow(dead_code)]
+    /// Add an IN condition: `` `column` IN (?, ?, ...) ``.
+    /// An empty list emits `1 = 0` and matches nothing; callers must not guard the empty case.
     pub fn add_in(&mut self, column: &str, count: usize) {
         if count == 0 {
+            self.clauses.push("1 = 0".to_string());
             return;
         }
         let qc = self.dialect.quote_column(column);
@@ -175,7 +207,7 @@ impl WhereBuilder {
     /// `` (SELECT `sub_col` FROM `table` WHERE `table`.`join_col` = `outer_table`.`outer_col`) IN (?, ?, ...) ``
     ///
     /// Used for filtering outputs by their parent transaction's status.
-    #[allow(dead_code)]
+    /// An empty list emits `1 = 0` and matches nothing; callers must not guard the empty case.
     pub fn add_subquery_in(
         &mut self,
         table: &str,
@@ -186,6 +218,7 @@ impl WhereBuilder {
         count: usize,
     ) {
         if count == 0 {
+            self.clauses.push("1 = 0".to_string());
             return;
         }
         let qt = self.dialect.quote_column(table);
@@ -291,10 +324,43 @@ mod tests {
     }
 
     #[test]
+    fn output_claim_locking_is_dialect_capability() {
+        assert_eq!(
+            Dialect::Sqlite.locking_strategy(),
+            LockingStrategy::EngineSerialized
+        );
+        assert_eq!(
+            Dialect::Mysql.locking_strategy(),
+            LockingStrategy::SkipLocked
+        );
+        assert_eq!(
+            Dialect::Postgres.locking_strategy(),
+            LockingStrategy::SkipLocked
+        );
+        assert_eq!(Dialect::Sqlite.locking_clause("outputs"), "");
+        assert_eq!(
+            Dialect::Mysql.locking_clause("outputs"),
+            " FOR UPDATE OF outputs SKIP LOCKED"
+        );
+        assert_eq!(
+            Dialect::Postgres.locking_clause("outputs"),
+            " FOR UPDATE OF outputs SKIP LOCKED"
+        );
+    }
+
+    #[test]
     fn postgres_in_clause() {
         let mut wb = WhereBuilder::new(Dialect::Postgres);
         wb.add_in("id", 3);
         assert_eq!(wb.build_where(), " WHERE \"id\" IN ($1, $2, $3)");
+    }
+
+    #[test]
+    fn empty_in_clause_matches_nothing() {
+        let mut wb = WhereBuilder::new(Dialect::Postgres);
+        wb.add_in("id", 0);
+        assert_eq!(wb.build_where(), " WHERE 1 = 0");
+        assert_eq!(wb.param_count(), 0);
     }
 
     #[test]
@@ -394,5 +460,68 @@ mod tests {
             " WHERE (SELECT \"status\" FROM \"transactions\" WHERE \"transactions\".\"transactionId\" = \"outputs\".\"transactionId\") IN ($1, $2)"
         );
         assert_eq!(wb.param_count(), 2);
+    }
+
+    #[test]
+    fn empty_subquery_in_matches_nothing_without_consuming_a_placeholder() {
+        let mut wb = WhereBuilder::new(Dialect::Postgres);
+        wb.add_eq("userId");
+        wb.add_subquery_in(
+            "transactions",
+            "status",
+            "transactionId",
+            "outputs",
+            "transactionId",
+            0,
+        );
+        wb.add_eq("spendable");
+        assert_eq!(
+            wb.build_where(),
+            " WHERE \"userId\" = $1 AND 1 = 0 AND \"spendable\" = $2"
+        );
+        assert_eq!(wb.param_count(), 2);
+    }
+}
+
+#[cfg(test)]
+mod monitor_events_placeholder_tests {
+    use super::{placeholder, Dialect};
+
+    /// The shared storage macro generates both the MySQL and PostgreSQL
+    /// implementations, so any statement it builds must use dialect
+    /// placeholders. A hardcoded `?` is a hard syntax error on PostgreSQL —
+    /// verified against PostgreSQL 16.15:
+    ///   ERROR: syntax error at or near "AND"
+    /// It was previously reachable from the ReviewDoubleSpends monitor task on
+    /// every tick after the first.
+    #[test]
+    fn delete_monitor_events_uses_dialect_placeholders() {
+        let build = |d: Dialect| {
+            format!(
+                "DELETE FROM monitor_events WHERE event = {} AND id < {}",
+                placeholder(d, 1),
+                placeholder(d, 2)
+            )
+        };
+
+        assert_eq!(
+            build(Dialect::Postgres),
+            "DELETE FROM monitor_events WHERE event = $1 AND id < $2",
+            "PostgreSQL requires positional $N placeholders"
+        );
+        assert_eq!(
+            build(Dialect::Mysql),
+            "DELETE FROM monitor_events WHERE event = ? AND id < ?"
+        );
+        assert_eq!(
+            build(Dialect::Sqlite),
+            "DELETE FROM monitor_events WHERE event = ? AND id < ?"
+        );
+
+        // The specific regression: PostgreSQL must never receive `?`.
+        assert!(
+            !build(Dialect::Postgres).contains('?'),
+            "hardcoded `?` reaching PostgreSQL is ERROR: syntax error"
+        );
     }
 }

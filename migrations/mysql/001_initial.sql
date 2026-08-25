@@ -115,7 +115,7 @@ CREATE TABLE commissions (
     commissionId INT AUTO_INCREMENT PRIMARY KEY,
     userId INT NOT NULL,
     transactionId INT NOT NULL UNIQUE,
-    satoshis INT NOT NULL,
+    satoshis BIGINT NOT NULL,
     keyOffset VARCHAR(130) NOT NULL,
     isRedeemed BOOLEAN NOT NULL DEFAULT FALSE,
     lockingScript LONGBLOB NOT NULL,

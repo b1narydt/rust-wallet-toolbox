@@ -506,8 +506,10 @@ mod signer_flow_tests {
                 o.spendable,
                 "InvalidTx must restore parent input {parent_id} to spendable"
             );
-            // spent_by is left as-is per the handler's current contract (no
-            // explicit clear); we assert only the spendable flag.
+            assert!(
+                o.spent_by.is_none(),
+                "InvalidTx must clear spentBy for restored parent input {parent_id}"
+            );
         }
 
         // Failed tx's own outputs marked unspendable
@@ -712,12 +714,21 @@ mod signer_flow_tests {
             restored.spendable,
             "chain-verified-unspent input must be restored"
         );
+        assert!(
+            restored.spent_by.is_none(),
+            "DoubleSpend must clear spentBy for a restored input"
+        );
 
         // Input #1: NOT restored (competing tx consumed it on chain)
         let still_consumed = get_output(&manager, parent_ids[1]).await;
         assert!(
             !still_consumed.spendable,
             "input consumed by competing tx must stay spendable=false"
+        );
+        assert_eq!(
+            still_consumed.spent_by,
+            Some(tx.transaction_id),
+            "an input not restored must retain the failed transaction's claim"
         );
 
         // Failed tx's outputs all unspendable

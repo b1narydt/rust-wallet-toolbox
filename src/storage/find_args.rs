@@ -376,11 +376,27 @@ pub struct OutputPartial {
 pub struct FindOutputsArgs {
     /// Column equality filters.
     pub partial: OutputPartial,
+    /// Filter by parent transactions using `transactionId IN (...)`.
+    ///
+    /// These serde skips are load-bearing: `FindOutputsArgs` is also sent to
+    /// TypeScript storage servers, which do not understand the Rust-only
+    /// batching filters. Keeping absent fields off the wire preserves the
+    /// existing RPC shape byte-for-byte.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction_ids: Option<Vec<i64>>,
+    /// Filter by spending transactions using `spentBy IN (...)`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spent_by_ids: Option<Vec<i64>>,
     /// Only return records updated after this timestamp.
     pub since: Option<NaiveDateTime>,
     /// Pagination (limit/offset).
     pub paged: Option<Paged>,
+    /// Lock candidate rows for an atomic claim within the supplied transaction.
+    /// This is local SQL execution state and is never sent to remote storage.
+    #[serde(skip)]
+    pub for_update: bool,
     /// Filter by transaction status (joined through the transactions table).
+    /// An empty vector matches nothing.
     pub tx_status: Option<Vec<TransactionStatus>>,
     /// If true, do not return the locking_script field (performance optimization).
     pub no_script: bool,
@@ -469,7 +485,7 @@ pub struct FindProvenTxReqsArgs {
     pub since: Option<NaiveDateTime>,
     /// Pagination (limit/offset).
     pub paged: Option<Paged>,
-    /// Multi-status filter: if set and non-empty, generates `status IN (...)` clause.
+    /// Multi-status filter: if set, generates a `status IN (...)` clause; an empty vector matches nothing.
     /// Takes precedence over `partial.status` if both are set.
     pub statuses: Option<Vec<ProvenTxReqStatus>>,
 }
@@ -601,7 +617,7 @@ pub struct FindTransactionsArgs {
     pub since: Option<NaiveDateTime>,
     /// Pagination (limit/offset).
     pub paged: Option<Paged>,
-    /// Filter by multiple statuses.
+    /// Filter by multiple statuses. An empty vector matches nothing.
     pub status: Option<Vec<TransactionStatus>>,
     /// If true, do not return raw_tx and input_beef fields.
     pub no_raw_tx: bool,
@@ -635,6 +651,10 @@ pub struct TxLabelPartial {
 pub struct FindTxLabelsArgs {
     /// Column equality filters.
     pub partial: TxLabelPartial,
+    /// Filter by label IDs using `txLabelId IN (...)`.
+    pub tx_label_ids: Option<Vec<i64>>,
+    /// Filter by label text using `label IN (...)`. An empty vector matches nothing.
+    pub labels: Option<Vec<String>>,
     /// Only return records updated after this timestamp.
     pub since: Option<NaiveDateTime>,
     /// Pagination (limit/offset).
@@ -667,6 +687,8 @@ pub struct TxLabelMapPartial {
 pub struct FindTxLabelMapsArgs {
     /// Column equality filters.
     pub partial: TxLabelMapPartial,
+    /// Filter by transaction IDs using `transactionId IN (...)`.
+    pub transaction_ids: Option<Vec<i64>>,
     /// Only return records updated after this timestamp.
     pub since: Option<NaiveDateTime>,
     /// Pagination (limit/offset).

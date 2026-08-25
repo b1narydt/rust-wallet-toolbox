@@ -6,7 +6,7 @@
 
 use chrono::Utc;
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use crate::error::{WalletError, WalletResult};
 use crate::status::TransactionStatus;
@@ -407,14 +407,18 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             }
 
             // Mark as spent
-            let update = OutputPartial {
-                spendable: Some(false),
-                spent_by: Some(transaction_id),
-                ..Default::default()
-            };
-            storage
-                .update_output(output.output_id, &update, trx_opt)
+            let updated = storage
+                .mark_inputs_spent(&[output.output_id], transaction_id, user_id, trx_opt)
                 .await?;
+            if updated != 1 {
+                return Err(WalletError::InvalidParameter {
+                    parameter: format!("inputs[{vin}]"),
+                    must_be: format!(
+                        "spendable output. output {}:{} is not spendable.",
+                        input.outpoint.txid, input.outpoint.vout
+                    ),
+                });
+            }
 
             fixed_inputs.push(FixedInput {
                 satoshis: output.satoshis as u64,
@@ -490,6 +494,11 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         })
         .collect();
 
+    // Claim the planned funding inputs. A short row count means a competing
+    // writer took one first; abort so the enclosing transaction rolls back and
+    // the caller retries against fresh state. This mirrors the Go reference,
+    // which surfaces ErrUTXOContention rather than replanning in place.
+
     // --- Query available change UTXOs ---
     // Find spendable outputs in the default basket, ordered by satoshis ASC.
     // Note: we do NOT filter by change=true here. The TS implementation's
@@ -518,6 +527,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             ..Default::default()
         },
         tx_status: Some(change_tx_status),
+        for_update: true,
         ..Default::default()
     };
     let mut available_change_outputs = storage.find_outputs(&change_find_args, trx_opt).await?;
@@ -625,29 +635,36 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         &available_change,
     )?;
 
-    // --- Allocate change inputs in storage ---
-    // Mark allocated change UTXOs as spent
-    let mut allocated_outputs: Vec<Output> = Vec::new();
-    for alloc in &change_result.allocated_change_inputs {
-        let update = OutputPartial {
-            spendable: Some(false),
-            spent_by: Some(transaction_id),
-            ..Default::default()
-        };
-        storage
-            .update_output(alloc.output_id, &update, trx_opt)
-            .await?;
+    // Deduplicate before constructing the SQL IN list and expected count.
+    let claimed_output_ids: BTreeSet<i64> = change_result
+        .allocated_change_inputs
+        .iter()
+        .map(|allocated| allocated.output_id)
+        .collect();
+    let claimed_output_ids: Vec<i64> = claimed_output_ids.into_iter().collect();
+    let updated = storage
+        .mark_inputs_spent(&claimed_output_ids, transaction_id, user_id, trx_opt)
+        .await?;
 
-        // Find the output record for input building (basket change or a
-        // caller-named noSendChange output)
-        if let Some(output) = available_change_outputs
-            .iter()
-            .chain(no_send_change_in.iter())
-            .find(|o| o.output_id == alloc.output_id)
-        {
-            allocated_outputs.push(output.clone());
-        }
+    if updated != claimed_output_ids.len() as i64 {
+        return Err(WalletError::InvalidOperation(format!(
+            "utxo contention: {} of {} planned funding inputs were claimed by another \
+             transaction; retry createAction",
+            claimed_output_ids.len() as i64 - updated,
+            claimed_output_ids.len()
+        )));
     }
+    let allocated_outputs: Vec<Output> = change_result
+        .allocated_change_inputs
+        .iter()
+        .filter_map(|allocated| {
+            available_change_outputs
+                .iter()
+                .chain(no_send_change_in.iter())
+                .find(|output| output.output_id == allocated.output_id)
+                .cloned()
+        })
+        .collect();
 
     // --- Generate derivation prefix for this transaction ---
     let derivation_prefix = random_bytes_base64(16);
@@ -1375,6 +1392,367 @@ mod tests {
             spent_count > 0,
             "at least one change UTXO should be allocated (spentBy set)"
         );
+    }
+
+    #[tokio::test]
+    async fn restored_change_with_stale_spent_by_remains_spendable() {
+        let (storage, user_id, basket_id) = setup_test_storage().await;
+        let now = Utc::now().naive_utc();
+        let failed_transaction_id = storage
+            .insert_transaction(
+                &Transaction {
+                    created_at: now,
+                    updated_at: now,
+                    transaction_id: 0,
+                    user_id,
+                    proven_tx_id: None,
+                    status: TransactionStatus::Failed,
+                    reference: "f1_failed_spender".to_string(),
+                    is_outgoing: true,
+                    satoshis: 0,
+                    description: "failed transaction whose inputs were restored".to_string(),
+                    version: Some(1),
+                    lock_time: Some(0),
+                    txid: None,
+                    input_beef: None,
+                    raw_tx: None,
+                },
+                None,
+            )
+            .await
+            .expect("insert failed spending transaction");
+
+        let change_outputs = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        user_id: Some(user_id),
+                        basket_id: Some(basket_id),
+                        change: Some(true),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find seeded change outputs");
+        assert!(!change_outputs.is_empty());
+
+        for output in &change_outputs {
+            storage
+                .update_output(
+                    output.output_id,
+                    &OutputPartial {
+                        spendable: Some(true),
+                        spent_by: Some(failed_transaction_id),
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .await
+                .expect("reproduce stale signer release state");
+        }
+
+        let args = StorageCreateActionArgs {
+            description: "F1 restored-change regression".to_string(),
+            inputs: vec![],
+            outputs: vec![StorageCreateActionOutput {
+                locking_script: "76a91400000000000000000000000000000000000000008ac".to_string(),
+                satoshis: 3_000,
+                output_description: "payment from restored change".to_string(),
+                basket: None,
+                custom_instructions: None,
+                tags: vec![],
+            }],
+            lock_time: 0,
+            version: 1,
+            labels: vec![],
+            options: StorageCreateActionOptions::default(),
+            input_beef: None,
+            is_new_tx: true,
+            is_sign_action: false,
+            is_no_send: false,
+            is_delayed: false,
+            is_send_with: false,
+            is_remix_change: false,
+            is_test_werr_review_actions: None,
+            include_all_source_transactions: false,
+            random_vals: None,
+        };
+
+        storage_create_action(&storage, user_id, &args, None)
+            .await
+            .expect("restored change must remain legitimately spendable");
+    }
+
+    #[tokio::test]
+    async fn short_funding_claim_rolls_back_every_partial_claim() {
+        let (storage, user_id, _basket_id) = setup_test_storage().await;
+        let outputs_before = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        user_id: Some(user_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find seeded outputs");
+        let candidate = outputs_before
+            .iter()
+            .min_by_key(|output| output.satoshis)
+            .expect("seeded candidate");
+        let transactions_before = storage
+            .find_transactions(
+                &FindTransactionsArgs {
+                    partial: TransactionPartial {
+                        user_id: Some(user_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find seeded transactions");
+        let failed_transaction_id = transactions_before
+            .iter()
+            .map(|transaction| transaction.transaction_id)
+            .max()
+            .expect("seeded source transaction")
+            + 1;
+
+        sqlx::query("CREATE TABLE claim_gate (armed INTEGER NOT NULL)")
+            .execute(&storage.write_pool)
+            .await
+            .expect("create one-shot claim gate");
+        sqlx::query("INSERT INTO claim_gate (armed) VALUES (1)")
+            .execute(&storage.write_pool)
+            .await
+            .expect("arm claim gate");
+        sqlx::query(&format!(
+            "CREATE TRIGGER skip_first_funding_claim BEFORE UPDATE OF spentBy ON outputs \
+             WHEN OLD.outputId = {} AND NEW.spentBy IS NOT NULL \
+             AND (SELECT armed FROM claim_gate) = 1 \
+             BEGIN \
+               UPDATE claim_gate SET armed = 0; \
+               SELECT RAISE(IGNORE); \
+             END",
+            candidate.output_id
+        ))
+        .execute(&storage.write_pool)
+        .await
+        .expect("install one-shot partial-claim trigger");
+
+        let args = StorageCreateActionArgs {
+            description: "partial claim rollback regression".to_string(),
+            inputs: vec![],
+            outputs: vec![StorageCreateActionOutput {
+                locking_script: "76a91400000000000000000000000000000000000000008ac".to_string(),
+                satoshis: 22_000,
+                output_description: "payment requiring multiple inputs".to_string(),
+                basket: None,
+                custom_instructions: None,
+                tags: vec![],
+            }],
+            lock_time: 0,
+            version: 1,
+            labels: vec![],
+            options: StorageCreateActionOptions::default(),
+            input_beef: None,
+            is_new_tx: true,
+            is_sign_action: false,
+            is_no_send: false,
+            is_delayed: false,
+            is_send_with: false,
+            is_remix_change: false,
+            is_test_werr_review_actions: None,
+            include_all_source_transactions: false,
+            random_vals: None,
+        };
+        let err = storage_create_action(&storage, user_id, &args, None)
+            .await
+            .expect_err("a short funding claim must abort createAction");
+        assert!(matches!(
+            err,
+            WalletError::InvalidOperation(message) if message.starts_with("utxo contention:")
+        ));
+
+        let transactions_after = storage
+            .find_transactions(
+                &FindTransactionsArgs {
+                    partial: TransactionPartial {
+                        user_id: Some(user_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find transactions after contention");
+        assert_eq!(transactions_after.len(), transactions_before.len());
+        assert!(
+            transactions_after
+                .iter()
+                .all(|transaction| transaction.transaction_id != failed_transaction_id),
+            "the failed createAction transaction must be rolled back"
+        );
+
+        let outputs_after = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        user_id: Some(user_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find outputs after contention");
+        assert_eq!(outputs_after.len(), outputs_before.len());
+        assert!(
+            outputs_after
+                .iter()
+                .all(|output| output.spent_by != Some(failed_transaction_id)),
+            "no output may retain the failed transaction's spentBy"
+        );
+        assert!(
+            outputs_after
+                .iter()
+                .all(|output| output.spendable && output.spent_by.is_none()),
+            "rollback must leave every seeded output spendable and unclaimed"
+        );
+    }
+
+    #[tokio::test]
+    async fn caller_supplied_input_rejects_a_short_guarded_claim() {
+        let (storage, user_id, _basket_id) = setup_test_storage().await;
+        let source_txid = "aaaa1111bbbb2222cccc3333dddd4444aaaa1111bbbb2222cccc3333dddd4444";
+
+        let target = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        user_id: Some(user_id),
+                        txid: Some(source_txid.to_string()),
+                        vout: Some(0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find caller-supplied input")
+            .into_iter()
+            .next()
+            .expect("seeded output");
+
+        let now = Utc::now().naive_utc();
+        let competing_transaction_id = storage
+            .insert_transaction(
+                &Transaction {
+                    created_at: now,
+                    updated_at: now,
+                    transaction_id: 0,
+                    user_id,
+                    proven_tx_id: None,
+                    status: TransactionStatus::Unsigned,
+                    reference: "caller_input_competitor".to_string(),
+                    is_outgoing: true,
+                    satoshis: 0,
+                    description: "competing caller-input claim".to_string(),
+                    version: Some(1),
+                    lock_time: Some(0),
+                    txid: None,
+                    input_beef: None,
+                    raw_tx: None,
+                },
+                None,
+            )
+            .await
+            .expect("insert competing transaction");
+        storage
+            .update_output(
+                target.output_id,
+                &OutputPartial {
+                    spent_by: Some(competing_transaction_id),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("record competing claim");
+
+        let args = StorageCreateActionArgs {
+            description: "caller-supplied guarded claim".to_string(),
+            inputs: vec![crate::storage::action_types::StorageCreateActionInput {
+                outpoint: crate::storage::action_types::StorageOutPoint {
+                    txid: source_txid.to_string(),
+                    vout: 0,
+                },
+                input_description: "caller input".to_string(),
+                unlocking_script_length: 108,
+                sequence_number: 0xFFFF_FFFF,
+            }],
+            outputs: vec![StorageCreateActionOutput {
+                locking_script: "76a91400000000000000000000000000000000000000008ac".to_string(),
+                satoshis: 1_000,
+                output_description: "payment output".to_string(),
+                basket: None,
+                custom_instructions: None,
+                tags: vec![],
+            }],
+            lock_time: 0,
+            version: 1,
+            labels: vec![],
+            options: StorageCreateActionOptions::default(),
+            input_beef: None,
+            is_new_tx: true,
+            is_sign_action: false,
+            is_no_send: false,
+            is_delayed: false,
+            is_send_with: false,
+            is_remix_change: false,
+            is_test_werr_review_actions: None,
+            include_all_source_transactions: false,
+            random_vals: None,
+        };
+
+        let err = storage_create_action(&storage, user_id, &args, None)
+            .await
+            .expect_err("a short caller-input claim must fail");
+        assert!(matches!(
+            err,
+            WalletError::InvalidParameter { parameter, must_be }
+                if parameter == "inputs[0]"
+                    && must_be
+                        == format!(
+                            "spendable output. output {source_txid}:0 is not spendable."
+                        )
+        ));
+
+        let after = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        output_id: Some(target.output_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("read caller-supplied input after rejection");
+        assert_eq!(after[0].spent_by, Some(competing_transaction_id));
     }
 
     /// Set up storage holding exactly one spendable change UTXO whose parent

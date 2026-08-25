@@ -303,8 +303,9 @@ pub struct WalletStorageManager {
     pub(crate) sp_lock: tokio::sync::Mutex<()>,
     /// Manager-level spend lock. Serializes UTXO-mutating operations
     /// (createAction/signAction/internalizeAction/abortAction/relinquishOutput)
-    /// across ALL `Wallet` instances sharing this manager, preventing
-    /// double-spend from concurrent callers on shared storage.
+    /// across all `Wallet` instances sharing this manager. Cross-process
+    /// concurrent funding claims are made safe by the storage-level atomic
+    /// guarded update and its checked row count, not by this process-local lock.
     pub(crate) spend_lock: tokio::sync::Mutex<()>,
     /// True once `make_available()` completes successfully.
     is_available_flag: AtomicBool,
@@ -1258,6 +1259,19 @@ impl WalletStorageManager {
     ) -> WalletResult<i64> {
         let active = self.get_active().await?;
         active.update_output_trx(id, update, trx).await
+    }
+
+    /// Atomically release output IDs claimed by the transaction or unclaimed.
+    pub async fn release_inputs_spent_by_trx(
+        &self,
+        output_ids: &[i64],
+        transaction_id: i64,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64> {
+        let active = self.get_active().await?;
+        active
+            .release_inputs_spent_by_trx(output_ids, transaction_id, trx)
+            .await
     }
 
     pub async fn update_proven_tx_req_trx(

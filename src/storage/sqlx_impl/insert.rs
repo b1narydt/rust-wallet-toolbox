@@ -943,9 +943,14 @@ mod postgres_insert_impl {
     use sqlx::{Postgres, Row};
 
     use crate::error::{WalletError, WalletResult};
+    use crate::storage::sqlx_impl::dialect::Dialect;
     use crate::storage::sqlx_impl::StorageSqlx;
     use crate::storage::TrxToken;
     use crate::tables::*;
+
+    fn qc(col: &str) -> String {
+        Dialect::Postgres.quote_column(col)
+    }
 
     macro_rules! exec_insert_pg {
         ($storage:expr, $sql:expr, $trx:expr, $( $bind:expr ),* $(,)?) => {{
@@ -1001,12 +1006,19 @@ mod postgres_insert_impl {
             user: &User,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO users (created_at, updated_at, identityKey, activeStorage) VALUES ($1, $2, $3, $4) RETURNING userId";
-            let created = user.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = user.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO users ({}, {}, {}, {}) VALUES ($1, $2, $3, $4) RETURNING {}",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("identityKey"),
+                qc("activeStorage"),
+                qc("userId")
+            );
+            let created = user.created_at;
+            let updated = user.updated_at;
             exec_insert_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1020,12 +1032,26 @@ mod postgres_insert_impl {
             cert: &Certificate,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO certificates (created_at, updated_at, userId, type, serialNumber, certifier, subject, verifier, revocationOutpoint, signature, isDeleted) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING certificateId";
-            let created = cert.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = cert.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO certificates ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING {}",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("userId"),
+                qc("type"),
+                qc("serialNumber"),
+                qc("certifier"),
+                qc("subject"),
+                qc("verifier"),
+                qc("revocationOutpoint"),
+                qc("signature"),
+                qc("isDeleted"),
+                qc("certificateId")
+            );
+            let created = cert.created_at;
+            let updated = cert.updated_at;
             exec_insert_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1046,12 +1072,21 @@ mod postgres_insert_impl {
             field: &CertificateField,
             trx: Option<&TrxToken>,
         ) -> WalletResult<()> {
-            let sql = "INSERT INTO certificate_fields (created_at, updated_at, userId, certificateId, fieldName, fieldValue, masterKey) VALUES ($1, $2, $3, $4, $5, $6, $7)";
-            let created = field.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = field.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO certificate_fields ({}, {}, {}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("userId"),
+                qc("certificateId"),
+                qc("fieldName"),
+                qc("fieldValue"),
+                qc("masterKey")
+            );
+            let created = field.created_at;
+            let updated = field.updated_at;
             exec_insert_no_id_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1068,12 +1103,23 @@ mod postgres_insert_impl {
             c: &Commission,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO commissions (created_at, updated_at, userId, transactionId, satoshis, keyOffset, isRedeemed, lockingScript) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING commissionId";
-            let created = c.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = c.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO commissions ({}, {}, {}, {}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING {}",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("userId"),
+                qc("transactionId"),
+                qc("satoshis"),
+                qc("keyOffset"),
+                qc("isRedeemed"),
+                qc("lockingScript"),
+                qc("commissionId")
+            );
+            let created = c.created_at;
+            let updated = c.updated_at;
             exec_insert_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1091,10 +1137,17 @@ mod postgres_insert_impl {
             e: &MonitorEvent,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO monitor_events (created_at, updated_at, event, details) VALUES ($1, $2, $3, $4) RETURNING id";
-            let created = e.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = e.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            exec_insert_pg!(self, sql, trx, created, updated, &e.event, &e.details)
+            let sql = format!(
+                "INSERT INTO monitor_events ({}, {}, {}, {}) VALUES ($1, $2, $3, $4) RETURNING {}",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("event"),
+                qc("details"),
+                qc("id")
+            );
+            let created = e.created_at;
+            let updated = e.updated_at;
+            exec_insert_pg!(self, &sql, trx, created, updated, &e.event, &e.details)
         }
 
         pub(crate) async fn insert_output_basket_impl(
@@ -1102,12 +1155,22 @@ mod postgres_insert_impl {
             b: &OutputBasket,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO output_baskets (created_at, updated_at, userId, name, numberOfDesiredUTXOs, minimumDesiredUTXOValue, isDeleted) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING basketId";
-            let created = b.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = b.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO output_baskets ({}, {}, {}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING {}",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("userId"),
+                qc("name"),
+                qc("numberOfDesiredUTXOs"),
+                qc("minimumDesiredUTXOValue"),
+                qc("isDeleted"),
+                qc("basketId")
+            );
+            let created = b.created_at;
+            let updated = b.updated_at;
             exec_insert_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1124,12 +1187,20 @@ mod postgres_insert_impl {
             t: &OutputTag,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO output_tags (created_at, updated_at, userId, tag, isDeleted) VALUES ($1, $2, $3, $4, $5) RETURNING outputTagId";
-            let created = t.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = t.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO output_tags ({}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5) RETURNING {}",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("userId"),
+                qc("tag"),
+                qc("isDeleted"),
+                qc("outputTagId")
+            );
+            let created = t.created_at;
+            let updated = t.updated_at;
             exec_insert_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1144,12 +1215,19 @@ mod postgres_insert_impl {
             m: &OutputTagMap,
             trx: Option<&TrxToken>,
         ) -> WalletResult<()> {
-            let sql = "INSERT INTO output_tags_map (created_at, updated_at, outputTagId, outputId, isDeleted) VALUES ($1, $2, $3, $4, $5)";
-            let created = m.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = m.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO output_tags_map ({}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5)",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("outputTagId"),
+                qc("outputId"),
+                qc("isDeleted")
+            );
+            let created = m.created_at;
+            let updated = m.updated_at;
             exec_insert_no_id_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1164,13 +1242,40 @@ mod postgres_insert_impl {
             o: &Output,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO outputs (created_at, updated_at, userId, transactionId, basketId, spendable, change, vout, satoshis, providedBy, purpose, type, outputDescription, txid, senderIdentityKey, derivationPrefix, derivationSuffix, customInstructions, spentBy, sequenceNumber, spendingDescription, scriptLength, scriptOffset, lockingScript) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) RETURNING outputId";
-            let created = o.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = o.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO outputs ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) RETURNING {}",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("userId"),
+                qc("transactionId"),
+                qc("basketId"),
+                qc("spendable"),
+                qc("change"),
+                qc("vout"),
+                qc("satoshis"),
+                qc("providedBy"),
+                qc("purpose"),
+                qc("type"),
+                qc("outputDescription"),
+                qc("txid"),
+                qc("senderIdentityKey"),
+                qc("derivationPrefix"),
+                qc("derivationSuffix"),
+                qc("customInstructions"),
+                qc("spentBy"),
+                qc("sequenceNumber"),
+                qc("spendingDescription"),
+                qc("scriptLength"),
+                qc("scriptOffset"),
+                qc("lockingScript"),
+                qc("outputId")
+            );
+            let created = o.created_at;
+            let updated = o.updated_at;
             let provided_by_str = o.provided_by.to_string();
             exec_insert_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1204,12 +1309,24 @@ mod postgres_insert_impl {
             p: &ProvenTx,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO proven_txs (created_at, updated_at, txid, height, \"index\", merklePath, rawTx, blockHash, merkleRoot) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING provenTxId";
-            let created = p.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = p.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO proven_txs ({}, {}, {}, {}, {}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING {}",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("txid"),
+                qc("height"),
+                qc("index"),
+                qc("merklePath"),
+                qc("rawTx"),
+                qc("blockHash"),
+                qc("merkleRoot"),
+                qc("provenTxId")
+            );
+            let created = p.created_at;
+            let updated = p.updated_at;
             exec_insert_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1228,13 +1345,28 @@ mod postgres_insert_impl {
             r: &ProvenTxReq,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO proven_tx_reqs (created_at, updated_at, provenTxId, status, attempts, notified, txid, batch, history, notify, rawTx, inputBEEF) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING provenTxReqId";
-            let created = r.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = r.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO proven_tx_reqs ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING {}",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("provenTxId"),
+                qc("status"),
+                qc("attempts"),
+                qc("notified"),
+                qc("txid"),
+                qc("batch"),
+                qc("history"),
+                qc("notify"),
+                qc("rawTx"),
+                qc("inputBEEF"),
+                qc("provenTxReqId")
+            );
+            let created = r.created_at;
+            let updated = r.updated_at;
             let status_str = r.status.to_string();
             exec_insert_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1256,13 +1388,30 @@ mod postgres_insert_impl {
             t: &crate::tables::Transaction,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO transactions (created_at, updated_at, userId, provenTxId, status, reference, isOutgoing, satoshis, description, version, lockTime, txid, inputBEEF, rawTx) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING transactionId";
-            let created = t.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = t.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO transactions ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING {}",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("userId"),
+                qc("provenTxId"),
+                qc("status"),
+                qc("reference"),
+                qc("isOutgoing"),
+                qc("satoshis"),
+                qc("description"),
+                qc("version"),
+                qc("lockTime"),
+                qc("txid"),
+                qc("inputBEEF"),
+                qc("rawTx"),
+                qc("transactionId")
+            );
+            let created = t.created_at;
+            let updated = t.updated_at;
             let status_str = t.status.to_string();
             exec_insert_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1286,12 +1435,20 @@ mod postgres_insert_impl {
             l: &TxLabel,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO tx_labels (created_at, updated_at, userId, label, isDeleted) VALUES ($1, $2, $3, $4, $5) RETURNING txLabelId";
-            let created = l.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = l.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO tx_labels ({}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5) RETURNING {}",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("userId"),
+                qc("label"),
+                qc("isDeleted"),
+                qc("txLabelId")
+            );
+            let created = l.created_at;
+            let updated = l.updated_at;
             exec_insert_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1306,12 +1463,19 @@ mod postgres_insert_impl {
             m: &TxLabelMap,
             trx: Option<&TrxToken>,
         ) -> WalletResult<()> {
-            let sql = "INSERT INTO tx_labels_map (created_at, updated_at, txLabelId, transactionId, isDeleted) VALUES ($1, $2, $3, $4, $5)";
-            let created = m.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = m.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO tx_labels_map ({}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5)",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("txLabelId"),
+                qc("transactionId"),
+                qc("isDeleted")
+            );
+            let created = m.created_at;
+            let updated = m.updated_at;
             exec_insert_no_id_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1326,14 +1490,30 @@ mod postgres_insert_impl {
             ss: &SyncState,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            let sql = "INSERT INTO sync_states (created_at, updated_at, userId, storageIdentityKey, storageName, status, init, refNum, syncMap, \"when\", satoshis, errorLocal, errorOther) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING syncStateId";
-            let created = ss.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = ss.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO sync_states ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING {}",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("userId"),
+                qc("storageIdentityKey"),
+                qc("storageName"),
+                qc("status"),
+                qc("init"),
+                qc("refNum"),
+                qc("syncMap"),
+                qc("when"),
+                qc("satoshis"),
+                qc("errorLocal"),
+                qc("errorOther"),
+                qc("syncStateId")
+            );
+            let created = ss.created_at;
+            let updated = ss.updated_at;
             let status_str = ss.status.to_string();
-            let when_str = ss.when.map(|w| w.format("%Y-%m-%d %H:%M:%S").to_string());
+            let when_value = ss.when;
             exec_insert_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,
@@ -1344,7 +1524,7 @@ mod postgres_insert_impl {
                 ss.init,
                 &ss.ref_num,
                 &ss.sync_map,
-                &when_str,
+                when_value,
                 ss.satoshis,
                 &ss.error_local,
                 &ss.error_other
@@ -1356,13 +1536,22 @@ mod postgres_insert_impl {
             s: &Settings,
             trx: Option<&TrxToken>,
         ) -> WalletResult<()> {
-            let sql = "INSERT INTO settings (created_at, updated_at, storageIdentityKey, storageName, chain, dbtype, maxOutputScript) VALUES ($1, $2, $3, $4, $5, $6, $7)";
-            let created = s.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-            let updated = s.updated_at.format("%Y-%m-%d %H:%M:%S").to_string();
+            let sql = format!(
+                "INSERT INTO settings ({}, {}, {}, {}, {}, {}, {}) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                qc("created_at"),
+                qc("updated_at"),
+                qc("storageIdentityKey"),
+                qc("storageName"),
+                qc("chain"),
+                qc("dbtype"),
+                qc("maxOutputScript")
+            );
+            let created = s.created_at;
+            let updated = s.updated_at;
             let chain_str = s.chain.to_string();
             exec_insert_no_id_pg!(
                 self,
-                sql,
+                &sql,
                 trx,
                 created,
                 updated,

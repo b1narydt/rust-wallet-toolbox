@@ -282,6 +282,27 @@ mod sqlite_impl {
             self.update_output_impl(id, update, trx).await
         }
 
+        async fn mark_inputs_spent(
+            &self,
+            output_ids: &[i64],
+            transaction_id: i64,
+            user_id: i64,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
+            self.mark_inputs_spent_impl(output_ids, transaction_id, user_id, trx)
+                .await
+        }
+
+        async fn release_inputs_spent_by(
+            &self,
+            output_ids: &[i64],
+            transaction_id: i64,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
+            self.release_inputs_spent_by_impl(output_ids, transaction_id, trx)
+                .await
+        }
+
         async fn update_proven_tx(
             &self,
             id: i64,
@@ -419,20 +440,10 @@ mod sqlite_impl {
                 )
                 .await?;
 
-            for output in &outputs {
-                self.update_output_impl(
-                    output.output_id,
-                    &OutputPartial {
-                        spendable: Some(true),
-                        spent_by: Some(0),
-                        ..Default::default()
-                    },
-                    trx,
-                )
-                .await?;
-            }
-
-            Ok(outputs.len() as u64)
+            let output_ids: Vec<i64> = outputs.iter().map(|output| output.output_id).collect();
+            Ok(self
+                .release_inputs_spent_by_impl(&output_ids, tx_id, trx)
+                .await? as u64)
         }
 
         async fn update_transactions_status(
@@ -945,7 +956,8 @@ macro_rules! impl_storage_rw_and_provider {
         extract_trx = $extract_trx:path,
         migrate_fn = $migrate_fn:path,
         trx_name = $trx_name:literal,
-        dbtype_str = $dbtype_str:literal
+        dbtype_str = $dbtype_str:literal,
+        dialect = $dialect:expr
     ) => {
         #[cfg(feature = $feature)]
         mod $mod_name {
@@ -1041,8 +1053,17 @@ macro_rules! impl_storage_rw_and_provider {
                     before_id: i64,
                     _trx: Option<&TrxToken>,
                 ) -> WalletResult<u64> {
-                    let sql = "DELETE FROM monitor_events WHERE event = ? AND id < ?";
-                    let result = sqlx::query(sql)
+                    // Placeholders are dialect-specific: `?` for MySQL, `$N` for
+                    // PostgreSQL. A hardcoded `?` here is a syntax error on
+                    // PostgreSQL, which this macro also generates.
+                    let sql = format!(
+                        "DELETE FROM monitor_events WHERE {} = {} AND {} < {}",
+                        $dialect.quote_column("event"),
+                        crate::storage::sqlx_impl::dialect::placeholder($dialect, 1),
+                        $dialect.quote_column("id"),
+                        crate::storage::sqlx_impl::dialect::placeholder($dialect, 2),
+                    );
+                    let result = sqlx::query(&sql)
                         .bind(event_name)
                         .bind(before_id)
                         .execute(&self.write_pool)
@@ -1195,6 +1216,25 @@ macro_rules! impl_storage_rw_and_provider {
                 ) -> WalletResult<i64> {
                     self.update_output_impl(id, u, trx).await
                 }
+                async fn mark_inputs_spent(
+                    &self,
+                    output_ids: &[i64],
+                    transaction_id: i64,
+                    user_id: i64,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.mark_inputs_spent_impl(output_ids, transaction_id, user_id, trx)
+                        .await
+                }
+                async fn release_inputs_spent_by(
+                    &self,
+                    output_ids: &[i64],
+                    transaction_id: i64,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
+                    self.release_inputs_spent_by_impl(output_ids, transaction_id, trx)
+                        .await
+                }
                 async fn update_proven_tx(
                     &self,
                     id: i64,
@@ -1250,6 +1290,30 @@ macro_rules! impl_storage_rw_and_provider {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
                     self.update_sync_state_impl(id, u, trx).await
+                }
+
+                async fn restore_consumed_inputs(
+                    &self,
+                    tx_id: i64,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<u64> {
+                    let outputs = self
+                        .find_outputs(
+                            &FindOutputsArgs {
+                                partial: OutputPartial {
+                                    spent_by: Some(tx_id),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                            trx,
+                        )
+                        .await?;
+                    let output_ids: Vec<i64> =
+                        outputs.iter().map(|output| output.output_id).collect();
+                    Ok(self
+                        .release_inputs_spent_by_impl(&output_ids, tx_id, trx)
+                        .await? as u64)
                 }
             }
 
@@ -1385,7 +1449,8 @@ impl_storage_rw_and_provider! {
     extract_trx = StorageSqlx::<sqlx::MySql>::extract_mysql_trx,
     migrate_fn = crate::migrations::run_mysql_migrations,
     trx_name = "MySQL",
-    dbtype_str = "MySQL"
+    dbtype_str = "MySQL",
+    dialect = crate::storage::sqlx_impl::dialect::Dialect::Mysql
 }
 
 impl_storage_rw_and_provider! {
@@ -1397,5 +1462,6 @@ impl_storage_rw_and_provider! {
     extract_trx = StorageSqlx::<sqlx::Postgres>::extract_pg_trx,
     migrate_fn = crate::migrations::run_postgres_migrations,
     trx_name = "PostgreSQL",
-    dbtype_str = "PostgreSQL"
+    dbtype_str = "PostgreSQL",
+    dialect = crate::storage::sqlx_impl::dialect::Dialect::Postgres
 }

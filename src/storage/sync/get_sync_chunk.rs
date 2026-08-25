@@ -264,6 +264,8 @@ pub async fn get_sync_chunk(
                             user_id: Some(user_id),
                             ..Default::default()
                         },
+                        tx_label_ids: None,
+                        labels: None,
                         since: args.sync_map.tx_label.max_updated_at,
                         paged: Some(Paged { limit, offset }),
                     },

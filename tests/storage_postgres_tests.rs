@@ -10,10 +10,12 @@
 
 #[cfg(feature = "postgres")]
 mod storage_postgres {
+    use std::collections::BTreeSet;
+
     use chrono::NaiveDateTime;
 
     use bsv_wallet_toolbox::error::WalletResult;
-    use bsv_wallet_toolbox::status::TransactionStatus;
+    use bsv_wallet_toolbox::status::{ProvenTxReqStatus, SyncStatus, TransactionStatus};
     use bsv_wallet_toolbox::storage::find_args::*;
     use bsv_wallet_toolbox::storage::sqlx_impl::PgStorage;
     use bsv_wallet_toolbox::storage::traits::provider::StorageProvider;
@@ -21,7 +23,7 @@ mod storage_postgres {
     use bsv_wallet_toolbox::storage::traits::reader_writer::StorageReaderWriter;
     use bsv_wallet_toolbox::storage::StorageConfig;
     use bsv_wallet_toolbox::tables::*;
-    use bsv_wallet_toolbox::types::Chain;
+    use bsv_wallet_toolbox::types::{Chain, StorageProvidedBy};
 
     /// Helper to create a PostgreSQL storage connected to the test database.
     ///
@@ -42,6 +44,362 @@ mod storage_postgres {
 
     fn test_datetime() -> NaiveDateTime {
         NaiveDateTime::parse_from_str("2024-01-15 10:30:00", "%Y-%m-%d %H:%M:%S").unwrap()
+    }
+
+    fn update_datetime() -> NaiveDateTime {
+        NaiveDateTime::parse_from_str("2025-02-03 04:05:06.123", "%Y-%m-%d %H:%M:%S%.3f").unwrap()
+    }
+
+    async fn insert_pg_user(storage: &PgStorage, identity_key: &str) -> i64 {
+        let now = test_datetime();
+        storage
+            .insert_user(
+                &User {
+                    created_at: now,
+                    updated_at: now,
+                    user_id: 0,
+                    identity_key: identity_key.to_string(),
+                    active_storage: String::new(),
+                },
+                None,
+            )
+            .await
+            .unwrap()
+    }
+
+    async fn insert_pg_transaction(
+        storage: &PgStorage,
+        user_id: i64,
+        status: TransactionStatus,
+        reference: &str,
+    ) -> i64 {
+        let now = test_datetime();
+        storage
+            .insert_transaction(
+                &Transaction {
+                    created_at: now,
+                    updated_at: now,
+                    transaction_id: 0,
+                    user_id,
+                    status,
+                    reference: reference.to_string(),
+                    is_outgoing: true,
+                    satoshis: 1_000,
+                    description: reference.to_string(),
+                    version: Some(1),
+                    lock_time: Some(0),
+                    txid: Some(format!("{reference:0<64}")),
+                    input_beef: None,
+                    raw_tx: None,
+                    proven_tx_id: None,
+                },
+                None,
+            )
+            .await
+            .unwrap()
+    }
+
+    async fn insert_pg_output(
+        storage: &PgStorage,
+        user_id: i64,
+        transaction_id: i64,
+        vout: i32,
+        spendable: bool,
+        spent_by: Option<i64>,
+        locking_script: Option<Vec<u8>>,
+    ) -> i64 {
+        let now = test_datetime();
+        storage
+            .insert_output(
+                &Output {
+                    created_at: now,
+                    updated_at: now,
+                    output_id: 0,
+                    user_id,
+                    transaction_id,
+                    basket_id: None,
+                    spendable,
+                    change: false,
+                    output_description: Some(format!("output-{vout}")),
+                    vout,
+                    satoshis: i64::from(vout) + 1_000,
+                    provided_by: StorageProvidedBy::Storage,
+                    purpose: "integration-test".to_string(),
+                    output_type: "P2PKH".to_string(),
+                    txid: Some(format!("{transaction_id:064x}")),
+                    sender_identity_key: None,
+                    derivation_prefix: None,
+                    derivation_suffix: None,
+                    custom_instructions: None,
+                    spent_by,
+                    sequence_number: Some(0),
+                    spending_description: None,
+                    script_length: locking_script.as_ref().map(|script| script.len() as i64),
+                    script_offset: None,
+                    locking_script,
+                },
+                None,
+            )
+            .await
+            .unwrap()
+    }
+
+    struct UpdateFixture {
+        settings_identity_key: String,
+        user_id: i64,
+        certificate_id: i64,
+        certificate_field_name: String,
+        commission_id: i64,
+        monitor_event_id: i64,
+        basket_id: i64,
+        output_tag_id: i64,
+        output_id: i64,
+        proven_tx_id: i64,
+        proven_tx_req_id: i64,
+        transaction_id: i64,
+        tx_label_id: i64,
+        sync_state_id: i64,
+    }
+
+    async fn setup_pg_update_fixture() -> (PgStorage, UpdateFixture) {
+        let storage = setup_pg_storage().await.unwrap();
+        let settings = storage.make_available().await.unwrap();
+        let now = test_datetime();
+        let user_id = insert_pg_user(&storage, "pg-update-user").await;
+        let transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Unprocessed,
+            "pg-update-transaction",
+        )
+        .await;
+        let certificate_id = storage
+            .insert_certificate(
+                &Certificate {
+                    created_at: now,
+                    updated_at: now,
+                    certificate_id: 0,
+                    user_id,
+                    cert_type: "identity".to_string(),
+                    serial_number: "pg-update-certificate".to_string(),
+                    certifier: "certifier".to_string(),
+                    subject: "subject".to_string(),
+                    verifier: None,
+                    revocation_outpoint: "outpoint.0".to_string(),
+                    signature: "old-signature".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let certificate_field_name = "name".to_string();
+        storage
+            .insert_certificate_field(
+                &CertificateField {
+                    created_at: now,
+                    updated_at: now,
+                    user_id,
+                    certificate_id,
+                    field_name: certificate_field_name.clone(),
+                    field_value: "old-value".to_string(),
+                    master_key: "master-key".to_string(),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let commission_id = storage
+            .insert_commission(
+                &Commission {
+                    created_at: now,
+                    updated_at: now,
+                    commission_id: 0,
+                    user_id,
+                    transaction_id,
+                    satoshis: 100,
+                    key_offset: "offset".to_string(),
+                    is_redeemed: false,
+                    locking_script: vec![0x51],
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let monitor_event_id = storage
+            .insert_monitor_event(
+                &MonitorEvent {
+                    created_at: now,
+                    updated_at: now,
+                    id: 0,
+                    event: "old-event".to_string(),
+                    details: Some("{}".to_string()),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let basket_id = storage
+            .insert_output_basket(
+                &OutputBasket {
+                    created_at: now,
+                    updated_at: now,
+                    basket_id: 0,
+                    user_id,
+                    name: "old-basket".to_string(),
+                    number_of_desired_utxos: 6,
+                    minimum_desired_utxo_value: 1_000,
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let output_id = insert_pg_output(
+            &storage,
+            user_id,
+            transaction_id,
+            0,
+            true,
+            None,
+            Some(vec![0x51]),
+        )
+        .await;
+        let output_tag_id = storage
+            .insert_output_tag(
+                &OutputTag {
+                    created_at: now,
+                    updated_at: now,
+                    output_tag_id: 0,
+                    user_id,
+                    tag: "old-tag".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_output_tag_map(
+                &OutputTagMap {
+                    created_at: now,
+                    updated_at: now,
+                    output_tag_id,
+                    output_id,
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let proven_tx_id = storage
+            .insert_proven_tx(
+                &ProvenTx {
+                    created_at: now,
+                    updated_at: now,
+                    proven_tx_id: 0,
+                    txid: "pg-update-proven-tx".to_string(),
+                    height: 800_000,
+                    index: 1,
+                    merkle_path: vec![1, 2, 3],
+                    raw_tx: vec![4, 5, 6],
+                    block_hash: "old-block-hash".to_string(),
+                    merkle_root: "merkle-root".to_string(),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let proven_tx_req_id = storage
+            .insert_proven_tx_req(
+                &ProvenTxReq {
+                    created_at: now,
+                    updated_at: now,
+                    proven_tx_req_id: 0,
+                    proven_tx_id: None,
+                    status: ProvenTxReqStatus::Unprocessed,
+                    attempts: 0,
+                    notified: false,
+                    txid: "pg-update-proven-tx-req".to_string(),
+                    batch: None,
+                    history: "{}".to_string(),
+                    notify: "{}".to_string(),
+                    raw_tx: vec![1, 2, 3],
+                    input_beef: None,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let tx_label_id = storage
+            .insert_tx_label(
+                &TxLabel {
+                    created_at: now,
+                    updated_at: now,
+                    tx_label_id: 0,
+                    user_id,
+                    label: "old-label".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_tx_label_map(
+                &TxLabelMap {
+                    created_at: now,
+                    updated_at: now,
+                    tx_label_id,
+                    transaction_id,
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let sync_state_id = storage
+            .insert_sync_state(
+                &SyncState {
+                    created_at: now,
+                    updated_at: now,
+                    sync_state_id: 0,
+                    user_id,
+                    storage_identity_key: "pg-update-remote-key".to_string(),
+                    storage_name: "remote".to_string(),
+                    status: SyncStatus::Unknown,
+                    init: false,
+                    ref_num: "pg-update-sync-state".to_string(),
+                    sync_map: "{}".to_string(),
+                    when: None,
+                    satoshis: None,
+                    error_local: None,
+                    error_other: None,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        (
+            storage,
+            UpdateFixture {
+                settings_identity_key: settings.storage_identity_key,
+                user_id,
+                certificate_id,
+                certificate_field_name,
+                commission_id,
+                monitor_event_id,
+                basket_id,
+                output_tag_id,
+                output_id,
+                proven_tx_id,
+                proven_tx_req_id,
+                transaction_id,
+                tx_label_id,
+                sync_state_id,
+            },
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -229,5 +587,2206 @@ mod storage_postgres {
             .await
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_find_outputs_no_script_projection() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-no-script-user").await;
+        let tx_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-no-script",
+        )
+        .await;
+        let script = vec![0x76, 0xa9, 0x14, 0x88, 0xac];
+        let output_id = insert_pg_output(
+            &storage,
+            user_id,
+            tx_id,
+            0,
+            true,
+            None,
+            Some(script.clone()),
+        )
+        .await;
+
+        // Probes: the no-script SELECT projection must omit script bytes while
+        // retaining every other output column, including the quoted `change` column.
+        let without_script = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        output_id: Some(output_id),
+                        ..Default::default()
+                    },
+                    no_script: true,
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(without_script.len(), 1);
+        assert!(
+            without_script[0]
+                .locking_script
+                .as_ref()
+                .map_or(true, Vec::is_empty),
+            "no_script=true should omit locking_script bytes"
+        );
+
+        let with_script = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        output_id: Some(output_id),
+                        ..Default::default()
+                    },
+                    no_script: false,
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(with_script.len(), 1);
+        assert_eq!(
+            with_script[0].locking_script.as_deref(),
+            Some(script.as_slice())
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_users_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        insert_pg_user(&storage, "pg-count-users").await;
+        let unpaged = storage
+            .count_users(&FindUsersArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_users(
+                &FindUsersArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_certificates_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-count-certificates").await;
+        storage
+            .insert_certificate(
+                &Certificate {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    certificate_id: 0,
+                    user_id,
+                    cert_type: "identity".to_string(),
+                    serial_number: "pg-count-certificates".to_string(),
+                    certifier: "certifier".to_string(),
+                    subject: "subject".to_string(),
+                    verifier: None,
+                    revocation_outpoint: "outpoint.0".to_string(),
+                    signature: "signature".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let unpaged = storage
+            .count_certificates(&FindCertificatesArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_certificates(
+                &FindCertificatesArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_certificate_fields_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-count-certificate-fields").await;
+        let certificate_id = storage
+            .insert_certificate(
+                &Certificate {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    certificate_id: 0,
+                    user_id,
+                    cert_type: "identity".to_string(),
+                    serial_number: "pg-count-certificate-fields".to_string(),
+                    certifier: "certifier".to_string(),
+                    subject: "subject".to_string(),
+                    verifier: None,
+                    revocation_outpoint: "outpoint.0".to_string(),
+                    signature: "signature".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_certificate_field(
+                &CertificateField {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    user_id,
+                    certificate_id,
+                    field_name: "name".to_string(),
+                    field_value: "encrypted".to_string(),
+                    master_key: "master-key".to_string(),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let unpaged = storage
+            .count_certificate_fields(&FindCertificateFieldsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_certificate_fields(
+                &FindCertificateFieldsArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_commissions_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-count-commissions").await;
+        let transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-count-commissions",
+        )
+        .await;
+        storage
+            .insert_commission(
+                &Commission {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    commission_id: 0,
+                    user_id,
+                    transaction_id,
+                    satoshis: 100,
+                    key_offset: "offset".to_string(),
+                    is_redeemed: false,
+                    locking_script: vec![0x51],
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let unpaged = storage
+            .count_commissions(&FindCommissionsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_commissions(
+                &FindCommissionsArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_monitor_events_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        storage
+            .insert_monitor_event(
+                &MonitorEvent {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    id: 0,
+                    event: "pg-count-monitor-events".to_string(),
+                    details: Some("{}".to_string()),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let unpaged = storage
+            .count_monitor_events(&FindMonitorEventsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_monitor_events(
+                &FindMonitorEventsArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_output_baskets_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-count-output-baskets").await;
+        storage
+            .insert_output_basket(
+                &OutputBasket {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    basket_id: 0,
+                    user_id,
+                    name: "count-basket".to_string(),
+                    number_of_desired_utxos: 6,
+                    minimum_desired_utxo_value: 1_000,
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let unpaged = storage
+            .count_output_baskets(&FindOutputBasketsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_output_baskets(
+                &FindOutputBasketsArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_output_tag_maps_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-count-output-tag-maps").await;
+        let transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-count-output-tag-maps",
+        )
+        .await;
+        let output_id =
+            insert_pg_output(&storage, user_id, transaction_id, 0, true, None, None).await;
+        let output_tag_id = storage
+            .insert_output_tag(
+                &OutputTag {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    output_tag_id: 0,
+                    user_id,
+                    tag: "count-tag-map".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_output_tag_map(
+                &OutputTagMap {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    output_tag_id,
+                    output_id,
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let unpaged = storage
+            .count_output_tag_maps(&FindOutputTagMapsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_output_tag_maps(
+                &FindOutputTagMapsArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_output_tags_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-count-output-tags").await;
+        storage
+            .insert_output_tag(
+                &OutputTag {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    output_tag_id: 0,
+                    user_id,
+                    tag: "count-tag".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let unpaged = storage
+            .count_output_tags(&FindOutputTagsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_output_tags(
+                &FindOutputTagsArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_outputs_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-count-outputs").await;
+        let transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-count-outputs",
+        )
+        .await;
+        insert_pg_output(&storage, user_id, transaction_id, 0, true, None, None).await;
+        let unpaged = storage
+            .count_outputs(&FindOutputsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_outputs(
+                &FindOutputsArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_proven_txs_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        storage
+            .insert_proven_tx(
+                &ProvenTx {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    proven_tx_id: 0,
+                    txid: "pg-count-proven-txs".to_string(),
+                    height: 800_000,
+                    index: 1,
+                    merkle_path: vec![1, 2, 3],
+                    raw_tx: vec![4, 5, 6],
+                    block_hash: "block-hash".to_string(),
+                    merkle_root: "merkle-root".to_string(),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let unpaged = storage
+            .count_proven_txs(&FindProvenTxsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_proven_txs(
+                &FindProvenTxsArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_proven_tx_reqs_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        storage
+            .insert_proven_tx_req(
+                &ProvenTxReq {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    proven_tx_req_id: 0,
+                    proven_tx_id: None,
+                    status: ProvenTxReqStatus::Unprocessed,
+                    attempts: 0,
+                    notified: false,
+                    txid: "pg-count-proven-tx-reqs".to_string(),
+                    batch: None,
+                    history: "{}".to_string(),
+                    notify: "{}".to_string(),
+                    raw_tx: vec![1, 2, 3],
+                    input_beef: None,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let unpaged = storage
+            .count_proven_tx_reqs(&FindProvenTxReqsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_proven_tx_reqs(
+                &FindProvenTxReqsArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_settings_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        // Settings has no public insert method; drop_all_data leaves this table empty.
+        let unpaged = storage
+            .count_settings(&FindSettingsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 0);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_settings(
+                &FindSettingsArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 0);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_sync_states_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-count-sync-states").await;
+        storage
+            .insert_sync_state(
+                &SyncState {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    sync_state_id: 0,
+                    user_id,
+                    storage_identity_key: "remote-key".to_string(),
+                    storage_name: "remote".to_string(),
+                    status: SyncStatus::Unknown,
+                    init: false,
+                    ref_num: "pg-count-sync-states".to_string(),
+                    sync_map: "{}".to_string(),
+                    when: None,
+                    satoshis: None,
+                    error_local: None,
+                    error_other: None,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let unpaged = storage
+            .count_sync_states(&FindSyncStatesArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_sync_states(
+                &FindSyncStatesArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_transactions_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-count-transactions").await;
+        insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-count-transactions",
+        )
+        .await;
+        let unpaged = storage
+            .count_transactions(&FindTransactionsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_transactions(
+                &FindTransactionsArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_tx_label_maps_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-count-tx-label-maps").await;
+        let transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-count-tx-label-maps",
+        )
+        .await;
+        let tx_label_id = storage
+            .insert_tx_label(
+                &TxLabel {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    tx_label_id: 0,
+                    user_id,
+                    label: "count-label-map".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_tx_label_map(
+                &TxLabelMap {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    tx_label_id,
+                    transaction_id,
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let unpaged = storage
+            .count_tx_label_maps(&FindTxLabelMapsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_tx_label_maps(
+                &FindTxLabelMapsArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_count_tx_labels_with_paged_args() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-count-tx-labels").await;
+        storage
+            .insert_tx_label(
+                &TxLabel {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    tx_label_id: 0,
+                    user_id,
+                    label: "count-label".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let unpaged = storage
+            .count_tx_labels(&FindTxLabelsArgs::default(), None)
+            .await
+            .unwrap();
+        assert_eq!(unpaged, 1);
+        // Probes: COUNT(*) with ORDER BY/LIMIT appended by the paged where-builder.
+        let paged = storage
+            .count_tx_labels(
+                &FindTxLabelsArgs {
+                    paged: Some(Paged {
+                        limit: 10,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(paged, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_find_outputs_non_empty_transaction_status_list() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-output-status-list").await;
+        let mut expected = BTreeSet::new();
+        for (index, status) in [
+            TransactionStatus::Completed,
+            TransactionStatus::Unproven,
+            TransactionStatus::Failed,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let transaction_id = insert_pg_transaction(
+                &storage,
+                user_id,
+                status,
+                &format!("pg-output-status-{index}"),
+            )
+            .await;
+            let output_id = insert_pg_output(
+                &storage,
+                user_id,
+                transaction_id,
+                index as i32,
+                true,
+                None,
+                None,
+            )
+            .await;
+            if index < 2 {
+                expected.insert(output_id);
+            }
+        }
+
+        let found = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        user_id: Some(user_id),
+                        ..Default::default()
+                    },
+                    tx_status: Some(vec![
+                        TransactionStatus::Completed,
+                        TransactionStatus::Unproven,
+                    ]),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        let actual: BTreeSet<_> = found.iter().map(|row| row.output_id).collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_find_outputs_empty_transaction_status_list_result() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-empty-output-status-list").await;
+        let transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-empty-output-status-list",
+        )
+        .await;
+        insert_pg_output(&storage, user_id, transaction_id, 0, true, None, None).await;
+
+        // Probes: an explicitly empty correlated-subquery IN-list may be
+        // accepted or rejected by the server dialect, but must not panic Rust.
+        let result = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    tx_status: Some(vec![]),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await;
+        println!("PostgreSQL empty tx_status IN-list result: {result:?}");
+        assert!(
+            result.is_ok() || result.is_err(),
+            "find_outputs must return a Result for an empty tx_status list"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_find_outputs_combined_filters() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-combined-output-user").await;
+        let other_user_id = insert_pg_user(&storage, "pg-combined-output-other").await;
+        let completed_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-combined-completed",
+        )
+        .await;
+        let unproven_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Unproven,
+            "pg-combined-unproven",
+        )
+        .await;
+        let other_tx_id = insert_pg_transaction(
+            &storage,
+            other_user_id,
+            TransactionStatus::Completed,
+            "pg-combined-other",
+        )
+        .await;
+        let expected_id = insert_pg_output(
+            &storage,
+            user_id,
+            completed_id,
+            0,
+            true,
+            None,
+            Some(vec![0x51]),
+        )
+        .await;
+        insert_pg_output(
+            &storage,
+            user_id,
+            completed_id,
+            1,
+            false,
+            None,
+            Some(vec![0x52]),
+        )
+        .await;
+        insert_pg_output(
+            &storage,
+            user_id,
+            unproven_id,
+            2,
+            true,
+            None,
+            Some(vec![0x53]),
+        )
+        .await;
+        insert_pg_output(
+            &storage,
+            other_user_id,
+            other_tx_id,
+            3,
+            true,
+            None,
+            Some(vec![0x54]),
+        )
+        .await;
+
+        let found = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        user_id: Some(user_id),
+                        spendable: Some(true),
+                        ..Default::default()
+                    },
+                    tx_status: Some(vec![TransactionStatus::Completed]),
+                    paged: Some(Paged {
+                        limit: 1,
+                        offset: 0,
+                    }),
+                    no_script: true,
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].output_id, expected_id);
+        assert!(found[0].locking_script.is_none());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_find_outputs_limit_offset_two_pages() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-paged-outputs").await;
+        let transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-paged-outputs",
+        )
+        .await;
+        let mut expected = BTreeSet::new();
+        for vout in 0..4 {
+            expected.insert(
+                insert_pg_output(&storage, user_id, transaction_id, vout, true, None, None).await,
+            );
+        }
+
+        let page = |offset| FindOutputsArgs {
+            partial: OutputPartial {
+                user_id: Some(user_id),
+                ..Default::default()
+            },
+            paged: Some(Paged { limit: 2, offset }),
+            ..Default::default()
+        };
+        let page_one = storage.find_outputs(&page(0), None).await.unwrap();
+        let page_two = storage.find_outputs(&page(2), None).await.unwrap();
+        assert_eq!(page_one.len(), 2);
+        assert_eq!(page_two.len(), 2);
+        let first_ids: BTreeSet<_> = page_one.iter().map(|row| row.output_id).collect();
+        let second_ids: BTreeSet<_> = page_two.iter().map(|row| row.output_id).collect();
+        assert!(first_ids.is_disjoint(&second_ids));
+        assert_eq!(
+            first_ids
+                .union(&second_ids)
+                .copied()
+                .collect::<BTreeSet<_>>(),
+            expected
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_find_outputs_zero_limit_result() {
+        let storage = setup_pg_storage().await.unwrap();
+        // Probes: LIMIT 0 handling must return a Result rather than panic.
+        let result = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    paged: Some(Paged {
+                        limit: 0,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await;
+        println!("PostgreSQL LIMIT 0 result: {result:?}");
+        assert!(
+            result.is_ok() || result.is_err(),
+            "find_outputs must return a Result for LIMIT 0"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_find_outputs_negative_limit_result() {
+        let storage = setup_pg_storage().await.unwrap();
+        // Probes: a negative LIMIT may be accepted or rejected by the server,
+        // but parameter handling must return a Result rather than panic.
+        let result = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    paged: Some(Paged {
+                        limit: -1,
+                        offset: 0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await;
+        println!("PostgreSQL LIMIT -1 result: {result:?}");
+        assert!(
+            result.is_ok() || result.is_err(),
+            "find_outputs must return a Result for LIMIT -1"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_list_actions_with_labels_inputs_outputs_and_scripts() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-list-actions-user").await;
+        let source_tx_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-list-actions-source",
+        )
+        .await;
+        let action_tx_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-list-actions-action",
+        )
+        .await;
+        let input_script = vec![0x51, 0x21];
+        let output_script = vec![0x76, 0xac];
+        insert_pg_output(
+            &storage,
+            user_id,
+            source_tx_id,
+            0,
+            false,
+            Some(action_tx_id),
+            Some(input_script.clone()),
+        )
+        .await;
+        insert_pg_output(
+            &storage,
+            user_id,
+            action_tx_id,
+            1,
+            true,
+            None,
+            Some(output_script.clone()),
+        )
+        .await;
+        let tx_label_id = storage
+            .insert_tx_label(
+                &TxLabel {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    tx_label_id: 0,
+                    user_id,
+                    label: "integration-action".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        storage
+            .insert_tx_label_map(
+                &TxLabelMap {
+                    created_at: test_datetime(),
+                    updated_at: test_datetime(),
+                    tx_label_id,
+                    transaction_id: action_tx_id,
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Probes: list_actions drives both no_script=true input/output queries.
+        let without_scripts: bsv::wallet::interfaces::ListActionsArgs =
+            serde_json::from_value(serde_json::json!({
+                "labels": ["integration-action"],
+                "labelQueryMode": "any",
+                "includeLabels": true,
+                "includeInputs": true,
+                "includeInputSourceLockingScripts": false,
+                "includeOutputs": true,
+                "includeOutputLockingScripts": false,
+                "limit": 10,
+                "offset": 0
+            }))
+            .unwrap();
+        let result = bsv_wallet_toolbox::storage::methods::list_actions::list_actions(
+            &storage,
+            "pg-list-actions-auth",
+            user_id,
+            &without_scripts,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.total_actions, 1);
+        assert_eq!(result.actions.len(), 1);
+        let action = &result.actions[0];
+        assert_eq!(
+            action.labels.as_deref(),
+            Some(&["integration-action".to_string()][..])
+        );
+        assert_eq!(action.inputs.as_deref().unwrap().len(), 1);
+        assert_eq!(action.outputs.as_deref().unwrap().len(), 1);
+        assert!(action.inputs.as_deref().unwrap()[0]
+            .source_locking_script
+            .is_none());
+        assert!(action.outputs.as_deref().unwrap()[0]
+            .locking_script
+            .is_none());
+
+        // The complementary flags drive no_script=false and preserve both scripts.
+        let with_scripts: bsv::wallet::interfaces::ListActionsArgs =
+            serde_json::from_value(serde_json::json!({
+                "labels": ["integration-action"],
+                "labelQueryMode": "any",
+                "includeLabels": true,
+                "includeInputs": true,
+                "includeInputSourceLockingScripts": true,
+                "includeOutputs": true,
+                "includeOutputLockingScripts": true,
+                "limit": 10,
+                "offset": 0
+            }))
+            .unwrap();
+        let result = bsv_wallet_toolbox::storage::methods::list_actions::list_actions(
+            &storage,
+            "pg-list-actions-auth",
+            user_id,
+            &with_scripts,
+            None,
+        )
+        .await
+        .unwrap();
+        let action = &result.actions[0];
+        assert_eq!(
+            action.inputs.as_deref().unwrap()[0]
+                .source_locking_script
+                .as_deref(),
+            Some(input_script.as_slice())
+        );
+        assert_eq!(
+            action.outputs.as_deref().unwrap()[0]
+                .locking_script
+                .as_deref(),
+            Some(output_script.as_slice())
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_delete_monitor_events_before_id_scopes_event_and_boundary() {
+        let storage = setup_pg_storage().await.unwrap();
+        let insert_event = |event: &str| MonitorEvent {
+            created_at: test_datetime(),
+            updated_at: test_datetime(),
+            id: 0,
+            event: event.to_string(),
+            details: Some("{}".to_string()),
+        };
+        let old_target_id = storage
+            .insert_monitor_event(&insert_event("target"), None)
+            .await
+            .unwrap();
+        let old_other_id = storage
+            .insert_monitor_event(&insert_event("other"), None)
+            .await
+            .unwrap();
+        let boundary_target_id = storage
+            .insert_monitor_event(&insert_event("target"), None)
+            .await
+            .unwrap();
+        let new_other_id = storage
+            .insert_monitor_event(&insert_event("other"), None)
+            .await
+            .unwrap();
+
+        // Probes: the shared server DELETE must use PostgreSQL placeholders and
+        // constrain both the event name and the strict id boundary.
+        let deleted = storage
+            .delete_monitor_events_before_id("target", boundary_target_id, None)
+            .await
+            .unwrap();
+        assert_eq!(deleted, 1);
+        let remaining = storage
+            .find_monitor_events(&FindMonitorEventsArgs::default(), None)
+            .await
+            .unwrap();
+        let remaining_ids: BTreeSet<_> = remaining.iter().map(|row| row.id).collect();
+        assert!(!remaining_ids.contains(&old_target_id));
+        assert!(remaining_ids.contains(&old_other_id));
+        assert!(remaining_ids.contains(&boundary_target_id));
+        assert!(remaining_ids.contains(&new_other_id));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_find_transactions_limit_offset_two_pages() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-paged-transactions").await;
+        let mut expected = BTreeSet::new();
+        for index in 0..4 {
+            expected.insert(
+                insert_pg_transaction(
+                    &storage,
+                    user_id,
+                    TransactionStatus::Completed,
+                    &format!("pg-paged-transaction-{index}"),
+                )
+                .await,
+            );
+        }
+        let page = |offset| FindTransactionsArgs {
+            partial: TransactionPartial {
+                user_id: Some(user_id),
+                ..Default::default()
+            },
+            paged: Some(Paged { limit: 2, offset }),
+            ..Default::default()
+        };
+        let page_one = storage.find_transactions(&page(0), None).await.unwrap();
+        let page_two = storage.find_transactions(&page(2), None).await.unwrap();
+        assert_eq!(page_one.len(), 2);
+        assert_eq!(page_two.len(), 2);
+        let first_ids: BTreeSet<_> = page_one.iter().map(|row| row.transaction_id).collect();
+        let second_ids: BTreeSet<_> = page_two.iter().map(|row| row.transaction_id).collect();
+        assert!(first_ids.is_disjoint(&second_ids));
+        assert_eq!(
+            first_ids
+                .union(&second_ids)
+                .copied()
+                .collect::<BTreeSet<_>>(),
+            expected
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_find_users_limit_offset_two_pages() {
+        let storage = setup_pg_storage().await.unwrap();
+        let mut expected = BTreeSet::new();
+        for index in 0..4 {
+            expected.insert(insert_pg_user(&storage, &format!("pg-paged-user-{index}")).await);
+        }
+        let page = |offset| FindUsersArgs {
+            paged: Some(Paged { limit: 2, offset }),
+            ..Default::default()
+        };
+        let page_one = storage.find_users(&page(0), None).await.unwrap();
+        let page_two = storage.find_users(&page(2), None).await.unwrap();
+        assert_eq!(page_one.len(), 2);
+        assert_eq!(page_two.len(), 2);
+        let first_ids: BTreeSet<_> = page_one.iter().map(|row| row.user_id).collect();
+        let second_ids: BTreeSet<_> = page_two.iter().map(|row| row.user_id).collect();
+        assert!(first_ids.is_disjoint(&second_ids));
+        assert_eq!(
+            first_ids
+                .union(&second_ids)
+                .copied()
+                .collect::<BTreeSet<_>>(),
+            expected
+        );
+    }
+
+    /// Exercises the real correlated-subquery candidate read against PostgreSQL,
+    /// including `FOR UPDATE OF outputs SKIP LOCKED`.
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_output_candidate_locking_read_is_accepted() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-locking-read").await;
+        let transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-locking-read",
+        )
+        .await;
+        let output_id =
+            insert_pg_output(&storage, user_id, transaction_id, 0, true, None, None).await;
+
+        let trx = storage.begin_transaction().await.unwrap();
+        let found = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        user_id: Some(user_id),
+                        spendable: Some(true),
+                        ..Default::default()
+                    },
+                    tx_status: Some(vec![TransactionStatus::Completed]),
+                    for_update: true,
+                    ..Default::default()
+                },
+                Some(&trx),
+            )
+            .await
+            .unwrap();
+        storage.commit_transaction(trx).await.unwrap();
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].output_id, output_id);
+    }
+
+    /// SKIP LOCKED must hand concurrent claimers DISJOINT candidate sets.
+    ///
+    /// This is the property the locking read exists to provide, and it is the
+    /// only test here that fails if the clause is removed. Reader one locks the
+    /// single candidate inside an open transaction; reader two must come back
+    /// empty rather than returning the same row (which is what an unlocked read
+    /// does) or blocking until reader one commits (which is what a bare
+    /// `FOR UPDATE` without `SKIP LOCKED` does — hence the timeout, so that
+    /// regression fails loudly instead of hanging the suite).
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_skip_locked_hands_concurrent_readers_disjoint_sets() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-skip-locked-disjoint").await;
+        let transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-skip-locked-disjoint",
+        )
+        .await;
+        let output_id =
+            insert_pg_output(&storage, user_id, transaction_id, 0, true, None, None).await;
+
+        let candidates = || FindOutputsArgs {
+            partial: OutputPartial {
+                user_id: Some(user_id),
+                spendable: Some(true),
+                ..Default::default()
+            },
+            tx_status: Some(vec![TransactionStatus::Completed]),
+            for_update: true,
+            ..Default::default()
+        };
+
+        let first = storage.begin_transaction().await.unwrap();
+        let locked = storage
+            .find_outputs(&candidates(), Some(&first))
+            .await
+            .unwrap();
+        assert_eq!(locked.len(), 1, "first claimer must see the candidate");
+        assert_eq!(locked[0].output_id, output_id);
+
+        // Second claimer, its own transaction and connection, while the first
+        // still holds the row lock.
+        let second = storage.begin_transaction().await.unwrap();
+        let skipped = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            storage.find_outputs(&candidates(), Some(&second)),
+        )
+        .await
+        .expect("locking read blocked: SKIP LOCKED is missing, the read waited on the held lock")
+        .unwrap();
+        assert!(
+            skipped.is_empty(),
+            "second claimer saw {} row(s) the first had already locked — SKIP LOCKED is not in effect",
+            skipped.len()
+        );
+
+        storage.commit_transaction(second).await.unwrap();
+        storage.commit_transaction(first).await.unwrap();
+
+        // Once released, the candidate is visible again.
+        let after = storage.begin_transaction().await.unwrap();
+        let reacquired = storage
+            .find_outputs(&candidates(), Some(&after))
+            .await
+            .unwrap();
+        storage.commit_transaction(after).await.unwrap();
+        assert_eq!(reacquired.len(), 1, "lock must be released on commit");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_user_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_user(
+                fixture.user_id,
+                &UserPartial {
+                    identity_key: Some("pg-updated-user".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_users(
+                &FindUsersArgs {
+                    partial: UserPartial {
+                        user_id: Some(fixture.user_id),
+                        ..Default::default()
+                    },
+                    since: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].identity_key, "pg-updated-user");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_certificate_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_certificate(
+                fixture.certificate_id,
+                &CertificatePartial {
+                    signature: Some("new-signature".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_certificates(
+                &FindCertificatesArgs {
+                    partial: CertificatePartial {
+                        certificate_id: Some(fixture.certificate_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].signature, "new-signature");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_certificate_field_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_certificate_field(
+                fixture.certificate_id,
+                &fixture.certificate_field_name,
+                &CertificateFieldPartial {
+                    field_value: Some("new-value".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_certificate_fields(
+                &FindCertificateFieldsArgs {
+                    partial: CertificateFieldPartial {
+                        certificate_id: Some(fixture.certificate_id),
+                        field_name: Some(fixture.certificate_field_name),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].field_value, "new-value");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_commission_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_commission(
+                fixture.commission_id,
+                &CommissionPartial {
+                    is_redeemed: Some(true),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_commissions(
+                &FindCommissionsArgs {
+                    partial: CommissionPartial {
+                        commission_id: Some(fixture.commission_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].is_redeemed);
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_monitor_event_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_monitor_event(
+                fixture.monitor_event_id,
+                &MonitorEventPartial {
+                    event: Some("new-event".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_monitor_events(
+                &FindMonitorEventsArgs {
+                    partial: MonitorEventPartial {
+                        id: Some(fixture.monitor_event_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].event, "new-event");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_output_basket_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_output_basket(
+                fixture.basket_id,
+                &OutputBasketPartial {
+                    name: Some("new-basket".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_output_baskets(
+                &FindOutputBasketsArgs {
+                    partial: OutputBasketPartial {
+                        basket_id: Some(fixture.basket_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "new-basket");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_output_tag_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_output_tag(
+                fixture.output_tag_id,
+                &OutputTagPartial {
+                    tag: Some("new-tag".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_output_tags(
+                &FindOutputTagsArgs {
+                    partial: OutputTagPartial {
+                        output_tag_id: Some(fixture.output_tag_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tag, "new-tag");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_output_tag_map_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_output_tag_map(
+                fixture.output_id,
+                fixture.output_tag_id,
+                &OutputTagMapPartial {
+                    is_deleted: Some(true),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_output_tag_maps(
+                &FindOutputTagMapsArgs {
+                    partial: OutputTagMapPartial {
+                        output_id: Some(fixture.output_id),
+                        output_tag_id: Some(fixture.output_tag_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].is_deleted);
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_output_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_output(
+                fixture.output_id,
+                &OutputPartial {
+                    output_description: Some("new-output-description".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        output_id: Some(fixture.output_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].output_description.as_deref(),
+            Some("new-output-description")
+        );
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_mark_inputs_spent_claims_only_eligible_rows_once() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-mark-inputs-user").await;
+        let other_user_id = insert_pg_user(&storage, "pg-mark-inputs-other-user").await;
+        let source_transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-mark-inputs-source",
+        )
+        .await;
+        let other_source_transaction_id = insert_pg_transaction(
+            &storage,
+            other_user_id,
+            TransactionStatus::Completed,
+            "pg-mark-inputs-other-source",
+        )
+        .await;
+        let previous_spender_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-mark-inputs-previous",
+        )
+        .await;
+        let spending_transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-mark-inputs-spending",
+        )
+        .await;
+        let eligible_one = insert_pg_output(
+            &storage,
+            user_id,
+            source_transaction_id,
+            0,
+            true,
+            None,
+            None,
+        )
+        .await;
+        let eligible_two = insert_pg_output(
+            &storage,
+            user_id,
+            source_transaction_id,
+            1,
+            true,
+            None,
+            None,
+        )
+        .await;
+        let already_spent = insert_pg_output(
+            &storage,
+            user_id,
+            source_transaction_id,
+            2,
+            true,
+            Some(previous_spender_id),
+            None,
+        )
+        .await;
+        let other_users_output = insert_pg_output(
+            &storage,
+            other_user_id,
+            other_source_transaction_id,
+            3,
+            true,
+            None,
+            None,
+        )
+        .await;
+        let requested = [
+            eligible_one,
+            eligible_two,
+            already_spent,
+            other_users_output,
+        ];
+
+        let affected = storage
+            .mark_inputs_spent(&requested, spending_transaction_id, user_id, None)
+            .await
+            .unwrap();
+        assert_eq!(affected, 2);
+        let second = storage
+            .mark_inputs_spent(&requested, spending_transaction_id, user_id, None)
+            .await
+            .unwrap();
+        assert_eq!(second, 0);
+
+        let rows = storage
+            .find_outputs(&FindOutputsArgs::default(), None)
+            .await
+            .unwrap();
+        let find = |id| rows.iter().find(|row| row.output_id == id).unwrap();
+        for output_id in [eligible_one, eligible_two] {
+            let row = find(output_id);
+            assert!(!row.spendable);
+            assert_eq!(row.spent_by, Some(spending_transaction_id));
+        }
+        let row = find(already_spent);
+        assert!(row.spendable);
+        assert_eq!(row.spent_by, Some(previous_spender_id));
+        let row = find(other_users_output);
+        assert!(row.spendable);
+        assert_eq!(row.spent_by, None);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_release_inputs_only_releases_matching_claimant() {
+        let storage = setup_pg_storage().await.unwrap();
+        let user_id = insert_pg_user(&storage, "pg-release-inputs-user").await;
+        let source_transaction_id = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "pg-release-inputs-source",
+        )
+        .await;
+        let transaction_a = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Failed,
+            "pg-release-inputs-a",
+        )
+        .await;
+        let transaction_b = insert_pg_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Unsigned,
+            "pg-release-inputs-b",
+        )
+        .await;
+        let claimed_by_a = insert_pg_output(
+            &storage,
+            user_id,
+            source_transaction_id,
+            0,
+            false,
+            Some(transaction_a),
+            None,
+        )
+        .await;
+        let claimed_by_b = insert_pg_output(
+            &storage,
+            user_id,
+            source_transaction_id,
+            1,
+            false,
+            Some(transaction_b),
+            None,
+        )
+        .await;
+
+        let released = storage
+            .release_inputs_spent_by(&[claimed_by_a, claimed_by_b], transaction_a, None)
+            .await
+            .unwrap();
+        assert_eq!(released, 1);
+
+        let rows = storage
+            .find_outputs(&FindOutputsArgs::default(), None)
+            .await
+            .unwrap();
+        let released_a = rows
+            .iter()
+            .find(|row| row.output_id == claimed_by_a)
+            .unwrap();
+        assert!(released_a.spendable);
+        assert!(released_a.spent_by.is_none());
+        let retained_b = rows
+            .iter()
+            .find(|row| row.output_id == claimed_by_b)
+            .unwrap();
+        assert!(!retained_b.spendable);
+        assert_eq!(retained_b.spent_by, Some(transaction_b));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_proven_tx_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_proven_tx(
+                fixture.proven_tx_id,
+                &ProvenTxPartial {
+                    height: Some(800_123),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_proven_txs(
+                &FindProvenTxsArgs {
+                    partial: ProvenTxPartial {
+                        proven_tx_id: Some(fixture.proven_tx_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].height, 800_123);
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_proven_tx_req_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_proven_tx_req(
+                fixture.proven_tx_req_id,
+                &ProvenTxReqPartial {
+                    notified: Some(true),
+                    attempts: Some(3),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_proven_tx_reqs(
+                &FindProvenTxReqsArgs {
+                    partial: ProvenTxReqPartial {
+                        proven_tx_req_id: Some(fixture.proven_tx_req_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].notified);
+        assert_eq!(rows[0].attempts, 3);
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_settings_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_settings(
+                &SettingsPartial {
+                    storage_name: Some("pg-updated-storage".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_settings(
+                &FindSettingsArgs {
+                    partial: SettingsPartial {
+                        storage_identity_key: Some(fixture.settings_identity_key),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].storage_name, "pg-updated-storage");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_transaction_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_transaction(
+                fixture.transaction_id,
+                &TransactionPartial {
+                    description: Some("new-transaction-description".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_transactions(
+                &FindTransactionsArgs {
+                    partial: TransactionPartial {
+                        transaction_id: Some(fixture.transaction_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].description, "new-transaction-description");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_tx_label_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_tx_label(
+                fixture.tx_label_id,
+                &TxLabelPartial {
+                    label: Some("new-label".to_string()),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_tx_labels(
+                &FindTxLabelsArgs {
+                    partial: TxLabelPartial {
+                        tx_label_id: Some(fixture.tx_label_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].label, "new-label");
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_tx_label_map_with_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let affected = storage
+            .update_tx_label_map(
+                fixture.transaction_id,
+                fixture.tx_label_id,
+                &TxLabelMapPartial {
+                    is_deleted: Some(true),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_tx_label_maps(
+                &FindTxLabelMapsArgs {
+                    partial: TxLabelMapPartial {
+                        transaction_id: Some(fixture.transaction_id),
+                        tx_label_id: Some(fixture.tx_label_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].is_deleted);
+        assert_eq!(rows[0].updated_at, updated_at);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pg_update_sync_state_with_when_and_explicit_updated_at() {
+        let (storage, fixture) = setup_pg_update_fixture().await;
+        let updated_at = update_datetime();
+        let when =
+            NaiveDateTime::parse_from_str("2025-02-03 03:04:05.456", "%Y-%m-%d %H:%M:%S%.3f")
+                .unwrap();
+        let affected = storage
+            .update_sync_state(
+                fixture.sync_state_id,
+                &SyncStatePartial {
+                    sync_map: Some("{\"users\":1}".to_string()),
+                    when: Some(when),
+                    updated_at: Some(updated_at),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+        let rows = storage
+            .find_sync_states(
+                &FindSyncStatesArgs {
+                    partial: SyncStatePartial {
+                        sync_state_id: Some(fixture.sync_state_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].sync_map, "{\"users\":1}");
+        assert_eq!(rows[0].when, Some(when));
+        assert_eq!(rows[0].updated_at, updated_at);
     }
 }
