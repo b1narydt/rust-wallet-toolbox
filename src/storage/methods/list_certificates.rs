@@ -4,13 +4,12 @@
 //! Translates bsv-sdk `ListCertificatesArgs` into storage find calls,
 //! joining certificate fields to produce `ListCertificatesResult`.
 
-use std::collections::HashMap;
-
 use bsv::primitives::public_key::PublicKey;
 use bsv::wallet::interfaces::{
     Certificate as SdkCertificate, CertificateResult, CertificateType, ListCertificatesArgs,
     ListCertificatesResult, SerialNumber,
 };
+use indexmap::IndexMap;
 
 use crate::error::{WalletError, WalletResult};
 use crate::storage::find_args::{
@@ -162,12 +161,12 @@ pub async fn list_certificates(
             )
             .await?;
 
-        let field_map: HashMap<String, String> = fields
+        let field_map: IndexMap<String, String> = fields
             .iter()
             .map(|f| (f.field_name.clone(), f.field_value.clone()))
             .collect();
 
-        let keyring: HashMap<String, String> = fields
+        let keyring: IndexMap<String, String> = fields
             .iter()
             .map(|f| (f.field_name.clone(), f.master_key.clone()))
             .collect();
@@ -202,7 +201,7 @@ pub async fn list_certificates(
             subject,
             certifier: certifier_pk,
             revocation_outpoint: Some(cert.revocation_outpoint.clone()),
-            fields: Some(field_map.into_iter().collect()),
+            fields: Some(field_map),
             signature,
         };
 

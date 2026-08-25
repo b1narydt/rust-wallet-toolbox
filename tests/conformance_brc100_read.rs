@@ -31,9 +31,10 @@
 
 #![cfg(feature = "sqlite")]
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -1076,7 +1077,7 @@ struct SeededCertificate {
     /// receives it.
     sdk_certificate: SdkCertificate,
     /// The plaintext field values the vectors carry.
-    plaintext_fields: HashMap<String, String>,
+    plaintext_fields: IndexMap<String, String>,
     /// Base64 of the 32-byte type actually stored (corpus type truncated).
     cert_type_b64: String,
 }
@@ -1095,7 +1096,7 @@ async fn seed_certificate(built: &BuiltWallet, f: &VectorFile) -> SeededCertific
     let cert_type_b64 = base64::engine::general_purpose::STANDARD.encode(cert_type.0);
     let serial: SerialNumber =
         serde_json::from_value(v1["certificate"]["serialNumber"].clone()).expect("serial");
-    let plaintext_fields: HashMap<String, String> =
+    let plaintext_fields: IndexMap<String, String> =
         serde_json::from_value(v1["certificate"]["fields"].clone()).expect("fields");
     let vector_signature = hex::decode(v1["certificate"]["signature"].as_str().expect("signature"))
         .expect("signature hex");
@@ -1137,7 +1138,7 @@ async fn seed_certificate(built: &BuiltWallet, f: &VectorFile) -> SeededCertific
                 cert_type,
                 certifier: certifier_pub,
                 acquisition_protocol: AcquisitionProtocol::Direct,
-                fields: encrypted_fields.clone().into_iter().collect(),
+                fields: encrypted_fields.clone(),
                 serial_number: Some(serial.clone()),
                 revocation_outpoint: Some(vector_revocation),
                 signature: Some(vector_signature),

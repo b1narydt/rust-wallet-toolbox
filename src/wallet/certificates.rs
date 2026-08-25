@@ -7,9 +7,8 @@
 //!   - wallet-toolbox/src/signer/methods/proveCertificate.ts
 //!   - wallet-toolbox/src/Wallet.ts (lines 445-605, issuance protocol)
 
-use std::collections::HashMap;
-
 use chrono::Utc;
+use indexmap::IndexMap;
 
 use bsv::auth::certificates::certificate::AuthCertificate;
 use bsv::auth::certificates::MasterCertificate;
@@ -52,7 +51,7 @@ pub struct AcquireCertificateResult {
     /// Digital signature of the certificate.
     pub signature: String,
     /// Decrypted certificate field name-value pairs.
-    pub fields: HashMap<String, String>,
+    pub fields: IndexMap<String, String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -245,11 +244,11 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
         })
         .await?;
 
-    let field_map: HashMap<String, String> = fields
+    let field_map: IndexMap<String, String> = fields
         .iter()
         .map(|f| (f.field_name.clone(), f.field_value.clone()))
         .collect();
-    let keyring: HashMap<String, String> = fields
+    let keyring: IndexMap<String, String> = fields
         .iter()
         .map(|f| (f.field_name.clone(), f.master_key.clone()))
         .collect();
@@ -268,7 +267,7 @@ pub async fn prove_certificate<W: WalletInterface + ?Sized>(
         subject,
         certifier: certifier_pk.clone(),
         revocation_outpoint: Some(storage_cert.revocation_outpoint.clone()),
-        fields: Some(field_map.into_iter().collect()),
+        fields: Some(field_map),
         signature: args.certificate.signature.clone(),
     };
 
@@ -438,7 +437,7 @@ pub async fn acquire_issuance_certificate<W: WalletInterface + ?Sized>(
         .get("signature")
         .and_then(|v| v.as_str())
         .unwrap_or_default();
-    let resp_fields: HashMap<String, String> = certificate_json
+    let resp_fields: IndexMap<String, String> = certificate_json
         .get("fields")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
@@ -555,7 +554,7 @@ pub async fn acquire_issuance_certificate<W: WalletInterface + ?Sized>(
         subject: subject_pk,
         certifier: certifier_resp_pk,
         revocation_outpoint: Some(resp_revocation.to_string()),
-        fields: Some(resp_fields.clone().into_iter().collect()),
+        fields: Some(resp_fields.clone()),
         signature: signature_bytes,
     };
 
@@ -754,6 +753,9 @@ fn b64_val(c: u8) -> Result<u8, WalletError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bsv::primitives::private_key::PrivateKey;
+    use bsv::wallet::interfaces::AcquisitionProtocol;
+    use bsv::wallet::proto_wallet::ProtoWallet;
 
     // Compile-time verification that function signatures match expected types.
     // These do not run behavioral assertions but confirm the functions are
@@ -801,5 +803,131 @@ mod tests {
         //
         // The wrapper functions are never called at runtime -- their existence
         // in the compiled test binary is the assertion.
+    }
+
+    #[tokio::test]
+    async fn multi_field_certificate_preserves_order_through_serialization_and_signing() {
+        let certifier_key = PrivateKey::from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000001",
+        )
+        .expect("valid certifier key");
+        let certifier = certifier_key.to_public_key();
+        let subject = PrivateKey::from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000002",
+        )
+        .expect("valid subject key")
+        .to_public_key();
+        let certifier_wallet = ProtoWallet::new(certifier_key);
+
+        let ordered_fields = [
+            ("field-zeta", "six"),
+            ("field-alpha", "one"),
+            ("field-middle", "four"),
+            ("field-bravo", "two"),
+            ("field-yankee", "five"),
+            ("field-charlie", "three"),
+            ("field-xray", "eight"),
+            ("field-delta", "seven"),
+            ("field-whiskey", "ten"),
+            ("field-echo", "nine"),
+            ("field-victor", "twelve"),
+            ("field-foxtrot", "eleven"),
+            ("field-uniform", "fourteen"),
+            ("field-golf", "thirteen"),
+            ("field-tango", "sixteen"),
+            ("field-hotel", "fifteen"),
+        ];
+        let expected_order: Vec<&str> = ordered_fields.iter().map(|(name, _)| *name).collect();
+        let fields = ordered_fields
+            .into_iter()
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect();
+
+        let acquire_args = AcquireCertificateArgs {
+            cert_type: CertificateType([3; 32]),
+            certifier,
+            acquisition_protocol: AcquisitionProtocol::Direct,
+            fields,
+            serial_number: Some(SerialNumber([4; 32])),
+            revocation_outpoint: Some(format!("{}.0", "00".repeat(32))),
+            signature: None,
+            certifier_url: None,
+            keyring_revealer: None,
+            keyring_for_subject: None,
+            privileged: false,
+            privileged_reason: None,
+        };
+        assert_eq!(
+            acquire_args
+                .fields
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            expected_order,
+            "certificate acquisition construction changed field insertion order"
+        );
+
+        let mut certificate = SdkCertificate {
+            cert_type: acquire_args.cert_type.clone(),
+            serial_number: acquire_args
+                .serial_number
+                .clone()
+                .expect("certificate serial number"),
+            subject,
+            certifier: acquire_args.certifier.clone(),
+            revocation_outpoint: acquire_args.revocation_outpoint.clone(),
+            fields: Some(acquire_args.fields.clone()),
+            signature: None,
+        };
+
+        assert_eq!(
+            certificate
+                .fields
+                .as_ref()
+                .expect("certificate fields")
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            expected_order,
+            "certificate construction changed field insertion order"
+        );
+
+        let unsigned_json = serde_json::to_string(&certificate).expect("serialize certificate");
+        let unsigned_positions: Vec<usize> = expected_order
+            .iter()
+            .map(|name| {
+                unsigned_json
+                    .find(&format!(r#""{name}":"#))
+                    .expect("serialized field name")
+            })
+            .collect();
+        assert!(
+            unsigned_positions.windows(2).all(|pair| pair[0] < pair[1]),
+            "unsigned certificate changed field insertion order: {unsigned_json}"
+        );
+
+        AuthCertificate::sign(&mut certificate, &certifier_wallet)
+            .await
+            .expect("sign certificate");
+        let signed_json =
+            serde_json::to_string(&certificate).expect("serialize signed certificate");
+        let signed_positions: Vec<usize> = expected_order
+            .iter()
+            .map(|name| {
+                signed_json
+                    .find(&format!(r#""{name}":"#))
+                    .expect("serialized field name")
+            })
+            .collect();
+        assert!(
+            signed_positions.windows(2).all(|pair| pair[0] < pair[1]),
+            "signed certificate changed field insertion order: {signed_json}"
+        );
+        assert!(
+            AuthCertificate::verify(&certificate, &certifier_wallet)
+                .await
+                .expect("verify certificate signature"),
+            "signed certificate must verify"
+        );
     }
 }

@@ -9,6 +9,8 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use indexmap::IndexMap;
+
 use bsv::auth::certificates::certificate::AuthCertificate;
 use bsv::auth::certificates::verifiable::VerifiableCertificate;
 use bsv::primitives::public_key::PublicKey;
@@ -317,10 +319,10 @@ async fn parse_single_output(
         .get("revocationOutpoint")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
-    let fields: Option<HashMap<String, String>> = cert_data
+    let fields: Option<IndexMap<String, String>> = cert_data
         .get("fields")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
-    let keyring: HashMap<String, String> = cert_data
+    let keyring: IndexMap<String, String> = cert_data
         .get("keyring")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
@@ -344,7 +346,7 @@ async fn parse_single_output(
         subject,
         certifier,
         revocation_outpoint: revocation_str,
-        fields: fields.map(|f| f.into_iter().collect()),
+        fields,
         signature,
     };
 
