@@ -2612,6 +2612,10 @@ macro_rules! impl_storage_reader_find {
                 crate::storage::sqlx_impl::dialect::placeholder($dialect, index)
             }
 
+            fn qc(col: &str) -> String {
+                $dialect.quote_column(col)
+            }
+
             // StorageReader implementation
             #[async_trait]
             impl StorageReader for StorageSqlx<$db> {
@@ -2621,7 +2625,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<User>> {
                     let (w, b) = build_users_where(args);
-                    let mut sql = format!("SELECT * FROM users{}", w);
+                    let mut sql = format!("SELECT {} FROM users{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2645,7 +2649,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<Certificate>> {
                     let (w, b) = build_certificates_where(args);
-                    let mut sql = format!("SELECT * FROM certificates{}", w);
+                    let mut sql = format!("SELECT {} FROM certificates{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2669,7 +2673,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<CertificateField>> {
                     let (w, b) = build_certificate_fields_where(args);
-                    let mut sql = format!("SELECT * FROM certificate_fields{}", w);
+                    let mut sql = format!("SELECT {} FROM certificate_fields{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2693,7 +2697,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<Commission>> {
                     let (w, b) = build_commissions_where(args);
-                    let mut sql = format!("SELECT * FROM commissions{}", w);
+                    let mut sql = format!("SELECT {} FROM commissions{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2717,7 +2721,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<MonitorEvent>> {
                     let (w, b) = build_monitor_events_where(args);
-                    let mut sql = format!("SELECT * FROM monitor_events{}", w);
+                    let mut sql = format!("SELECT {} FROM monitor_events{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page($dialect, &["id"], paged));
                     }
@@ -2737,7 +2741,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<OutputBasket>> {
                     let (w, b) = build_output_baskets_where(args);
-                    let mut sql = format!("SELECT * FROM output_baskets{}", w);
+                    let mut sql = format!("SELECT {} FROM output_baskets{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2761,7 +2765,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<OutputTagMap>> {
                     let (w, b) = build_output_tag_maps_where(args);
-                    let mut sql = format!("SELECT * FROM output_tags_map{}", w);
+                    let mut sql = format!("SELECT {} FROM output_tags_map{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2785,7 +2789,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<OutputTag>> {
                     let (w, b) = build_output_tags_where(args);
-                    let mut sql = format!("SELECT * FROM output_tags{}", w);
+                    let mut sql = format!("SELECT {} FROM output_tags{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2825,7 +2829,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<ProvenTx>> {
                     let (w, b) = build_proven_txs_where(args);
-                    let mut sql = format!("SELECT * FROM proven_txs{}", w);
+                    let mut sql = format!("SELECT {} FROM proven_txs{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2849,7 +2853,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<ProvenTxReq>> {
                     let (w, b) = build_proven_tx_reqs_where(args);
-                    let mut sql = format!("SELECT * FROM proven_tx_reqs{}", w);
+                    let mut sql = format!("SELECT {} FROM proven_tx_reqs{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2873,7 +2877,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<Settings>> {
                     let (w, b) = build_settings_where(args);
-                    let mut sql = format!("SELECT * FROM settings{}", w);
+                    let mut sql = format!("SELECT {} FROM settings{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2897,7 +2901,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<SyncState>> {
                     let (w, b) = build_sync_states_where(args);
-                    let mut sql = format!("SELECT * FROM sync_states{}", w);
+                    let mut sql = format!("SELECT {} FROM sync_states{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2921,7 +2925,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<Transaction>> {
                     let (w, b) = build_transactions_where(args);
-                    let mut sql = format!("SELECT * FROM transactions{}", w);
+                    let mut sql = format!("SELECT {} FROM transactions{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2945,7 +2949,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<TxLabelMap>> {
                     let (w, b) = build_tx_label_maps_where(args);
-                    let mut sql = format!("SELECT * FROM tx_labels_map{}", w);
+                    let mut sql = format!("SELECT {} FROM tx_labels_map{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2969,7 +2973,7 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<TxLabel>> {
                     let (w, b) = build_tx_labels_where(args);
-                    let mut sql = format!("SELECT * FROM tx_labels{}", w);
+                    let mut sql = format!("SELECT {} FROM tx_labels{}", "*", w);
                     if let Some(paged) = &args.paged {
                         sql.push_str(&WhereBuilder::build_ordered_page(
                             $dialect,
@@ -2995,14 +2999,18 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<ProvenTx>> {
                     let mut sql = format!(
-                        "SELECT DISTINCT pt.* FROM proven_txs pt \
-                         INNER JOIN transactions t ON t.provenTxId = pt.provenTxId \
-                         WHERE t.userId = {}",
+                        "SELECT DISTINCT {} FROM proven_txs pt \
+                         INNER JOIN transactions t ON t.{} = pt.{} \
+                         WHERE t.{} = {}",
+                        "pt.*",
+                        qc("provenTxId"),
+                        qc("provenTxId"),
+                        qc("userId"),
                         ph(1)
                     );
                     let mut binds = vec![BindVal::Int64(args.user_id)];
                     if let Some(v) = &args.since {
-                        sql.push_str(&format!(" AND pt.updated_at >= {}", ph(2)));
+                        sql.push_str(&format!(" AND pt.{} >= {}", qc("updated_at"), ph(2)));
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
                     if let Some(paged) = &args.paged {
@@ -3021,14 +3029,18 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<ProvenTxReq>> {
                     let mut sql = format!(
-                        "SELECT DISTINCT ptr.* FROM proven_tx_reqs ptr \
-                         INNER JOIN transactions t ON t.txid = ptr.txid \
-                         WHERE t.userId = {}",
+                        "SELECT DISTINCT {} FROM proven_tx_reqs ptr \
+                         INNER JOIN transactions t ON t.{} = ptr.{} \
+                         WHERE t.{} = {}",
+                        "ptr.*",
+                        qc("txid"),
+                        qc("txid"),
+                        qc("userId"),
                         ph(1)
                     );
                     let mut binds = vec![BindVal::Int64(args.user_id)];
                     if let Some(v) = &args.since {
-                        sql.push_str(&format!(" AND ptr.updated_at >= {}", ph(2)));
+                        sql.push_str(&format!(" AND ptr.{} >= {}", qc("updated_at"), ph(2)));
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
                     if let Some(paged) = &args.paged {
@@ -3047,14 +3059,18 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<TxLabelMap>> {
                     let mut sql = format!(
-                        "SELECT DISTINCT tlm.* FROM tx_labels_map tlm \
-                         INNER JOIN tx_labels tl ON tl.txLabelId = tlm.txLabelId \
-                         WHERE tl.userId = {}",
+                        "SELECT DISTINCT {} FROM tx_labels_map tlm \
+                         INNER JOIN tx_labels tl ON tl.{} = tlm.{} \
+                         WHERE tl.{} = {}",
+                        "tlm.*",
+                        qc("txLabelId"),
+                        qc("txLabelId"),
+                        qc("userId"),
                         ph(1)
                     );
                     let mut binds = vec![BindVal::Int64(args.user_id)];
                     if let Some(v) = &args.since {
-                        sql.push_str(&format!(" AND tlm.updated_at >= {}", ph(2)));
+                        sql.push_str(&format!(" AND tlm.{} >= {}", qc("updated_at"), ph(2)));
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
                     if let Some(paged) = &args.paged {
@@ -3073,14 +3089,18 @@ macro_rules! impl_storage_reader_find {
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<OutputTagMap>> {
                     let mut sql = format!(
-                        "SELECT DISTINCT otm.* FROM output_tags_map otm \
-                         INNER JOIN output_tags ot ON ot.outputTagId = otm.outputTagId \
-                         WHERE ot.userId = {}",
+                        "SELECT DISTINCT {} FROM output_tags_map otm \
+                         INNER JOIN output_tags ot ON ot.{} = otm.{} \
+                         WHERE ot.{} = {}",
+                        "otm.*",
+                        qc("outputTagId"),
+                        qc("outputTagId"),
+                        qc("userId"),
                         ph(1)
                     );
                     let mut binds = vec![BindVal::Int64(args.user_id)];
                     if let Some(v) = &args.since {
-                        sql.push_str(&format!(" AND otm.updated_at >= {}", ph(2)));
+                        sql.push_str(&format!(" AND otm.{} >= {}", qc("updated_at"), ph(2)));
                         binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S").to_string()));
                     }
                     if let Some(paged) = &args.paged {

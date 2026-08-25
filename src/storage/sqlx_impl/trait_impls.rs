@@ -1046,8 +1046,10 @@ macro_rules! impl_storage_rw_and_provider {
                     // PostgreSQL. A hardcoded `?` here is a syntax error on
                     // PostgreSQL, which this macro also generates.
                     let sql = format!(
-                        "DELETE FROM monitor_events WHERE event = {} AND id < {}",
+                        "DELETE FROM monitor_events WHERE {} = {} AND {} < {}",
+                        $dialect.quote_column("event"),
                         crate::storage::sqlx_impl::dialect::placeholder($dialect, 1),
+                        $dialect.quote_column("id"),
                         crate::storage::sqlx_impl::dialect::placeholder($dialect, 2),
                     );
                     let result = sqlx::query(&sql)
