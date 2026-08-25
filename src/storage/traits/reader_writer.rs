@@ -216,6 +216,22 @@ pub trait StorageReaderWriter: StorageReader {
         trx: Option<&TrxToken>,
     ) -> WalletResult<i64>;
 
+    /// Atomically claim outputs as inputs to `transaction_id`. Returns the number
+    /// of outputs actually claimed.
+    ///
+    /// Implementations MUST perform this as a single guarded statement predicated
+    /// on the outputs still being unclaimed, and return the real affected-row
+    /// count. Callers compare that count against how many they intended to claim;
+    /// a short count means a competing writer won the race. A read-then-write
+    /// implementation reintroduces the double-spend this method exists to close.
+    async fn mark_inputs_spent(
+        &self,
+        output_ids: &[i64],
+        transaction_id: i64,
+        user_id: i64,
+        trx: Option<&TrxToken>,
+    ) -> WalletResult<i64>;
+
     /// Update a proven transaction by ID. Returns the number of rows affected.
     async fn update_proven_tx(
         &self,

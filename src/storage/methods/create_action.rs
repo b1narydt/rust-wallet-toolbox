@@ -6,7 +6,7 @@
 
 use chrono::Utc;
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use crate::error::{WalletError, WalletResult};
 use crate::status::TransactionStatus;
@@ -407,14 +407,18 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             }
 
             // Mark as spent
-            let update = OutputPartial {
-                spendable: Some(false),
-                spent_by: Some(transaction_id),
-                ..Default::default()
-            };
-            storage
-                .update_output(output.output_id, &update, trx_opt)
+            let updated = storage
+                .mark_inputs_spent(&[output.output_id], transaction_id, user_id, trx_opt)
                 .await?;
+            if updated != 1 {
+                return Err(WalletError::InvalidParameter {
+                    parameter: format!("inputs[{vin}]"),
+                    must_be: format!(
+                        "spendable output. output {}:{} is not spendable.",
+                        input.outpoint.txid, input.outpoint.vout
+                    ),
+                });
+            }
 
             fixed_inputs.push(FixedInput {
                 satoshis: output.satoshis as u64,
@@ -490,164 +494,199 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
         })
         .collect();
 
-    // --- Query available change UTXOs ---
-    // Find spendable outputs in the default basket, ordered by satoshis ASC.
-    // Note: we do NOT filter by change=true here. The TS implementation's
-    // countChangeInputs and allocateChangeInput query by (userId, spendable,
-    // basketId) without a change flag. Filtering on change=true would exclude
-    // legitimately spendable outputs that entered the wallet via
-    // internalizeAction with BasketInsertion into the default basket.
-    //
-    // Restrict candidates to change whose PARENT transaction is in a
-    // broadcastable/confirmed status — mirroring TS allocateChangeInput
-    // (StorageKnex.ts:1304-1315):
-    //   status = ['completed', 'unproven']; if (!excludeSending) status.push('sending')
-    // where excludeSending = !vargs.isDelayed.
-    // Without this join, unbroadcast `nosend` change (which processAction marks
-    // spendable=true while the parent tx sits in `nosend`) would be allocatable
-    // into an immediate send, producing invalid/unbroadcastable input chains.
-    let mut change_tx_status = vec![TransactionStatus::Completed, TransactionStatus::Unproven];
-    if args.is_delayed {
-        change_tx_status.push(TransactionStatus::Sending);
-    }
-    let change_find_args = FindOutputsArgs {
-        partial: OutputPartial {
-            user_id: Some(user_id),
-            basket_id: Some(change_basket.basket_id),
-            spendable: Some(true),
-            ..Default::default()
-        },
-        tx_status: Some(change_tx_status),
-        ..Default::default()
-    };
-    let mut available_change_outputs = storage.find_outputs(&change_find_args, trx_opt).await?;
-    // `spendable = true` is the availability gate, matching the TS reference
-    // (the find_outputs query above already filters on it).
-    //
-    // The original reason given for not also filtering `spent_by IS NULL` —
-    // that a released output kept `spent_by = 0` because `OutputPartial` could
-    // not express NULL — no longer holds: `update.rs` maps a written 0 back to
-    // NULL. The filter stays off because `spendable` is the gate TS uses, not
-    // because the column is untrustworthy.
-    //
-    // Sort by satoshis ascending (prefer smaller)
-    available_change_outputs.sort_by_key(|a| a.satoshis);
+    // Plan and atomically claim change inputs. A competing writer can make a
+    // plan stale between its SELECT and UPDATE, so re-run the complete plan in
+    // this transaction up to three times. Each attempt owns fresh plan-derived
+    // vectors; nothing from a stale plan is appended to the next one.
+    let mut funding_attempt = 0;
+    let (change_result, allocated_outputs) = loop {
+        funding_attempt += 1;
 
-    let available_change: Vec<AvailableChange> = available_change_outputs
-        .iter()
-        .map(|o| AvailableChange {
-            output_id: o.output_id,
-            satoshis: o.satoshis as u64,
-            spendable: true,
-        })
-        .collect();
-
-    // --- Validate caller-supplied noSendChange (BRC-100 noSend chaining) ---
-    // These are change outputs of earlier noSend actions in the same batch:
-    // their parent transactions sit in `nosend` status, so the availability
-    // query above excludes them, and the caller naming them in
-    // options.noSendChange is what re-admits them — allocated before any
-    // basket change. Ported from TS validateNoSendChange (createAction.ts).
-    let no_send_change_in: Vec<Output> = if args.is_no_send {
-        let mut rows: Vec<Output> = Vec::new();
-        for op in &args.options.no_send_change {
-            let found = storage
-                .find_outputs(
-                    &FindOutputsArgs {
-                        partial: OutputPartial {
-                            user_id: Some(user_id),
-                            txid: Some(op.txid.clone()),
-                            vout: Some(op.vout as i32),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    trx_opt,
-                )
-                .await?;
-            let invalid = || WalletError::InvalidParameter {
-                parameter: "noSendChange outpoint".to_string(),
-                must_be: "valid".to_string(),
-            };
-            let output = crate::storage::verify_one_or_none(found)?.ok_or_else(invalid)?;
-            if output.provided_by != StorageProvidedBy::Storage
-                || output.purpose != "change"
-                || !output.spendable
-                || output.spent_by.is_some()
-                || output.satoshis <= 0
-                || output.basket_id != Some(change_basket.basket_id)
-            {
-                return Err(invalid());
-            }
-            if rows.iter().any(|o| o.output_id == output.output_id) {
-                return Err(WalletError::InvalidParameter {
-                    parameter: "noSendChange outpoint".to_string(),
-                    must_be: "unique. Duplicates are not allowed.".to_string(),
-                });
-            }
-            rows.push(output);
+        // --- Query available change UTXOs ---
+        // Find spendable outputs in the default basket, ordered by satoshis ASC.
+        // Note: we do NOT filter by change=true here. The TS implementation's
+        // countChangeInputs and allocateChangeInput query by (userId, spendable,
+        // basketId) without a change flag. Filtering on change=true would exclude
+        // legitimately spendable outputs that entered the wallet via
+        // internalizeAction with BasketInsertion into the default basket.
+        //
+        // Restrict candidates to change whose PARENT transaction is in a
+        // broadcastable/confirmed status — mirroring TS allocateChangeInput
+        // (StorageKnex.ts:1304-1315):
+        //   status = ['completed', 'unproven']; if (!excludeSending) status.push('sending')
+        // where excludeSending = !vargs.isDelayed.
+        // Without this join, unbroadcast `nosend` change (which processAction marks
+        // spendable=true while the parent tx sits in `nosend`) would be allocatable
+        // into an immediate send, producing invalid/unbroadcastable input chains.
+        let mut change_tx_status = vec![TransactionStatus::Completed, TransactionStatus::Unproven];
+        if args.is_delayed {
+            change_tx_status.push(TransactionStatus::Sending);
         }
-        rows
-    } else {
-        vec![]
-    };
-    let no_send_change_available: Vec<AvailableChange> = no_send_change_in
-        .iter()
-        .map(|o| AvailableChange {
-            output_id: o.output_id,
-            satoshis: o.satoshis as u64,
-            spendable: true,
-        })
-        .collect();
-
-    // --- Generate change ---
-    let fee_model = default_fee_model();
-    let target_net_count =
-        change_basket.number_of_desired_utxos as i64 - available_change.len() as i64;
-
-    let change_args = GenerateChangeSdkArgs {
-        fixed_inputs: fixed_inputs.clone(),
-        fixed_outputs: fixed_outputs.clone(),
-        fee_model,
-        change_initial_satoshis: std::cmp::max(1, change_basket.minimum_desired_utxo_value as u64),
-        change_first_satoshis: std::cmp::max(
-            1,
-            (change_basket.minimum_desired_utxo_value as u64) / 4,
-        ),
-        change_locking_script_length: 25,
-        change_unlocking_script_length: 107,
-        target_net_count: Some(target_net_count),
-    };
-
-    let change_result = generate_change_sdk_with_no_send(
-        &change_args,
-        &no_send_change_available,
-        &available_change,
-    )?;
-
-    // --- Allocate change inputs in storage ---
-    // Mark allocated change UTXOs as spent
-    let mut allocated_outputs: Vec<Output> = Vec::new();
-    for alloc in &change_result.allocated_change_inputs {
-        let update = OutputPartial {
-            spendable: Some(false),
-            spent_by: Some(transaction_id),
+        let change_find_args = FindOutputsArgs {
+            partial: OutputPartial {
+                user_id: Some(user_id),
+                basket_id: Some(change_basket.basket_id),
+                spendable: Some(true),
+                ..Default::default()
+            },
+            tx_status: Some(change_tx_status),
             ..Default::default()
         };
-        storage
-            .update_output(alloc.output_id, &update, trx_opt)
+        let mut available_change_outputs = storage.find_outputs(&change_find_args, trx_opt).await?;
+        // `spendable = true` is the availability gate, matching the TS reference
+        // (the find_outputs query above already filters on it).
+        //
+        // The original reason given for not also filtering `spent_by IS NULL` —
+        // that a released output kept `spent_by = 0` because `OutputPartial` could
+        // not express NULL — no longer holds: `update.rs` maps a written 0 back to
+        // NULL. The filter stays off because `spendable` is the gate TS uses, not
+        // because the column is untrustworthy.
+        //
+        // Sort by satoshis ascending (prefer smaller)
+        available_change_outputs.sort_by_key(|a| a.satoshis);
+
+        let available_change: Vec<AvailableChange> = available_change_outputs
+            .iter()
+            .map(|o| AvailableChange {
+                output_id: o.output_id,
+                satoshis: o.satoshis as u64,
+                spendable: true,
+            })
+            .collect();
+
+        // --- Validate caller-supplied noSendChange (BRC-100 noSend chaining) ---
+        // These are change outputs of earlier noSend actions in the same batch:
+        // their parent transactions sit in `nosend` status, so the availability
+        // query above excludes them, and the caller naming them in
+        // options.noSendChange is what re-admits them — allocated before any
+        // basket change. Ported from TS validateNoSendChange (createAction.ts).
+        let no_send_change_in: Vec<Output> = if args.is_no_send {
+            let mut rows: Vec<Output> = Vec::new();
+            for op in &args.options.no_send_change {
+                let found = storage
+                    .find_outputs(
+                        &FindOutputsArgs {
+                            partial: OutputPartial {
+                                user_id: Some(user_id),
+                                txid: Some(op.txid.clone()),
+                                vout: Some(op.vout as i32),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                        trx_opt,
+                    )
+                    .await?;
+                let invalid = || WalletError::InvalidParameter {
+                    parameter: "noSendChange outpoint".to_string(),
+                    must_be: "valid".to_string(),
+                };
+                let output = crate::storage::verify_one_or_none(found)?.ok_or_else(invalid)?;
+                if output.provided_by != StorageProvidedBy::Storage
+                    || output.purpose != "change"
+                    || !output.spendable
+                    || output.spent_by.is_some()
+                    || output.satoshis <= 0
+                    || output.basket_id != Some(change_basket.basket_id)
+                {
+                    return Err(invalid());
+                }
+                if rows.iter().any(|o| o.output_id == output.output_id) {
+                    return Err(WalletError::InvalidParameter {
+                        parameter: "noSendChange outpoint".to_string(),
+                        must_be: "unique. Duplicates are not allowed.".to_string(),
+                    });
+                }
+                rows.push(output);
+            }
+            rows
+        } else {
+            vec![]
+        };
+        let no_send_change_available: Vec<AvailableChange> = no_send_change_in
+            .iter()
+            .map(|o| AvailableChange {
+                output_id: o.output_id,
+                satoshis: o.satoshis as u64,
+                spendable: true,
+            })
+            .collect();
+
+        // --- Generate change ---
+        let fee_model = default_fee_model();
+        let target_net_count =
+            change_basket.number_of_desired_utxos as i64 - available_change.len() as i64;
+
+        let change_args = GenerateChangeSdkArgs {
+            fixed_inputs: fixed_inputs.clone(),
+            fixed_outputs: fixed_outputs.clone(),
+            fee_model,
+            change_initial_satoshis: std::cmp::max(
+                1,
+                change_basket.minimum_desired_utxo_value as u64,
+            ),
+            change_first_satoshis: std::cmp::max(
+                1,
+                (change_basket.minimum_desired_utxo_value as u64) / 4,
+            ),
+            change_locking_script_length: 25,
+            change_unlocking_script_length: 107,
+            target_net_count: Some(target_net_count),
+        };
+
+        let change_result = generate_change_sdk_with_no_send(
+            &change_args,
+            &no_send_change_available,
+            &available_change,
+        )?;
+
+        // Deduplicate before constructing the SQL IN list and expected count.
+        let claimed_output_ids: BTreeSet<i64> = change_result
+            .allocated_change_inputs
+            .iter()
+            .map(|allocated| allocated.output_id)
+            .collect();
+        let claimed_output_ids: Vec<i64> = claimed_output_ids.into_iter().collect();
+        let updated = storage
+            .mark_inputs_spent(&claimed_output_ids, transaction_id, user_id, trx_opt)
             .await?;
 
-        // Find the output record for input building (basket change or a
-        // caller-named noSendChange output)
-        if let Some(output) = available_change_outputs
-            .iter()
-            .chain(no_send_change_in.iter())
-            .find(|o| o.output_id == alloc.output_id)
-        {
-            allocated_outputs.push(output.clone());
+        if updated == claimed_output_ids.len() as i64 {
+            let allocated_outputs: Vec<Output> = change_result
+                .allocated_change_inputs
+                .iter()
+                .filter_map(|allocated| {
+                    available_change_outputs
+                        .iter()
+                        .chain(no_send_change_in.iter())
+                        .find(|output| output.output_id == allocated.output_id)
+                        .cloned()
+                })
+                .collect();
+            break (change_result, allocated_outputs);
         }
-    }
+
+        let no_send_change_ids: BTreeSet<i64> = no_send_change_in
+            .iter()
+            .map(|output| output.output_id)
+            .collect();
+        if claimed_output_ids
+            .iter()
+            .any(|output_id| no_send_change_ids.contains(output_id))
+        {
+            return Err(WalletError::InvalidParameter {
+                parameter: "noSendChange".to_string(),
+                must_be: "outputs that remain spendable during action planning".to_string(),
+            });
+        }
+
+        if funding_attempt == 3 {
+            return Err(WalletError::InvalidOperation(
+                "wallet funding changed repeatedly during action planning; retry createAction"
+                    .to_string(),
+            ));
+        }
+    };
 
     // --- Generate derivation prefix for this transaction ---
     let derivation_prefix = random_bytes_base64(16);
@@ -1375,6 +1414,130 @@ mod tests {
             spent_count > 0,
             "at least one change UTXO should be allocated (spentBy set)"
         );
+    }
+
+    #[tokio::test]
+    async fn caller_supplied_input_rejects_a_short_guarded_claim() {
+        let (storage, user_id, _basket_id) = setup_test_storage().await;
+        let source_txid = "aaaa1111bbbb2222cccc3333dddd4444aaaa1111bbbb2222cccc3333dddd4444";
+
+        let target = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        user_id: Some(user_id),
+                        txid: Some(source_txid.to_string()),
+                        vout: Some(0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find caller-supplied input")
+            .into_iter()
+            .next()
+            .expect("seeded output");
+
+        let now = Utc::now().naive_utc();
+        let competing_transaction_id = storage
+            .insert_transaction(
+                &Transaction {
+                    created_at: now,
+                    updated_at: now,
+                    transaction_id: 0,
+                    user_id,
+                    proven_tx_id: None,
+                    status: TransactionStatus::Unsigned,
+                    reference: "caller_input_competitor".to_string(),
+                    is_outgoing: true,
+                    satoshis: 0,
+                    description: "competing caller-input claim".to_string(),
+                    version: Some(1),
+                    lock_time: Some(0),
+                    txid: None,
+                    input_beef: None,
+                    raw_tx: None,
+                },
+                None,
+            )
+            .await
+            .expect("insert competing transaction");
+        storage
+            .update_output(
+                target.output_id,
+                &OutputPartial {
+                    spent_by: Some(competing_transaction_id),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("record competing claim");
+
+        let args = StorageCreateActionArgs {
+            description: "caller-supplied guarded claim".to_string(),
+            inputs: vec![crate::storage::action_types::StorageCreateActionInput {
+                outpoint: crate::storage::action_types::StorageOutPoint {
+                    txid: source_txid.to_string(),
+                    vout: 0,
+                },
+                input_description: "caller input".to_string(),
+                unlocking_script_length: 108,
+                sequence_number: 0xFFFF_FFFF,
+            }],
+            outputs: vec![StorageCreateActionOutput {
+                locking_script: "76a91400000000000000000000000000000000000000008ac".to_string(),
+                satoshis: 1_000,
+                output_description: "payment output".to_string(),
+                basket: None,
+                custom_instructions: None,
+                tags: vec![],
+            }],
+            lock_time: 0,
+            version: 1,
+            labels: vec![],
+            options: StorageCreateActionOptions::default(),
+            input_beef: None,
+            is_new_tx: true,
+            is_sign_action: false,
+            is_no_send: false,
+            is_delayed: false,
+            is_send_with: false,
+            is_remix_change: false,
+            is_test_werr_review_actions: None,
+            include_all_source_transactions: false,
+            random_vals: None,
+        };
+
+        let err = storage_create_action(&storage, user_id, &args, None)
+            .await
+            .expect_err("a short caller-input claim must fail");
+        assert!(matches!(
+            err,
+            WalletError::InvalidParameter { parameter, must_be }
+                if parameter == "inputs[0]"
+                    && must_be
+                        == format!(
+                            "spendable output. output {source_txid}:0 is not spendable."
+                        )
+        ));
+
+        let after = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        output_id: Some(target.output_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("read caller-supplied input after rejection");
+        assert_eq!(after[0].spent_by, Some(competing_transaction_id));
     }
 
     /// Set up storage holding exactly one spendable change UTXO whose parent

@@ -488,6 +488,32 @@ mod sqlite_impl {
             exec_update(self, &sql, &binds, trx).await
         }
 
+        pub(crate) async fn mark_inputs_spent_impl(
+            &self,
+            output_ids: &[i64],
+            transaction_id: i64,
+            user_id: i64,
+            trx: Option<&TrxToken>,
+        ) -> WalletResult<i64> {
+            if output_ids.is_empty() {
+                return Ok(0);
+            }
+
+            let placeholders = vec!["?"; output_ids.len()].join(", ");
+            let sql = format!(
+                "UPDATE outputs SET spendable = ?, spentBy = ?, updated_at = datetime('now') \
+                 WHERE outputId IN ({placeholders}) AND spendable = ? AND spentBy IS NULL \
+                 AND userId = ?"
+            );
+            let mut binds = Vec::with_capacity(output_ids.len() + 4);
+            binds.push(BindVal::Bool(false));
+            binds.push(BindVal::Int64(transaction_id));
+            binds.extend(output_ids.iter().copied().map(BindVal::Int64));
+            binds.push(BindVal::Bool(true));
+            binds.push(BindVal::Int64(user_id));
+            exec_update(self, &sql, &binds, trx).await
+        }
+
         pub(crate) async fn update_proven_tx_impl(
             &self,
             id: i64,
@@ -1122,6 +1148,49 @@ macro_rules! impl_update_methods {
                     }
                     idx += 1; let sql = format!("UPDATE outputs SET {} WHERE outputId = {}", sets.join(", "), ph(idx));
                     binds.push(BindVal::Int64(id));
+                    exec_update(self, &sql, &binds, trx).await
+                }
+
+                pub(crate) async fn mark_inputs_spent_impl(&self, output_ids: &[i64], transaction_id: i64, user_id: i64, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                    if output_ids.is_empty() {
+                        return Ok(0);
+                    }
+
+                    let mut binds = Vec::with_capacity(output_ids.len() + 4);
+                    let mut idx = 0usize;
+
+                    idx += 1;
+                    let spendable_false = ph(idx);
+                    binds.push(BindVal::Bool(false));
+
+                    idx += 1;
+                    let transaction_id_placeholder = ph(idx);
+                    binds.push(BindVal::Int64(transaction_id));
+
+                    let mut output_id_placeholders = Vec::with_capacity(output_ids.len());
+                    for output_id in output_ids {
+                        idx += 1;
+                        output_id_placeholders.push(ph(idx));
+                        binds.push(BindVal::Int64(*output_id));
+                    }
+
+                    idx += 1;
+                    let spendable_true = ph(idx);
+                    binds.push(BindVal::Bool(true));
+
+                    idx += 1;
+                    let user_id_placeholder = ph(idx);
+                    binds.push(BindVal::Int64(user_id));
+
+                    let sql = format!(
+                        "UPDATE outputs SET spendable = {spendable_false}, {} = {transaction_id_placeholder}, updated_at = {} WHERE {} IN ({}) AND spendable = {spendable_true} AND {} IS NULL AND {} = {user_id_placeholder}",
+                        qc("spentBy"),
+                        $now_expr,
+                        qc("outputId"),
+                        output_id_placeholders.join(", "),
+                        qc("spentBy"),
+                        qc("userId"),
+                    );
                     exec_update(self, &sql, &binds, trx).await
                 }
 
