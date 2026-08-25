@@ -930,223 +930,532 @@ macro_rules! impl_update_methods {
             }
 
             impl StorageSqlx<$db> {
-                pub(crate) async fn update_user_impl(&self, id: i64, update: &UserPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_user_impl(
+                    &self,
+                    id: i64,
+                    update: &UserPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.identity_key { idx += 1; sets.push(format!("identityKey = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.active_storage { idx += 1; sets.push(format!("activeStorage = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.identity_key {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("identityKey"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.active_storage {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("activeStorage"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let sql = format!("UPDATE users SET {} WHERE userId = {}", sets.join(", "), ph(idx));
+                    idx += 1;
+                    let sql = format!(
+                        "UPDATE users SET {} WHERE {} = {}",
+                        sets.join(", "),
+                        qc("userId"),
+                        ph(idx)
+                    );
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_certificate_impl(&self, id: i64, update: &CertificatePartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_certificate_impl(
+                    &self,
+                    id: i64,
+                    update: &CertificatePartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.user_id { idx += 1; sets.push(format!("userId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.cert_type { idx += 1; sets.push(format!("{} = {}", qc("type"), ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.serial_number { idx += 1; sets.push(format!("serialNumber = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.certifier { idx += 1; sets.push(format!("certifier = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.subject { idx += 1; sets.push(format!("subject = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.verifier { idx += 1; sets.push(format!("verifier = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.revocation_outpoint { idx += 1; sets.push(format!("revocationOutpoint = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.signature { idx += 1; sets.push(format!("signature = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.is_deleted { idx += 1; sets.push(format!("isDeleted = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
+                    if let Some(v) = &update.user_id {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("userId"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.cert_type {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("type"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.serial_number {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("serialNumber"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.certifier {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("certifier"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.subject {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("subject"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.verifier {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("verifier"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.revocation_outpoint {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("revocationOutpoint"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.signature {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("signature"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.is_deleted {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("isDeleted"), ph(idx)));
+                        binds.push(BindVal::Bool(*v));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let sql = format!("UPDATE certificates SET {} WHERE certificateId = {}", sets.join(", "), ph(idx));
+                    idx += 1;
+                    let sql = format!(
+                        "UPDATE certificates SET {} WHERE {} = {}",
+                        sets.join(", "),
+                        qc("certificateId"),
+                        ph(idx)
+                    );
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_certificate_field_impl(&self, certificate_id: i64, field_name: &str, update: &CertificateFieldPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_certificate_field_impl(
+                    &self,
+                    certificate_id: i64,
+                    field_name: &str,
+                    update: &CertificateFieldPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.field_value { idx += 1; sets.push(format!("fieldValue = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.master_key { idx += 1; sets.push(format!("masterKey = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.field_value {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("fieldValue"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.master_key {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("masterKey"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let p1 = ph(idx);
-                    idx += 1; let p2 = ph(idx);
-                    let sql = format!("UPDATE certificate_fields SET {} WHERE certificateId = {} AND fieldName = {}", sets.join(", "), p1, p2);
+                    idx += 1;
+                    let p1 = ph(idx);
+                    idx += 1;
+                    let p2 = ph(idx);
+                    let sql = format!(
+                        "UPDATE certificate_fields SET {} WHERE {} = {} AND {} = {}",
+                        sets.join(", "),
+                        qc("certificateId"),
+                        p1,
+                        qc("fieldName"),
+                        p2
+                    );
                     binds.push(BindVal::Int64(certificate_id));
                     binds.push(BindVal::String(field_name.to_string()));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_commission_impl(&self, id: i64, update: &CommissionPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_commission_impl(
+                    &self,
+                    id: i64,
+                    update: &CommissionPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.user_id { idx += 1; sets.push(format!("userId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.transaction_id { idx += 1; sets.push(format!("transactionId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.satoshis { idx += 1; sets.push(format!("satoshis = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.key_offset { idx += 1; sets.push(format!("keyOffset = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.is_redeemed { idx += 1; sets.push(format!("isRedeemed = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
+                    if let Some(v) = &update.user_id {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("userId"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.transaction_id {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("transactionId"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.satoshis {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("satoshis"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.key_offset {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("keyOffset"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.is_redeemed {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("isRedeemed"), ph(idx)));
+                        binds.push(BindVal::Bool(*v));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let sql = format!("UPDATE commissions SET {} WHERE commissionId = {}", sets.join(", "), ph(idx));
+                    idx += 1;
+                    let sql = format!(
+                        "UPDATE commissions SET {} WHERE {} = {}",
+                        sets.join(", "),
+                        qc("commissionId"),
+                        ph(idx)
+                    );
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_monitor_event_impl(&self, id: i64, update: &MonitorEventPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_monitor_event_impl(
+                    &self,
+                    id: i64,
+                    update: &MonitorEventPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.event { idx += 1; sets.push(format!("event = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.event {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("event"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let sql = format!("UPDATE monitor_events SET {} WHERE id = {}", sets.join(", "), ph(idx));
+                    idx += 1;
+                    let sql = format!(
+                        "UPDATE monitor_events SET {} WHERE {} = {}",
+                        sets.join(", "),
+                        qc("id"),
+                        ph(idx)
+                    );
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_output_basket_impl(&self, id: i64, update: &OutputBasketPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_output_basket_impl(
+                    &self,
+                    id: i64,
+                    update: &OutputBasketPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.user_id { idx += 1; sets.push(format!("userId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.name { idx += 1; sets.push(format!("name = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.is_deleted { idx += 1; sets.push(format!("isDeleted = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
-                    if let Some(v) = &update.number_of_desired_utxos { idx += 1; sets.push(format!("numberOfDesiredUTXOs = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.minimum_desired_utxo_value { idx += 1; sets.push(format!("minimumDesiredUTXOValue = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
+                    if let Some(v) = &update.user_id {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("userId"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.name {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("name"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.is_deleted {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("isDeleted"), ph(idx)));
+                        binds.push(BindVal::Bool(*v));
+                    }
+                    if let Some(v) = &update.number_of_desired_utxos {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("numberOfDesiredUTXOs"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.minimum_desired_utxo_value {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("minimumDesiredUTXOValue"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let sql = format!("UPDATE output_baskets SET {} WHERE basketId = {}", sets.join(", "), ph(idx));
+                    idx += 1;
+                    let sql = format!(
+                        "UPDATE output_baskets SET {} WHERE {} = {}",
+                        sets.join(", "),
+                        qc("basketId"),
+                        ph(idx)
+                    );
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_output_tag_impl(&self, id: i64, update: &OutputTagPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_output_tag_impl(
+                    &self,
+                    id: i64,
+                    update: &OutputTagPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.user_id { idx += 1; sets.push(format!("userId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.tag { idx += 1; sets.push(format!("tag = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.is_deleted { idx += 1; sets.push(format!("isDeleted = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
+                    if let Some(v) = &update.user_id {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("userId"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.tag {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("tag"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.is_deleted {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("isDeleted"), ph(idx)));
+                        binds.push(BindVal::Bool(*v));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let sql = format!("UPDATE output_tags SET {} WHERE outputTagId = {}", sets.join(", "), ph(idx));
+                    idx += 1;
+                    let sql = format!(
+                        "UPDATE output_tags SET {} WHERE {} = {}",
+                        sets.join(", "),
+                        qc("outputTagId"),
+                        ph(idx)
+                    );
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_output_tag_map_impl(&self, output_id: i64, tag_id: i64, update: &OutputTagMapPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_output_tag_map_impl(
+                    &self,
+                    output_id: i64,
+                    tag_id: i64,
+                    update: &OutputTagMapPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.is_deleted { idx += 1; sets.push(format!("isDeleted = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
+                    if let Some(v) = &update.is_deleted {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("isDeleted"), ph(idx)));
+                        binds.push(BindVal::Bool(*v));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let p1 = ph(idx);
-                    idx += 1; let p2 = ph(idx);
-                    let sql = format!("UPDATE output_tags_map SET {} WHERE outputId = {} AND outputTagId = {}", sets.join(", "), p1, p2);
+                    idx += 1;
+                    let p1 = ph(idx);
+                    idx += 1;
+                    let p2 = ph(idx);
+                    let sql = format!(
+                        "UPDATE output_tags_map SET {} WHERE {} = {} AND {} = {}",
+                        sets.join(", "),
+                        qc("outputId"),
+                        p1,
+                        qc("outputTagId"),
+                        p2
+                    );
                     binds.push(BindVal::Int64(output_id));
                     binds.push(BindVal::Int64(tag_id));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_output_impl(&self, id: i64, update: &OutputPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_output_impl(
+                    &self,
+                    id: i64,
+                    update: &OutputPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.user_id { idx += 1; sets.push(format!("userId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.transaction_id { idx += 1; sets.push(format!("transactionId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
+                    if let Some(v) = &update.user_id {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("userId"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.transaction_id {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("transactionId"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
                     if let Some(v) = &update.basket_id {
                         if *v == 0 {
                             // Convention: basket_id=0 means "clear to NULL" (no basket),
                             // same as the spent_by=0 convention below.
-                            sets.push("basketId = NULL".to_string());
+                            sets.push(format!("{} = NULL", qc("basketId")));
                         } else {
-                            idx += 1; sets.push(format!("basketId = {}", ph(idx))); binds.push(BindVal::Int64(*v));
+                            idx += 1;
+                            sets.push(format!("{} = {}", qc("basketId"), ph(idx)));
+                            binds.push(BindVal::Int64(*v));
                         }
                     }
-                    if let Some(v) = &update.spendable { idx += 1; sets.push(format!("spendable = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
-                    if let Some(v) = &update.change { idx += 1; sets.push(format!("{} = {}", qc("change"), ph(idx))); binds.push(BindVal::Bool(*v)); }
-                    if let Some(v) = &update.vout { idx += 1; sets.push(format!("vout = {}", ph(idx))); binds.push(BindVal::Int32(*v)); }
-                    if let Some(v) = &update.satoshis { idx += 1; sets.push(format!("satoshis = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.provided_by { idx += 1; sets.push(format!("providedBy = {}", ph(idx))); binds.push(BindVal::String(v.to_string())); }
-                    if let Some(v) = &update.purpose { idx += 1; sets.push(format!("purpose = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.output_type { idx += 1; sets.push(format!("{} = {}", qc("type"), ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.txid { idx += 1; sets.push(format!("txid = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.sender_identity_key { idx += 1; sets.push(format!("senderIdentityKey = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.spendable {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("spendable"), ph(idx)));
+                        binds.push(BindVal::Bool(*v));
+                    }
+                    if let Some(v) = &update.change {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("change"), ph(idx)));
+                        binds.push(BindVal::Bool(*v));
+                    }
+                    if let Some(v) = &update.vout {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("vout"), ph(idx)));
+                        binds.push(BindVal::Int32(*v));
+                    }
+                    if let Some(v) = &update.satoshis {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("satoshis"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.provided_by {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("providedBy"), ph(idx)));
+                        binds.push(BindVal::String(v.to_string()));
+                    }
+                    if let Some(v) = &update.purpose {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("purpose"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.output_type {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("type"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.txid {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("txid"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.sender_identity_key {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("senderIdentityKey"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
                     if let Some(v) = &update.spent_by {
                         if *v == 0 {
                             // Convention: spent_by=0 means "clear to NULL" (matches TS spentBy=undefined→NULL)
-                            sets.push("spentBy = NULL".to_string());
+                            sets.push(format!("{} = NULL", qc("spentBy")));
                         } else {
-                            idx += 1; sets.push(format!("spentBy = {}", ph(idx))); binds.push(BindVal::Int64(*v));
+                            idx += 1;
+                            sets.push(format!("{} = {}", qc("spentBy"), ph(idx)));
+                            binds.push(BindVal::Int64(*v));
                         }
                     }
-                    if let Some(v) = &update.output_description { idx += 1; sets.push(format!("outputDescription = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.spending_description { idx += 1; sets.push(format!("spendingDescription = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.custom_instructions { idx += 1; sets.push(format!("customInstructions = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.script_length { idx += 1; sets.push(format!("scriptLength = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.script_offset { idx += 1; sets.push(format!("scriptOffset = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.locking_script { idx += 1; sets.push(format!("lockingScript = {}", ph(idx))); binds.push(BindVal::Bytes(v.clone())); }
+                    if let Some(v) = &update.output_description {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("outputDescription"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.spending_description {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("spendingDescription"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.custom_instructions {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("customInstructions"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.script_length {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("scriptLength"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.script_offset {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("scriptOffset"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.locking_script {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("lockingScript"), ph(idx)));
+                        binds.push(BindVal::Bytes(v.clone()));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let sql = format!("UPDATE outputs SET {} WHERE outputId = {}", sets.join(", "), ph(idx));
+                    idx += 1;
+                    let sql = format!(
+                        "UPDATE outputs SET {} WHERE {} = {}",
+                        sets.join(", "),
+                        qc("outputId"),
+                        ph(idx)
+                    );
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
                 }
@@ -1183,173 +1492,414 @@ macro_rules! impl_update_methods {
                     binds.push(BindVal::Int64(user_id));
 
                     let sql = format!(
-                        "UPDATE outputs SET spendable = {spendable_false}, {} = {transaction_id_placeholder}, updated_at = {} WHERE {} IN ({}) AND spendable = {spendable_true} AND {} IS NULL AND {} = {user_id_placeholder}",
+                        "UPDATE outputs SET {} = {spendable_false}, {} = {transaction_id_placeholder}, {} = {} WHERE {} IN ({}) AND {} = {spendable_true} AND {} IS NULL AND {} = {user_id_placeholder}",
+                        qc("spendable"),
                         qc("spentBy"),
+                        qc("updated_at"),
                         $now_expr,
                         qc("outputId"),
                         output_id_placeholders.join(", "),
+                        qc("spendable"),
                         qc("spentBy"),
                         qc("userId"),
                     );
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_proven_tx_impl(&self, id: i64, update: &ProvenTxPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_proven_tx_impl(
+                    &self,
+                    id: i64,
+                    update: &ProvenTxPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.txid { idx += 1; sets.push(format!("txid = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.height { idx += 1; sets.push(format!("height = {}", ph(idx))); binds.push(BindVal::Int32(*v)); }
-                    if let Some(v) = &update.block_hash { idx += 1; sets.push(format!("blockHash = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.txid {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("txid"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.height {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("height"), ph(idx)));
+                        binds.push(BindVal::Int32(*v));
+                    }
+                    if let Some(v) = &update.block_hash {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("blockHash"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let sql = format!("UPDATE proven_txs SET {} WHERE provenTxId = {}", sets.join(", "), ph(idx));
+                    idx += 1;
+                    let sql = format!(
+                        "UPDATE proven_txs SET {} WHERE {} = {}",
+                        sets.join(", "),
+                        qc("provenTxId"),
+                        ph(idx)
+                    );
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_proven_tx_req_impl(&self, id: i64, update: &ProvenTxReqPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_proven_tx_req_impl(
+                    &self,
+                    id: i64,
+                    update: &ProvenTxReqPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.proven_tx_id { idx += 1; sets.push(format!("provenTxId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.status { idx += 1; sets.push(format!("status = {}", ph(idx))); binds.push(BindVal::String(v.to_string())); }
-                    if let Some(v) = &update.txid { idx += 1; sets.push(format!("txid = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.batch { idx += 1; sets.push(format!("batch = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.notified { idx += 1; sets.push(format!("notified = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
-                    if let Some(v) = &update.attempts { idx += 1; sets.push(format!("attempts = {}", ph(idx))); binds.push(BindVal::Int64(*v as i64)); }
-                    if let Some(v) = &update.history { idx += 1; sets.push(format!("history = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.proven_tx_id {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("provenTxId"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.status {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("status"), ph(idx)));
+                        binds.push(BindVal::String(v.to_string()));
+                    }
+                    if let Some(v) = &update.txid {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("txid"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.batch {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("batch"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.notified {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("notified"), ph(idx)));
+                        binds.push(BindVal::Bool(*v));
+                    }
+                    if let Some(v) = &update.attempts {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("attempts"), ph(idx)));
+                        binds.push(BindVal::Int64(*v as i64));
+                    }
+                    if let Some(v) = &update.history {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("history"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let sql = format!("UPDATE proven_tx_reqs SET {} WHERE provenTxReqId = {}", sets.join(", "), ph(idx));
+                    idx += 1;
+                    let sql = format!(
+                        "UPDATE proven_tx_reqs SET {} WHERE {} = {}",
+                        sets.join(", "),
+                        qc("provenTxReqId"),
+                        ph(idx)
+                    );
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_settings_impl(&self, update: &SettingsPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_settings_impl(
+                    &self,
+                    update: &SettingsPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.storage_identity_key { idx += 1; sets.push(format!("storageIdentityKey = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.storage_name { idx += 1; sets.push(format!("storageName = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.chain { idx += 1; sets.push(format!("chain = {}", ph(idx))); binds.push(BindVal::String(v.to_string())); }
-                    if let Some(v) = &update.wallet_settings_json { idx += 1; sets.push(format!("walletSettingsJson = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.storage_identity_key {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("storageIdentityKey"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.storage_name {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("storageName"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.chain {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("chain"), ph(idx)));
+                        binds.push(BindVal::String(v.to_string()));
+                    }
+                    if let Some(v) = &update.wallet_settings_json {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("walletSettingsJson"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
                     let _ = idx;
                     let sql = format!("UPDATE settings SET {}", sets.join(", "));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_transaction_impl(&self, id: i64, update: &TransactionPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_transaction_impl(
+                    &self,
+                    id: i64,
+                    update: &TransactionPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.user_id { idx += 1; sets.push(format!("userId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.proven_tx_id { idx += 1; sets.push(format!("provenTxId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.status { idx += 1; sets.push(format!("status = {}", ph(idx))); binds.push(BindVal::String(v.to_string())); }
-                    if let Some(v) = &update.reference { idx += 1; sets.push(format!("reference = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.is_outgoing { idx += 1; sets.push(format!("isOutgoing = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
-                    if let Some(v) = &update.txid { idx += 1; sets.push(format!("txid = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.raw_tx { idx += 1; sets.push(format!("rawTx = {}", ph(idx))); binds.push(BindVal::Bytes(v.clone())); }
-                    if let Some(v) = &update.version { idx += 1; sets.push(format!("version = {}", ph(idx))); binds.push(BindVal::Int32(*v)); }
-                    if let Some(v) = &update.lock_time { idx += 1; sets.push(format!("lockTime = {}", ph(idx))); binds.push(BindVal::Int32(*v)); }
-                    if let Some(v) = &update.satoshis { idx += 1; sets.push(format!("satoshis = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.description { idx += 1; sets.push(format!("description = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.input_beef { idx += 1; sets.push(format!("inputBEEF = {}", ph(idx))); binds.push(BindVal::Bytes(v.clone())); }
+                    if let Some(v) = &update.user_id {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("userId"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.proven_tx_id {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("provenTxId"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.status {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("status"), ph(idx)));
+                        binds.push(BindVal::String(v.to_string()));
+                    }
+                    if let Some(v) = &update.reference {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("reference"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.is_outgoing {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("isOutgoing"), ph(idx)));
+                        binds.push(BindVal::Bool(*v));
+                    }
+                    if let Some(v) = &update.txid {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("txid"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.raw_tx {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("rawTx"), ph(idx)));
+                        binds.push(BindVal::Bytes(v.clone()));
+                    }
+                    if let Some(v) = &update.version {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("version"), ph(idx)));
+                        binds.push(BindVal::Int32(*v));
+                    }
+                    if let Some(v) = &update.lock_time {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("lockTime"), ph(idx)));
+                        binds.push(BindVal::Int32(*v));
+                    }
+                    if let Some(v) = &update.satoshis {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("satoshis"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.description {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("description"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.input_beef {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("inputBEEF"), ph(idx)));
+                        binds.push(BindVal::Bytes(v.clone()));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let sql = format!("UPDATE transactions SET {} WHERE transactionId = {}", sets.join(", "), ph(idx));
+                    idx += 1;
+                    let sql = format!(
+                        "UPDATE transactions SET {} WHERE {} = {}",
+                        sets.join(", "),
+                        qc("transactionId"),
+                        ph(idx)
+                    );
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_tx_label_impl(&self, id: i64, update: &TxLabelPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_tx_label_impl(
+                    &self,
+                    id: i64,
+                    update: &TxLabelPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.user_id { idx += 1; sets.push(format!("userId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.label { idx += 1; sets.push(format!("label = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.is_deleted { idx += 1; sets.push(format!("isDeleted = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
+                    if let Some(v) = &update.user_id {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("userId"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.label {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("label"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.is_deleted {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("isDeleted"), ph(idx)));
+                        binds.push(BindVal::Bool(*v));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let sql = format!("UPDATE tx_labels SET {} WHERE txLabelId = {}", sets.join(", "), ph(idx));
+                    idx += 1;
+                    let sql = format!(
+                        "UPDATE tx_labels SET {} WHERE {} = {}",
+                        sets.join(", "),
+                        qc("txLabelId"),
+                        ph(idx)
+                    );
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_tx_label_map_impl(&self, transaction_id: i64, tx_label_id: i64, update: &TxLabelMapPartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_tx_label_map_impl(
+                    &self,
+                    transaction_id: i64,
+                    tx_label_id: i64,
+                    update: &TxLabelMapPartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.is_deleted { idx += 1; sets.push(format!("isDeleted = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
+                    if let Some(v) = &update.is_deleted {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("isDeleted"), ph(idx)));
+                        binds.push(BindVal::Bool(*v));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let p1 = ph(idx);
-                    idx += 1; let p2 = ph(idx);
-                    let sql = format!("UPDATE tx_labels_map SET {} WHERE transactionId = {} AND txLabelId = {}", sets.join(", "), p1, p2);
+                    idx += 1;
+                    let p1 = ph(idx);
+                    idx += 1;
+                    let p2 = ph(idx);
+                    let sql = format!(
+                        "UPDATE tx_labels_map SET {} WHERE {} = {} AND {} = {}",
+                        sets.join(", "),
+                        qc("transactionId"),
+                        p1,
+                        qc("txLabelId"),
+                        p2
+                    );
                     binds.push(BindVal::Int64(transaction_id));
                     binds.push(BindVal::Int64(tx_label_id));
                     exec_update(self, &sql, &binds, trx).await
                 }
 
-                pub(crate) async fn update_sync_state_impl(&self, id: i64, update: &SyncStatePartial, trx: Option<&TrxToken>) -> WalletResult<i64> {
+                pub(crate) async fn update_sync_state_impl(
+                    &self,
+                    id: i64,
+                    update: &SyncStatePartial,
+                    trx: Option<&TrxToken>,
+                ) -> WalletResult<i64> {
                     let mut sets = Vec::new();
                     let mut binds = Vec::new();
                     let mut idx = 0usize;
-                    if let Some(v) = &update.user_id { idx += 1; sets.push(format!("userId = {}", ph(idx))); binds.push(BindVal::Int64(*v)); }
-                    if let Some(v) = &update.storage_identity_key { idx += 1; sets.push(format!("storageIdentityKey = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.storage_name { idx += 1; sets.push(format!("storageName = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
-                    if let Some(v) = &update.status { idx += 1; sets.push(format!("status = {}", ph(idx))); binds.push(BindVal::String(v.to_string())); }
-                    if let Some(v) = &update.init { idx += 1; sets.push(format!("init = {}", ph(idx))); binds.push(BindVal::Bool(*v)); }
-                    if let Some(v) = &update.sync_map { idx += 1; sets.push(format!("syncMap = {}", ph(idx))); binds.push(BindVal::String(v.clone())); }
+                    if let Some(v) = &update.user_id {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("userId"), ph(idx)));
+                        binds.push(BindVal::Int64(*v));
+                    }
+                    if let Some(v) = &update.storage_identity_key {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("storageIdentityKey"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.storage_name {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("storageName"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
+                    if let Some(v) = &update.status {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("status"), ph(idx)));
+                        binds.push(BindVal::String(v.to_string()));
+                    }
+                    if let Some(v) = &update.init {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("init"), ph(idx)));
+                        binds.push(BindVal::Bool(*v));
+                    }
+                    if let Some(v) = &update.sync_map {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("syncMap"), ph(idx)));
+                        binds.push(BindVal::String(v.clone()));
+                    }
                     // "when" is a reserved word — quote it using the db-appropriate quoting fn.
-                    if let Some(v) = &update.when { idx += 1; sets.push(format!("{} = {}", $qc_fn("when"), ph(idx))); binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string())); }
+                    if let Some(v) = &update.when {
+                        idx += 1;
+                        sets.push(format!("{} = {}", qc("when"), ph(idx)));
+                        binds.push(BindVal::String(
+                            v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                        ));
+                    }
                     match &update.updated_at {
                         Some(v) => {
                             idx += 1;
-                            sets.push(format!("updated_at = {}", ph(idx)));
-                            binds.push(BindVal::String(v.format("%Y-%m-%d %H:%M:%S%.3f").to_string()));
+                            sets.push(format!("{} = {}", qc("updated_at"), ph(idx)));
+                            binds.push(BindVal::String(
+                                v.format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+                            ));
                         }
-                        None => sets.push(format!("updated_at = {}", $now_expr)),
+                        None => sets.push(format!("{} = {}", qc("updated_at"), $now_expr)),
                     }
-                    idx += 1; let sql = format!("UPDATE sync_states SET {} WHERE syncStateId = {}", sets.join(", "), ph(idx));
+                    idx += 1;
+                    let sql = format!(
+                        "UPDATE sync_states SET {} WHERE {} = {}",
+                        sets.join(", "),
+                        qc("syncStateId"),
+                        ph(idx)
+                    );
                     binds.push(BindVal::Int64(id));
                     exec_update(self, &sql, &binds, trx).await
                 }
@@ -1366,7 +1916,9 @@ impl_update_methods! {
     extract_trx = StorageSqlx::<sqlx::MySql>::extract_mysql_trx,
     now_expr = "NOW()",
     placeholder_fn = |_idx: usize| -> String { "?".to_string() },
-    quote_col_fn = |col: &str| -> String { format!("`{col}`") }
+    quote_col_fn = |col: &str| -> String {
+        crate::storage::sqlx_impl::dialect::Dialect::Mysql.quote_column(col)
+    }
 }
 
 impl_update_methods! {
@@ -1377,5 +1929,7 @@ impl_update_methods! {
     extract_trx = StorageSqlx::<sqlx::Postgres>::extract_pg_trx,
     now_expr = "NOW()",
     placeholder_fn = |idx: usize| -> String { format!("${idx}") },
-    quote_col_fn = |col: &str| -> String { format!("\"{col}\"") }
+    quote_col_fn = |col: &str| -> String {
+        crate::storage::sqlx_impl::dialect::Dialect::Postgres.quote_column(col)
+    }
 }
