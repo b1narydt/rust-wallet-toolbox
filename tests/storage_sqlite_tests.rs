@@ -566,4 +566,151 @@ mod storage_sqlite {
             .unwrap();
         assert_eq!(field_count, 2);
     }
+
+    /// Invokes all 16 real `StorageReader` count methods against SQLite, catching any change
+    /// to the returned count wherever it was introduced. SQLite accepts an ordered aggregate,
+    /// so it cannot distinguish a stray `ORDER BY`; the SQL-text invariant in `find.rs` does.
+    /// The detecting signal here is the past-the-end `OFFSET`, which suppresses the aggregate row.
+    #[tokio::test]
+    async fn paged_count_ignores_paging_and_counts_whole_filtered_set() {
+        let storage = setup_test_storage().await.unwrap();
+        let now = test_datetime();
+        let mut user_ids = Vec::new();
+
+        for i in 0..3 {
+            let user_id = storage
+                .insert_user(
+                    &User {
+                        created_at: now,
+                        updated_at: now,
+                        user_id: 0,
+                        identity_key: format!("paged_count_user_{i}"),
+                        active_storage: String::new(),
+                    },
+                    None,
+                )
+                .await
+                .unwrap();
+            user_ids.push(user_id);
+        }
+
+        let tx_label_id = storage
+            .insert_tx_label(
+                &TxLabel {
+                    created_at: now,
+                    updated_at: now,
+                    tx_label_id: 0,
+                    user_id: user_ids[0],
+                    label: "paged-count-label".to_string(),
+                    is_deleted: false,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        for i in 0..3 {
+            let transaction_id = storage
+                .insert_transaction(
+                    &Transaction {
+                        created_at: now,
+                        updated_at: now,
+                        transaction_id: 0,
+                        user_id: user_ids[0],
+                        proven_tx_id: None,
+                        status: TransactionStatus::Unprocessed,
+                        reference: format!("paged-count-reference-{i}"),
+                        is_outgoing: false,
+                        satoshis: i,
+                        description: "Paged count test transaction".to_string(),
+                        version: None,
+                        lock_time: None,
+                        txid: None,
+                        input_beef: None,
+                        raw_tx: None,
+                    },
+                    None,
+                )
+                .await
+                .unwrap();
+            storage
+                .insert_tx_label_map(
+                    &TxLabelMap {
+                        created_at: now,
+                        updated_at: now,
+                        tx_label_id,
+                        transaction_id,
+                        is_deleted: false,
+                    },
+                    None,
+                )
+                .await
+                .unwrap();
+        }
+
+        macro_rules! assert_count_ignores_paging {
+            ($method:ident, $make_args:expr) => {{
+                let make_args = $make_args;
+                let unpaged_args = make_args();
+                let unpaged = storage
+                    .$method(&unpaged_args, None)
+                    .await
+                    .unwrap_or_else(|error| {
+                        panic!("{} errored without paging: {error:?}", stringify!($method))
+                    });
+
+                for offset in [0, 999] {
+                    let mut paged_args = make_args();
+                    paged_args.paged = Some(Paged { limit: 1, offset });
+                    let paged = storage
+                        .$method(&paged_args, None)
+                        .await
+                        .unwrap_or_else(|error| {
+                            panic!(
+                                "{} errored with offset {offset}: {error:?}",
+                                stringify!($method)
+                            )
+                        });
+                    assert_eq!(
+                        paged,
+                        unpaged,
+                        "{} returned a wrong count with offset {offset}",
+                        stringify!($method)
+                    );
+                }
+
+                unpaged
+            }};
+        }
+
+        // Keep this list in lockstep with COUNT_METHODS in storage/sqlx_impl/find.rs.
+        // Unlike the SQL-generator tests, these calls verify that every real
+        // StorageReader count method remains wired to its paging-free generator.
+        let users_count = assert_count_ignores_paging!(count_users, FindUsersArgs::default);
+        assert_eq!(users_count, 3);
+        assert_count_ignores_paging!(count_certificates, FindCertificatesArgs::default);
+        assert_count_ignores_paging!(count_certificate_fields, FindCertificateFieldsArgs::default);
+        assert_count_ignores_paging!(count_commissions, FindCommissionsArgs::default);
+        assert_count_ignores_paging!(count_monitor_events, FindMonitorEventsArgs::default);
+        assert_count_ignores_paging!(count_output_baskets, FindOutputBasketsArgs::default);
+        assert_count_ignores_paging!(count_output_tag_maps, FindOutputTagMapsArgs::default);
+        assert_count_ignores_paging!(count_output_tags, FindOutputTagsArgs::default);
+        assert_count_ignores_paging!(count_outputs, FindOutputsArgs::default);
+        assert_count_ignores_paging!(count_proven_txs, FindProvenTxsArgs::default);
+        assert_count_ignores_paging!(count_proven_tx_reqs, FindProvenTxReqsArgs::default);
+        assert_count_ignores_paging!(count_settings, FindSettingsArgs::default);
+        assert_count_ignores_paging!(count_sync_states, FindSyncStatesArgs::default);
+        assert_count_ignores_paging!(count_transactions, FindTransactionsArgs::default);
+        let tx_label_maps_count = assert_count_ignores_paging!(count_tx_label_maps, || {
+            FindTxLabelMapsArgs {
+                partial: TxLabelMapPartial {
+                    tx_label_id: Some(tx_label_id),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        });
+        assert_eq!(tx_label_maps_count, 3);
+        assert_count_ignores_paging!(count_tx_labels, FindTxLabelsArgs::default);
+    }
 }

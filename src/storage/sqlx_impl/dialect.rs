@@ -159,10 +159,11 @@ impl WhereBuilder {
         self.clauses.push(format!("{qc} LIKE {ph}"));
     }
 
-    /// Add an IN condition: `` `column` IN (?, ?, ...) ``
-    #[allow(dead_code)]
+    /// Add an IN condition: `` `column` IN (?, ?, ...) ``.
+    /// An empty list emits `1 = 0` and matches nothing; callers must not guard the empty case.
     pub fn add_in(&mut self, column: &str, count: usize) {
         if count == 0 {
+            self.clauses.push("1 = 0".to_string());
             return;
         }
         let qc = self.dialect.quote_column(column);
@@ -175,6 +176,7 @@ impl WhereBuilder {
     /// `` (SELECT `sub_col` FROM `table` WHERE `table`.`join_col` = `outer_table`.`outer_col`) IN (?, ?, ...) ``
     ///
     /// Used for filtering outputs by their parent transaction's status.
+    /// An empty list emits `1 = 0` and matches nothing; callers must not guard the empty case.
     #[allow(dead_code)]
     pub fn add_subquery_in(
         &mut self,
@@ -186,6 +188,7 @@ impl WhereBuilder {
         count: usize,
     ) {
         if count == 0 {
+            self.clauses.push("1 = 0".to_string());
             return;
         }
         let qt = self.dialect.quote_column(table);
@@ -298,6 +301,14 @@ mod tests {
     }
 
     #[test]
+    fn empty_in_clause_matches_nothing() {
+        let mut wb = WhereBuilder::new(Dialect::Postgres);
+        wb.add_in("id", 0);
+        assert_eq!(wb.build_where(), " WHERE 1 = 0");
+        assert_eq!(wb.param_count(), 0);
+    }
+
+    #[test]
     fn ordered_page_sqlite_single_key() {
         let paged = Paged {
             limit: 3,
@@ -392,6 +403,26 @@ mod tests {
         assert_eq!(
             wb.build_where(),
             " WHERE (SELECT \"status\" FROM \"transactions\" WHERE \"transactions\".\"transactionId\" = \"outputs\".\"transactionId\") IN ($1, $2)"
+        );
+        assert_eq!(wb.param_count(), 2);
+    }
+
+    #[test]
+    fn empty_subquery_in_matches_nothing_without_consuming_a_placeholder() {
+        let mut wb = WhereBuilder::new(Dialect::Postgres);
+        wb.add_eq("userId");
+        wb.add_subquery_in(
+            "transactions",
+            "status",
+            "transactionId",
+            "outputs",
+            "transactionId",
+            0,
+        );
+        wb.add_eq("spendable");
+        assert_eq!(
+            wb.build_where(),
+            " WHERE \"userId\" = $1 AND 1 = 0 AND \"spendable\" = $2"
         );
         assert_eq!(wb.param_count(), 2);
     }
