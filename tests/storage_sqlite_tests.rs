@@ -309,6 +309,33 @@ mod storage_sqlite {
         assert_eq!(total, 5);
     }
 
+    #[tokio::test]
+    async fn test_locking_output_read_requires_transaction_and_rejects_paging() {
+        let storage = setup_test_storage().await.unwrap();
+        let mut args = FindOutputsArgs {
+            for_update: true,
+            ..Default::default()
+        };
+
+        let without_transaction = storage.find_outputs(&args, None).await;
+        assert!(
+            without_transaction.is_err(),
+            "a locking read must fail outside a transaction"
+        );
+
+        args.paged = Some(Paged {
+            limit: 10,
+            offset: 0,
+        });
+        let trx = storage.begin_transaction().await.unwrap();
+        let with_paging = storage.find_outputs(&args, Some(&trx)).await;
+        storage.rollback_transaction(trx).await.unwrap();
+        assert!(
+            with_paging.is_err(),
+            "a locking read must reject OFFSET pagination"
+        );
+    }
+
     // -----------------------------------------------------------------------
     // Test 5: Transaction rollback -- data should NOT be persisted
     // -----------------------------------------------------------------------

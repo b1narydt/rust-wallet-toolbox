@@ -17,7 +17,38 @@ pub enum Dialect {
     Postgres,
 }
 
+/// How a backend serialises two callers racing to claim the same outputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LockingStrategy {
+    /// Real row locks that skip rows another transaction holds
+    /// (PostgreSQL, MySQL >= 8.0.1).
+    SkipLocked,
+    /// The engine serialises writers, so a locking read adds nothing;
+    /// the guarded CAS is the control.
+    EngineSerialized,
+}
+
 impl Dialect {
+    /// Return the backend's output-claim locking strategy.
+    pub fn locking_strategy(self) -> LockingStrategy {
+        match self {
+            Dialect::Sqlite => LockingStrategy::EngineSerialized,
+            Dialect::Mysql => LockingStrategy::SkipLocked,
+            Dialect::Postgres => LockingStrategy::SkipLocked,
+        }
+    }
+
+    /// Return the suffix for a candidate read that claims rows from `table`.
+    ///
+    /// Naming the table confines the lock to the rows being claimed, excluding
+    /// rows read only through correlated subqueries.
+    pub fn locking_clause(self, table: &str) -> String {
+        match self.locking_strategy() {
+            LockingStrategy::SkipLocked => format!(" FOR UPDATE OF {table} SKIP LOCKED"),
+            LockingStrategy::EngineSerialized => String::new(),
+        }
+    }
+
     /// Return the appropriate SQL expression for "current timestamp" in this dialect.
     pub fn now_expr(self) -> &'static str {
         match self {
@@ -291,6 +322,31 @@ mod tests {
             " WHERE \"userId\" = $1 AND \"created_at\" >= $2 AND \"status\" = $3"
         );
         assert_eq!(wb.param_count(), 3);
+    }
+
+    #[test]
+    fn output_claim_locking_is_dialect_capability() {
+        assert_eq!(
+            Dialect::Sqlite.locking_strategy(),
+            LockingStrategy::EngineSerialized
+        );
+        assert_eq!(
+            Dialect::Mysql.locking_strategy(),
+            LockingStrategy::SkipLocked
+        );
+        assert_eq!(
+            Dialect::Postgres.locking_strategy(),
+            LockingStrategy::SkipLocked
+        );
+        assert_eq!(Dialect::Sqlite.locking_clause("outputs"), "");
+        assert_eq!(
+            Dialect::Mysql.locking_clause("outputs"),
+            " FOR UPDATE OF outputs SKIP LOCKED"
+        );
+        assert_eq!(
+            Dialect::Postgres.locking_clause("outputs"),
+            " FOR UPDATE OF outputs SKIP LOCKED"
+        );
     }
 
     #[test]

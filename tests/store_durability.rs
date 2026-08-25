@@ -12,6 +12,7 @@ mod common;
 
 #[cfg(feature = "sqlite")]
 mod store_durability {
+    use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
@@ -729,6 +730,98 @@ mod store_durability {
             .await
             .expect("read journal_mode");
         assert_eq!(mode, "wal", "chaintracks header store must use WAL");
+    }
+
+    /// Concurrent createAction calls must commit exactly the number of spends
+    /// the funded balance supports, with each funded output claimed at most once.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_create_action_claims_each_funded_output_at_most_once() {
+        const FUNDING_UTXOS: usize = 8;
+        const FUNDING_SATS: i64 = 10_000;
+        const PAYMENT_SATS: u64 = 9_500;
+        const CALLERS: usize = 12;
+
+        let (storage, _dir) = file_storage("concurrent-claims").await;
+        let user_id = seed_user(&storage, FUNDING_UTXOS, FUNDING_SATS).await;
+
+        let seeded = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        user_id: Some(user_id),
+                        spendable: Some(true),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("read seeded outputs");
+        assert_eq!(seeded.len(), FUNDING_UTXOS);
+        let output_ids_by_outpoint: BTreeMap<(String, u32), i64> = seeded
+            .iter()
+            .map(|output| {
+                (
+                    (
+                        output.txid.clone().expect("seed output txid"),
+                        output.vout as u32,
+                    ),
+                    output.output_id,
+                )
+            })
+            .collect();
+
+        let storage = Arc::new(storage);
+        let barrier = Arc::new(tokio::sync::Barrier::new(CALLERS));
+        let mut tasks = Vec::with_capacity(CALLERS);
+        for _ in 0..CALLERS {
+            let storage = storage.clone();
+            let barrier = barrier.clone();
+            tasks.push(tokio::spawn(async move {
+                barrier.wait().await;
+                let mut args = runar_args(1, 25, None);
+                args.outputs[0].satoshis = PAYMENT_SATS;
+                storage_create_action(storage.as_ref(), user_id, &args, None).await
+            }));
+        }
+
+        let mut successes = Vec::new();
+        let mut failures = Vec::new();
+        for task in tasks {
+            match task.await.expect("createAction task joined") {
+                Ok(result) => successes.push(result),
+                Err(error) => failures.push(error.to_string()),
+            }
+        }
+
+        // Eight 10,000-sat UTXOs each cover one 9,500-sat payment plus the
+        // sub-500-sat fee. The total 80,000 sats cannot cover a ninth 9,500-sat
+        // payment even if fees were zero, so funded capacity is exactly eight.
+        assert_eq!(
+            successes.len(),
+            FUNDING_UTXOS,
+            "successes must equal funded capacity; failures: {failures:?}"
+        );
+
+        let mut claimed_output_ids = BTreeSet::new();
+        for result in &successes {
+            for input in &result.inputs {
+                let output_id = output_ids_by_outpoint
+                    .get(&(input.source_txid.clone(), input.source_vout))
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "committed transaction {} claimed an unknown input {}:{}",
+                            result.reference, input.source_txid, input.source_vout
+                        )
+                    });
+                assert!(
+                    claimed_output_ids.insert(*output_id),
+                    "outputId {output_id} was claimed by more than one committed transaction"
+                );
+            }
+        }
+        assert_eq!(claimed_output_ids.len(), FUNDING_UTXOS);
     }
 }
 

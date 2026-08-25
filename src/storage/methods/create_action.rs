@@ -530,6 +530,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
                 ..Default::default()
             },
             tx_status: Some(change_tx_status),
+            for_update: true,
             ..Default::default()
         };
         let mut available_change_outputs = storage.find_outputs(&change_find_args, trx_opt).await?;

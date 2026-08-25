@@ -1644,4 +1644,116 @@ mod storage_mysql {
             expected
         );
     }
+
+    /// Exercises the real correlated-subquery candidate read against MySQL,
+    /// including `FOR UPDATE OF outputs SKIP LOCKED`.
+    #[tokio::test]
+    #[ignore]
+    async fn test_mysql_output_candidate_locking_read_is_accepted() {
+        let storage = setup_mysql_storage().await.unwrap();
+        let user_id = insert_mysql_user(&storage, "mysql-locking-read").await;
+        let transaction_id = insert_mysql_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "mysql-locking-read",
+        )
+        .await;
+        let output_id =
+            insert_mysql_output(&storage, user_id, transaction_id, 0, true, None, None).await;
+
+        let trx = storage.begin_transaction().await.unwrap();
+        let found = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        user_id: Some(user_id),
+                        spendable: Some(true),
+                        ..Default::default()
+                    },
+                    tx_status: Some(vec![TransactionStatus::Completed]),
+                    for_update: true,
+                    ..Default::default()
+                },
+                Some(&trx),
+            )
+            .await
+            .unwrap();
+        storage.commit_transaction(trx).await.unwrap();
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].output_id, output_id);
+    }
+
+    /// SKIP LOCKED must hand concurrent claimers DISJOINT candidate sets.
+    ///
+    /// This is the property the locking read exists to provide, and it is the
+    /// only test here that fails if the clause is removed. Reader one locks the
+    /// single candidate inside an open transaction; reader two must come back
+    /// empty rather than returning the same row (which is what an unlocked read
+    /// does) or blocking until reader one commits (which is what a bare
+    /// `FOR UPDATE` without `SKIP LOCKED` does — hence the timeout, so that
+    /// regression fails loudly instead of hanging the suite).
+    #[tokio::test]
+    #[ignore]
+    async fn test_mysql_skip_locked_hands_concurrent_readers_disjoint_sets() {
+        let storage = setup_mysql_storage().await.unwrap();
+        let user_id = insert_mysql_user(&storage, "mysql-skip-locked-disjoint").await;
+        let transaction_id = insert_mysql_transaction(
+            &storage,
+            user_id,
+            TransactionStatus::Completed,
+            "mysql-skip-locked-disjoint",
+        )
+        .await;
+        let output_id =
+            insert_mysql_output(&storage, user_id, transaction_id, 0, true, None, None).await;
+
+        let candidates = || FindOutputsArgs {
+            partial: OutputPartial {
+                user_id: Some(user_id),
+                spendable: Some(true),
+                ..Default::default()
+            },
+            tx_status: Some(vec![TransactionStatus::Completed]),
+            for_update: true,
+            ..Default::default()
+        };
+
+        let first = storage.begin_transaction().await.unwrap();
+        let locked = storage
+            .find_outputs(&candidates(), Some(&first))
+            .await
+            .unwrap();
+        assert_eq!(locked.len(), 1, "first claimer must see the candidate");
+        assert_eq!(locked[0].output_id, output_id);
+
+        // Second claimer, its own transaction and connection, while the first
+        // still holds the row lock.
+        let second = storage.begin_transaction().await.unwrap();
+        let skipped = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            storage.find_outputs(&candidates(), Some(&second)),
+        )
+        .await
+        .expect("locking read blocked: SKIP LOCKED is missing, the read waited on the held lock")
+        .unwrap();
+        assert!(
+            skipped.is_empty(),
+            "second claimer saw {} row(s) the first had already locked — SKIP LOCKED is not in effect",
+            skipped.len()
+        );
+
+        storage.commit_transaction(second).await.unwrap();
+        storage.commit_transaction(first).await.unwrap();
+
+        // Once released, the candidate is visible again.
+        let after = storage.begin_transaction().await.unwrap();
+        let reacquired = storage
+            .find_outputs(&candidates(), Some(&after))
+            .await
+            .unwrap();
+        storage.commit_transaction(after).await.unwrap();
+        assert_eq!(reacquired.len(), 1, "lock must be released on commit");
+    }
 }

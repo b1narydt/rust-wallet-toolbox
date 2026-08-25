@@ -391,6 +391,10 @@ pub struct FindOutputsArgs {
     pub since: Option<NaiveDateTime>,
     /// Pagination (limit/offset).
     pub paged: Option<Paged>,
+    /// Lock candidate rows for an atomic claim within the supplied transaction.
+    /// This is local SQL execution state and is never sent to remote storage.
+    #[serde(skip)]
+    pub for_update: bool,
     /// Filter by transaction status (joined through the transactions table).
     /// An empty vector matches nothing.
     pub tx_status: Option<Vec<TransactionStatus>>,

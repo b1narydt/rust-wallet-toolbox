@@ -622,6 +622,13 @@ mod sqlite_impl {
     fn build_outputs_find_query(
         args: &FindOutputsArgs,
     ) -> WalletResult<(String, Vec<SqliteBindValue>)> {
+        if args.for_update && args.paged.is_some() {
+            return Err(WalletError::InvalidParameter {
+                parameter: "args.paged".to_string(),
+                must_be: "undefined when args.forUpdate is true; SKIP LOCKED cannot be combined with OFFSET pagination"
+                    .to_string(),
+            });
+        }
         let (where_clause, binds) = build_outputs_where(args)?;
         let columns = if args.no_script {
             super::outputs_without_locking_script(Dialect::Sqlite)
@@ -637,8 +644,15 @@ mod sqlite_impl {
         } else {
             String::new()
         };
+        let locking_clause = if args.for_update {
+            Dialect::Sqlite.locking_clause("outputs")
+        } else {
+            String::new()
+        };
         Ok((
-            format!("SELECT {columns} FROM outputs{where_clause}{ordered_page}{batch_order}"),
+            format!(
+                "SELECT {columns} FROM outputs{where_clause}{ordered_page}{batch_order}{locking_clause}"
+            ),
             binds,
         ))
     }
@@ -1300,6 +1314,12 @@ mod sqlite_impl {
             args: &FindOutputsArgs,
             trx: Option<&TrxToken>,
         ) -> WalletResult<Vec<Output>> {
+            if args.for_update && trx.is_none() {
+                return Err(WalletError::InvalidParameter {
+                    parameter: "trx".to_string(),
+                    must_be: "supplied when args.forUpdate is true".to_string(),
+                });
+            }
             let (sql, binds) = build_outputs_find_query(args)?;
             query_rows(self, &sql, binds, trx).await
         }
@@ -2182,6 +2202,13 @@ macro_rules! impl_storage_reader_find {
             fn build_outputs_find_query(
                 args: &FindOutputsArgs,
             ) -> WalletResult<(String, Vec<BindVal>)> {
+                if args.for_update && args.paged.is_some() {
+                    return Err(WalletError::InvalidParameter {
+                        parameter: "args.paged".to_string(),
+                        must_be: "undefined when args.forUpdate is true; SKIP LOCKED cannot be combined with OFFSET pagination"
+                            .to_string(),
+                    });
+                }
                 let (where_clause, binds) = build_outputs_where(args)?;
                 let columns = if args.no_script {
                     super::outputs_without_locking_script($dialect)
@@ -2197,9 +2224,14 @@ macro_rules! impl_storage_reader_find {
                 } else {
                     String::new()
                 };
+                let locking_clause = if args.for_update {
+                    $dialect.locking_clause("outputs")
+                } else {
+                    String::new()
+                };
                 Ok((
                     format!(
-                        "SELECT {columns} FROM outputs{where_clause}{ordered_page}{batch_order}"
+                        "SELECT {columns} FROM outputs{where_clause}{ordered_page}{batch_order}{locking_clause}"
                     ),
                     binds,
                 ))
@@ -2812,6 +2844,12 @@ macro_rules! impl_storage_reader_find {
                     args: &FindOutputsArgs,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<Vec<Output>> {
+                    if args.for_update && trx.is_none() {
+                        return Err(WalletError::InvalidParameter {
+                            parameter: "trx".to_string(),
+                            must_be: "supplied when args.forUpdate is true".to_string(),
+                        });
+                    }
                     let (sql, b) = build_outputs_find_query(args)?;
                     query_rows(self, &sql, b, trx).await
                 }
