@@ -37,11 +37,15 @@ pub enum BroadcastOutcome {
 /// Classify broadcast results from all providers into a single outcome.
 ///
 /// Priority (matching TS/Go):
-/// 1. Any provider reports success -> Success
-/// 2. Any double_spend flag -> DoubleSpend
+/// 1. Any double_spend flag -> DoubleSpend
+/// 2. Any provider reports success -> Success
 /// 3. Any definitive rejection (status "error" without service_error/orphan flags) -> InvalidTx
 /// 4. Any orphan_mempool flag -> OrphanMempool
 /// 5. Otherwise -> ServiceError
+///
+/// A double-spend report is a safety signal and therefore wins over success: treating the
+/// transaction as successfully broadcast when a provider saw a conflicting spend would let the
+/// wallet mark inputs consumed against a transaction that will never confirm.
 pub fn classify_broadcast_results(results: &[PostBeefResult]) -> BroadcastOutcome {
     let mut has_success = false;
     let mut has_double_spend = false;
@@ -81,14 +85,14 @@ pub fn classify_broadcast_results(results: &[PostBeefResult]) -> BroadcastOutcom
         }
     }
 
-    // Priority: success > double-spend > invalid > orphan > service-error
-    if has_success {
-        BroadcastOutcome::Success
-    } else if has_double_spend {
+    // Priority: double-spend > success > invalid > orphan > service-error
+    if has_double_spend {
         BroadcastOutcome::DoubleSpend {
             competing_txs,
             details,
         }
+    } else if has_success {
+        BroadcastOutcome::Success
     } else if has_invalid {
         BroadcastOutcome::InvalidTx { details }
     } else if has_orphan {
@@ -740,14 +744,14 @@ mod tests {
     }
 
     #[test]
-    fn test_success_wins_over_double_spend() {
+    fn test_double_spend_wins_over_success() {
         let results = vec![
             double_spend_result("ARC", "tx1"),
             success_result("WoC", "tx1"),
         ];
         assert!(matches!(
             classify_broadcast_results(&results),
-            BroadcastOutcome::Success
+            BroadcastOutcome::DoubleSpend { .. }
         ));
     }
 
