@@ -242,12 +242,12 @@ mod sqlite_proof {
 
         // Writer A claims it.
         let rows_a = storage
-            .mark_change_inputs_spent(&[output_id], tx_a, None)
+            .mark_inputs_spent(&[output_id], tx_a, user_id, None)
             .await
             .expect("A claim");
         // Writer B claims the SAME output.
         let rows_b = storage
-            .mark_change_inputs_spent(&[output_id], tx_b, None)
+            .mark_inputs_spent(&[output_id], tx_b, user_id, None)
             .await
             .expect("B claim");
 
@@ -324,7 +324,7 @@ mod sqlite_proof {
 
         let tx_c = new_spender(&storage, user_id, "tb_claim_c").await;
         let rows_claim = storage
-            .mark_change_inputs_spent(&[output_id], tx_c, None)
+            .mark_inputs_spent(&[output_id], tx_c, user_id, None)
             .await
             .expect("claim");
 
@@ -334,6 +334,55 @@ mod sqlite_proof {
             rows_claim, 0,
             "claim must reject an output that is no longer spendable"
         );
+    }
+
+    #[tokio::test]
+    async fn tb_claim_tenant_guard_rejects_foreign_user() {
+        let storage = sqlite_storage().await.expect("storage");
+        let (owner_user_id, _basket_id) = seed(&storage, 1, 100_000).await;
+
+        let output_id = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        user_id: Some(owner_user_id),
+                        spendable: Some(true),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find owner output")[0]
+            .output_id;
+        let (foreign_user, _) = storage
+            .find_or_insert_user("foreign_claim_identity", None)
+            .await
+            .expect("foreign user");
+        let foreign_tx = new_spender(&storage, foreign_user.user_id, "foreign_claim").await;
+
+        let claimed = storage
+            .mark_inputs_spent(&[output_id], foreign_tx, foreign_user.user_id, None)
+            .await
+            .expect("foreign claim");
+
+        assert_eq!(claimed, 0, "a foreign tenant must not claim the output");
+        let after = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        output_id: Some(output_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("read owner output");
+        assert!(after[0].spendable);
+        assert!(after[0].spent_by.is_none());
     }
 
     /// A partial claim must be reported as partial: of two planned outputs,
@@ -366,14 +415,14 @@ mod sqlite_proof {
 
         // A competing writer takes the first output.
         let taken = storage
-            .mark_change_inputs_spent(&[first], tx_a, None)
+            .mark_inputs_spent(&[first], tx_a, user_id, None)
             .await
             .expect("competitor claim");
         assert_eq!(taken, 1);
 
         // Our writer planned BOTH; only one is still free.
         let claimed = storage
-            .mark_change_inputs_spent(&[first, second], tx_b, None)
+            .mark_inputs_spent(&[first, second], tx_b, user_id, None)
             .await
             .expect("our claim");
 
@@ -436,11 +485,11 @@ mod postgres_race {
         let tx_b = new_spender(&storage, user_id, "tb_claim_pg_b").await;
 
         let rows_a =
-            StorageReaderWriter::mark_change_inputs_spent(&storage, &[output_id], tx_a, None)
+            StorageReaderWriter::mark_inputs_spent(&storage, &[output_id], tx_a, user_id, None)
                 .await
                 .expect("A");
         let rows_b =
-            StorageReaderWriter::mark_change_inputs_spent(&storage, &[output_id], tx_b, None)
+            StorageReaderWriter::mark_inputs_spent(&storage, &[output_id], tx_b, user_id, None)
                 .await
                 .expect("B");
 

@@ -282,13 +282,14 @@ mod sqlite_impl {
             self.update_output_impl(id, update, trx).await
         }
 
-        async fn mark_change_inputs_spent(
+        async fn mark_inputs_spent(
             &self,
             output_ids: &[i64],
             transaction_id: i64,
+            user_id: i64,
             trx: Option<&TrxToken>,
         ) -> WalletResult<i64> {
-            self.mark_change_inputs_spent_impl(output_ids, transaction_id, trx)
+            self.mark_inputs_spent_impl(output_ids, transaction_id, user_id, trx)
                 .await
         }
 
@@ -1205,13 +1206,14 @@ macro_rules! impl_storage_rw_and_provider {
                 ) -> WalletResult<i64> {
                     self.update_output_impl(id, u, trx).await
                 }
-                async fn mark_change_inputs_spent(
+                async fn mark_inputs_spent(
                     &self,
                     output_ids: &[i64],
                     transaction_id: i64,
+                    user_id: i64,
                     trx: Option<&TrxToken>,
                 ) -> WalletResult<i64> {
-                    self.mark_change_inputs_spent_impl(output_ids, transaction_id, trx)
+                    self.mark_inputs_spent_impl(output_ids, transaction_id, user_id, trx)
                         .await
                 }
                 async fn update_proven_tx(

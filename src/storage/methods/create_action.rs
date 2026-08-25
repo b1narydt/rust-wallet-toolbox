@@ -407,14 +407,18 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             }
 
             // Mark as spent
-            let update = OutputPartial {
-                spendable: Some(false),
-                spent_by: Some(transaction_id),
-                ..Default::default()
-            };
-            storage
-                .update_output(output.output_id, &update, trx_opt)
+            let updated = storage
+                .mark_inputs_spent(&[output.output_id], transaction_id, user_id, trx_opt)
                 .await?;
+            if updated != 1 {
+                return Err(WalletError::InvalidParameter {
+                    parameter: format!("inputs[{vin}]"),
+                    must_be: format!(
+                        "spendable output. output {}:{} is not spendable.",
+                        input.outpoint.txid, input.outpoint.vout
+                    ),
+                });
+            }
 
             fixed_inputs.push(FixedInput {
                 satoshis: output.satoshis as u64,
@@ -644,7 +648,7 @@ async fn do_create_action<S: StorageReaderWriter + ?Sized>(
             .collect();
         let claimed_output_ids: Vec<i64> = claimed_output_ids.into_iter().collect();
         let updated = storage
-            .mark_change_inputs_spent(&claimed_output_ids, transaction_id, trx_opt)
+            .mark_inputs_spent(&claimed_output_ids, transaction_id, user_id, trx_opt)
             .await?;
 
         if updated == claimed_output_ids.len() as i64 {
@@ -1410,6 +1414,130 @@ mod tests {
             spent_count > 0,
             "at least one change UTXO should be allocated (spentBy set)"
         );
+    }
+
+    #[tokio::test]
+    async fn caller_supplied_input_rejects_a_short_guarded_claim() {
+        let (storage, user_id, _basket_id) = setup_test_storage().await;
+        let source_txid = "aaaa1111bbbb2222cccc3333dddd4444aaaa1111bbbb2222cccc3333dddd4444";
+
+        let target = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        user_id: Some(user_id),
+                        txid: Some(source_txid.to_string()),
+                        vout: Some(0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find caller-supplied input")
+            .into_iter()
+            .next()
+            .expect("seeded output");
+
+        let now = Utc::now().naive_utc();
+        let competing_transaction_id = storage
+            .insert_transaction(
+                &Transaction {
+                    created_at: now,
+                    updated_at: now,
+                    transaction_id: 0,
+                    user_id,
+                    proven_tx_id: None,
+                    status: TransactionStatus::Unsigned,
+                    reference: "caller_input_competitor".to_string(),
+                    is_outgoing: true,
+                    satoshis: 0,
+                    description: "competing caller-input claim".to_string(),
+                    version: Some(1),
+                    lock_time: Some(0),
+                    txid: None,
+                    input_beef: None,
+                    raw_tx: None,
+                },
+                None,
+            )
+            .await
+            .expect("insert competing transaction");
+        storage
+            .update_output(
+                target.output_id,
+                &OutputPartial {
+                    spent_by: Some(competing_transaction_id),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("record competing claim");
+
+        let args = StorageCreateActionArgs {
+            description: "caller-supplied guarded claim".to_string(),
+            inputs: vec![crate::storage::action_types::StorageCreateActionInput {
+                outpoint: crate::storage::action_types::StorageOutPoint {
+                    txid: source_txid.to_string(),
+                    vout: 0,
+                },
+                input_description: "caller input".to_string(),
+                unlocking_script_length: 108,
+                sequence_number: 0xFFFF_FFFF,
+            }],
+            outputs: vec![StorageCreateActionOutput {
+                locking_script: "76a91400000000000000000000000000000000000000008ac".to_string(),
+                satoshis: 1_000,
+                output_description: "payment output".to_string(),
+                basket: None,
+                custom_instructions: None,
+                tags: vec![],
+            }],
+            lock_time: 0,
+            version: 1,
+            labels: vec![],
+            options: StorageCreateActionOptions::default(),
+            input_beef: None,
+            is_new_tx: true,
+            is_sign_action: false,
+            is_no_send: false,
+            is_delayed: false,
+            is_send_with: false,
+            is_remix_change: false,
+            is_test_werr_review_actions: None,
+            include_all_source_transactions: false,
+            random_vals: None,
+        };
+
+        let err = storage_create_action(&storage, user_id, &args, None)
+            .await
+            .expect_err("a short caller-input claim must fail");
+        assert!(matches!(
+            err,
+            WalletError::InvalidParameter { parameter, must_be }
+                if parameter == "inputs[0]"
+                    && must_be
+                        == format!(
+                            "spendable output. output {source_txid}:0 is not spendable."
+                        )
+        ));
+
+        let after = storage
+            .find_outputs(
+                &FindOutputsArgs {
+                    partial: OutputPartial {
+                        output_id: Some(target.output_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("read caller-supplied input after rejection");
+        assert_eq!(after[0].spent_by, Some(competing_transaction_id));
     }
 
     /// Set up storage holding exactly one spendable change UTXO whose parent

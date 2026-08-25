@@ -216,41 +216,21 @@ pub trait StorageReaderWriter: StorageReader {
         trx: Option<&TrxToken>,
     ) -> WalletResult<i64>;
 
-    /// Claim change inputs for a transaction. Returns the number of outputs claimed.
+    /// Atomically claim outputs as inputs to `transaction_id`. Returns the number
+    /// of outputs actually claimed.
     ///
-    /// This default is a non-atomic best-effort fallback that still refuses
-    /// already-claimed outputs. Real storage backends must override it with a
-    /// single atomic guarded update.
-    async fn mark_change_inputs_spent(
+    /// Implementations MUST perform this as a single guarded statement predicated
+    /// on the outputs still being unclaimed, and return the real affected-row
+    /// count. Callers compare that count against how many they intended to claim;
+    /// a short count means a competing writer won the race. A read-then-write
+    /// implementation reintroduces the double-spend this method exists to close.
+    async fn mark_inputs_spent(
         &self,
         output_ids: &[i64],
         transaction_id: i64,
+        user_id: i64,
         trx: Option<&TrxToken>,
-    ) -> WalletResult<i64> {
-        let update = OutputPartial {
-            spendable: Some(false),
-            spent_by: Some(transaction_id),
-            ..Default::default()
-        };
-        let mut updated = 0;
-        for output_id in output_ids {
-            let args = FindOutputsArgs {
-                partial: OutputPartial {
-                    output_id: Some(*output_id),
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            let Some(output) = verify_one_or_none(self.find_outputs(&args, trx).await?)? else {
-                continue;
-            };
-            if !output.spendable || output.spent_by.is_some() {
-                continue;
-            }
-            updated += self.update_output(*output_id, &update, trx).await?;
-        }
-        Ok(updated)
-    }
+    ) -> WalletResult<i64>;
 
     /// Update a proven transaction by ID. Returns the number of rows affected.
     async fn update_proven_tx(
