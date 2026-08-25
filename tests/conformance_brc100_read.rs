@@ -502,42 +502,6 @@ const KNOWN_LISTOUTPUTS_DIVERGENCES: &[&str] = &[
     // Observed: every entry fails with
     //   "invalid parameter: basket: must be not 'default'"
     // (ids 1..36 are exactly the basket="default" quadrant of the matrix).
-    "wallet.brc100.listoutputs.1:",
-    "wallet.brc100.listoutputs.2:",
-    "wallet.brc100.listoutputs.3:",
-    "wallet.brc100.listoutputs.4:",
-    "wallet.brc100.listoutputs.5:",
-    "wallet.brc100.listoutputs.6:",
-    "wallet.brc100.listoutputs.7:",
-    "wallet.brc100.listoutputs.8:",
-    "wallet.brc100.listoutputs.9:",
-    "wallet.brc100.listoutputs.10:",
-    "wallet.brc100.listoutputs.11:",
-    "wallet.brc100.listoutputs.12:",
-    "wallet.brc100.listoutputs.13:",
-    "wallet.brc100.listoutputs.14:",
-    "wallet.brc100.listoutputs.15:",
-    "wallet.brc100.listoutputs.16:",
-    "wallet.brc100.listoutputs.17:",
-    "wallet.brc100.listoutputs.18:",
-    "wallet.brc100.listoutputs.19:",
-    "wallet.brc100.listoutputs.20:",
-    "wallet.brc100.listoutputs.21:",
-    "wallet.brc100.listoutputs.22:",
-    "wallet.brc100.listoutputs.23:",
-    "wallet.brc100.listoutputs.24:",
-    "wallet.brc100.listoutputs.25:",
-    "wallet.brc100.listoutputs.26:",
-    "wallet.brc100.listoutputs.27:",
-    "wallet.brc100.listoutputs.28:",
-    "wallet.brc100.listoutputs.29:",
-    "wallet.brc100.listoutputs.30:",
-    "wallet.brc100.listoutputs.31:",
-    "wallet.brc100.listoutputs.32:",
-    "wallet.brc100.listoutputs.33:",
-    "wallet.brc100.listoutputs.34:",
-    "wallet.brc100.listoutputs.35:",
-    "wallet.brc100.listoutputs.36:",
 ];
 
 #[tokio::test]
@@ -630,10 +594,7 @@ async fn listoutputs_conformance() {
 ///   never executed by the reference — skip_reason on the vector) exceeds
 ///   both implementations. Verdict: corpus bug, flag upstream. Observed:
 ///   `actions[0].labels expected ["payment"], got []`.
-const KNOWN_LISTACTIONS_DIVERGENCES: &[&str] = &[
-    "wallet.brc100.listactions.11:",
-    "wallet.brc100.listactions.14: actions[0].labels",
-];
+const KNOWN_LISTACTIONS_DIVERGENCES: &[&str] = &["wallet.brc100.listactions.14: actions[0].labels"];
 
 #[tokio::test]
 async fn listactions_conformance() {
