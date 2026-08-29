@@ -32,7 +32,9 @@ mod store_durability {
         FindOutputsArgs, FindProvenTxReqsArgs, OutputPartial, ProvenTxReqPartial,
     };
     use bsv_wallet_toolbox::storage::methods::create_action::storage_create_action;
-    use bsv_wallet_toolbox::storage::methods::process_action::storage_process_action;
+    use bsv_wallet_toolbox::storage::methods::process_action::{
+        storage_process_action, AuthenticatedUserId,
+    };
     use bsv_wallet_toolbox::storage::sqlx_impl::SqliteStorage;
     use bsv_wallet_toolbox::storage::traits::provider::StorageProvider;
     use bsv_wallet_toolbox::storage::traits::reader::StorageReader;
@@ -263,7 +265,13 @@ mod store_durability {
             send_with: vec![],
         };
         let t1 = Instant::now();
-        storage_process_action(storage, user_id, &p_args, None).await?;
+        storage_process_action(
+            storage,
+            AuthenticatedUserId::assert_authenticated(user_id),
+            &p_args,
+            None,
+        )
+        .await?;
         let process_ms = t1.elapsed().as_secs_f64() * 1e3;
         Ok((create_ms, process_ms))
     }

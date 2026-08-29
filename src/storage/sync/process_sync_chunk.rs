@@ -19,6 +19,28 @@ use crate::storage::sync::sync_map::{EntitySyncMap, SyncChunk, SyncMap};
 use crate::storage::traits::provider::StorageProvider;
 use crate::storage::TrxToken;
 
+/// An identity key that the caller has already authenticated.
+///
+/// This type is an auditable assertion, not an authentication mechanism. The
+/// caller must first verify that the current authenticated request, session, or
+/// wallet context is bound to this exact identity key. Asserting an unverified
+/// or caller-controlled key can merge sync data into another user's storage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuthenticatedIdentityKey<'a>(&'a str);
+
+impl<'a> AuthenticatedIdentityKey<'a> {
+    /// Assert that `identity_key` belongs to the already-authenticated caller.
+    ///
+    /// Call this only after the surrounding authentication layer has verified
+    /// that the current request, session, or wallet context is bound to this
+    /// exact key. This constructor performs no authentication itself. Using it
+    /// with an unverified or caller-controlled key can cross the tenant boundary
+    /// and merge sync data into another user's storage.
+    pub const fn assert_authenticated(identity_key: &'a str) -> Self {
+        Self(identity_key)
+    }
+}
+
 /// Remap a *required* foreign key through the sync id-map, failing loudly when
 /// the mapping is absent.
 ///
@@ -57,46 +79,52 @@ fn remap_required_fk(
 /// 10. ProvenTxReq (depends on ProvenTx)
 pub async fn process_sync_chunk(
     storage: &dyn StorageProvider,
+    authenticated_identity_key: AuthenticatedIdentityKey<'_>,
     chunk: SyncChunk,
     sync_map: &mut SyncMap,
     trx: Option<&TrxToken>,
 ) -> WalletResult<ProcessSyncChunkResult> {
     let mut result = ProcessSyncChunkResult::default();
 
-    // 1. User
-    if let Some(ref user) = chunk.user {
-        let (local_user, _created) = storage.find_or_insert_user(&user.identity_key, trx).await?;
+    // Resolve the local user from the authenticated request context. The key is
+    // threaded separately from SyncChunk on purpose: no chunk-controlled field
+    // may select the local user that owns the entities merged below. A fresh
+    // store may create this authenticated user, matching the backup-import flow.
+    let (local_user, _created) = storage
+        .find_or_insert_user(authenticated_identity_key.0, trx)
+        .await?;
+    let local_user_id = local_user.user_id;
 
-        // Update if incoming is newer
-        if user.updated_at > local_user.updated_at {
-            storage
-                .update_user(
-                    local_user.user_id,
-                    &UserPartial {
-                        active_storage: Some(user.active_storage.clone()),
-                        updated_at: Some(user.updated_at.max(local_user.updated_at)),
-                        ..Default::default()
-                    },
-                    trx,
-                )
-                .await?;
-            result.updates += 1;
+    // 1. User. The nested identity is only a consistency check and merge
+    // candidate; it never creates or selects the authenticated local user.
+    if let Some(ref user) = chunk.user {
+        if let Some(nested_local_user) = storage
+            .find_user_by_identity_key(&user.identity_key, trx)
+            .await?
+        {
+            if nested_local_user.user_id != local_user_id {
+                return Err(WalletError::Internal(
+                    "processSyncChunk: logic error, userIds do not match".to_string(),
+                ));
+            }
+
+            // Update if incoming is newer.
+            if user.updated_at > local_user.updated_at {
+                storage
+                    .update_user(
+                        local_user_id,
+                        &UserPartial {
+                            active_storage: Some(user.active_storage.clone()),
+                            updated_at: Some(user.updated_at.max(local_user.updated_at)),
+                            ..Default::default()
+                        },
+                        trx,
+                    )
+                    .await?;
+                result.updates += 1;
+            }
         }
     }
-
-    // Look up local user_id for the chunk's identity key
-    let local_user = storage
-        .find_user_by_identity_key(&chunk.user_identity_key, trx)
-        .await?;
-    let local_user_id = match local_user {
-        Some(u) => u.user_id,
-        None => {
-            return Err(WalletError::Internal(format!(
-                "processSyncChunk: user not found for identity key {}",
-                chunk.user_identity_key
-            )));
-        }
-    };
 
     // 2. ProvenTx (no FK dependencies beyond user)
     if let Some(proven_txs) = chunk.proven_txs {

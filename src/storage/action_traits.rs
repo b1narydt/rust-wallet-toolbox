@@ -12,6 +12,7 @@ use crate::storage::action_types::{
     StorageCreateActionArgs, StorageCreateActionResult, StorageInternalizeActionArgs,
     StorageInternalizeActionResult, StorageProcessActionArgs, StorageProcessActionResult,
 };
+use crate::storage::methods::process_action::AuthenticatedUserId;
 use crate::storage::traits::provider::StorageProvider;
 use crate::storage::TrxToken;
 
@@ -49,7 +50,7 @@ pub trait StorageActionProvider: StorageProvider {
         let (user, _) = self.find_or_insert_user(auth, trx).await?;
         crate::storage::methods::process_action::storage_process_action(
             self,
-            user.user_id,
+            AuthenticatedUserId::assert_authenticated(user.user_id),
             args,
             trx,
         )

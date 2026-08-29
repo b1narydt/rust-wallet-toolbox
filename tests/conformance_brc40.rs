@@ -35,7 +35,9 @@ use serde_json::Value;
 use bsv_wallet_toolbox::status::TransactionStatus;
 use bsv_wallet_toolbox::storage::find_args::*;
 use bsv_wallet_toolbox::storage::sqlx_impl::SqliteStorage;
-use bsv_wallet_toolbox::storage::sync::process_sync_chunk::process_sync_chunk;
+use bsv_wallet_toolbox::storage::sync::process_sync_chunk::{
+    process_sync_chunk, AuthenticatedIdentityKey,
+};
 use bsv_wallet_toolbox::storage::sync::request_args::RequestSyncChunkArgs;
 use bsv_wallet_toolbox::storage::sync::sync_map::{SyncChunk, SyncMap};
 // CRUD comes from StorageReader/StorageReaderWriter; WalletStorageProvider
@@ -563,9 +565,15 @@ async fn run_merge_transaction(v: &Vector) {
     for row in [existing, incoming] {
         let mut chunk = empty_chunk();
         chunk.transactions = Some(vec![tx_row(row, user_id)]);
-        process_sync_chunk(&storage, chunk, &mut sync_map, None)
-            .await
-            .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
+        process_sync_chunk(
+            &storage,
+            AuthenticatedIdentityKey::assert_authenticated(USER_KEY),
+            chunk,
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
     }
 
     let reference = format!("vector-tx-{}", i(existing, "transactionId"));
@@ -664,16 +672,28 @@ async fn run_merge_output(v: &Vector) {
         mk_seed_tx(i(existing, "transactionId")),
         mk_seed_tx(i(existing, "spentBy")),
     ]);
-    process_sync_chunk(&storage, seed, &mut sync_map, None)
-        .await
-        .unwrap_or_else(|e| panic!("{}: seed failed: {e}", v.id));
+    process_sync_chunk(
+        &storage,
+        AuthenticatedIdentityKey::assert_authenticated(USER_KEY),
+        seed,
+        &mut sync_map,
+        None,
+    )
+    .await
+    .unwrap_or_else(|e| panic!("{}: seed failed: {e}", v.id));
 
     for row in [existing, incoming] {
         let mut chunk = empty_chunk();
         chunk.outputs = Some(vec![output_row(row, user_id)]);
-        process_sync_chunk(&storage, chunk, &mut sync_map, None)
-            .await
-            .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
+        process_sync_chunk(
+            &storage,
+            AuthenticatedIdentityKey::assert_authenticated(USER_KEY),
+            chunk,
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
     }
 
     let local_tx = sync_map
@@ -740,9 +760,15 @@ async fn run_merge_proven_tx(v: &Vector) {
     for (row, marker) in [(existing, "hash-existing"), (incoming, "hash-incoming")] {
         let mut chunk = empty_chunk();
         chunk.proven_txs = Some(vec![proven_row(row, marker)]);
-        process_sync_chunk(&storage, chunk, &mut sync_map, None)
-            .await
-            .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
+        process_sync_chunk(
+            &storage,
+            AuthenticatedIdentityKey::assert_authenticated(USER_KEY),
+            chunk,
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
     }
 
     let rows = storage
@@ -855,9 +881,15 @@ async fn flow_idmap_convergence(v: &Vector, failures: &mut Vec<String>) {
                 })
                 .collect(),
         );
-        process_sync_chunk(&storage, chunk, &mut sync_map, None)
-            .await
-            .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
+        process_sync_chunk(
+            &storage,
+            AuthenticatedIdentityKey::assert_authenticated(USER_KEY),
+            chunk,
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
     }
 
     let rows = storage
@@ -931,9 +963,15 @@ async fn flow_idmap_conflict(v: &Vector, failures: &mut Vec<String>) {
                 })
                 .collect(),
         );
-        if process_sync_chunk(&storage, chunk, &mut sync_map, None)
-            .await
-            .is_err()
+        if process_sync_chunk(
+            &storage,
+            AuthenticatedIdentityKey::assert_authenticated(USER_KEY),
+            chunk,
+            &mut sync_map,
+            None,
+        )
+        .await
+        .is_err()
         {
             errored = true;
             break;
@@ -969,9 +1007,15 @@ async fn flow_stale_regression(v: &Vector, failures: &mut Vec<String>) {
         let rows = sc["transactions"].as_array().expect("transactions");
         let mut chunk = empty_chunk();
         chunk.transactions = Some(rows.iter().map(|r| tx_row(r, user_id)).collect());
-        process_sync_chunk(&storage, chunk, &mut sync_map, None)
-            .await
-            .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
+        process_sync_chunk(
+            &storage,
+            AuthenticatedIdentityKey::assert_authenticated(USER_KEY),
+            chunk,
+            &mut sync_map,
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{}: process failed: {e}", v.id));
     }
 
     let final_state = v.expected.final_state.as_ref().expect("finalState");

@@ -20,7 +20,7 @@ use serde_json::{Map, Value};
 
 use crate::error::{WalletError, WalletResult};
 use crate::storage::find_args::*;
-use crate::storage::sync::process_sync_chunk::process_sync_chunk;
+use crate::storage::sync::process_sync_chunk::{process_sync_chunk, AuthenticatedIdentityKey};
 use crate::storage::sync::sync_map::{SyncChunk, SyncMap};
 use crate::storage::traits::provider::StorageProvider;
 use crate::storage::TrxToken;
@@ -371,6 +371,7 @@ async fn merge_brc38_in_trx<S: StorageProvider>(
     )?);
     let chunk_result = process_sync_chunk(
         storage as &dyn StorageProvider,
+        AuthenticatedIdentityKey::assert_authenticated(&target_user.identity_key),
         chunk,
         &mut import_map,
         Some(trx),

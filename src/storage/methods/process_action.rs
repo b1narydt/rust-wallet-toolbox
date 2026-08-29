@@ -20,6 +20,28 @@ use crate::storage::traits::reader_writer::StorageReaderWriter;
 use crate::storage::{verify_one, TrxToken};
 use crate::tables::ProvenTxReq;
 
+/// A user ID resolved from an already-authenticated identity.
+///
+/// This type is an auditable assertion, not an authentication mechanism. The
+/// caller must first authenticate an identity and resolve this exact user ID
+/// from that authenticated identity. Asserting an arbitrary or caller-controlled
+/// ID can authorize transaction processing against another user's records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuthenticatedUserId(i64);
+
+impl AuthenticatedUserId {
+    /// Assert that `user_id` was resolved from the authenticated caller.
+    ///
+    /// Call this only after authenticating the surrounding request or wallet
+    /// context and resolving this exact ID from that authenticated identity.
+    /// This constructor performs no authentication itself. Using it with an
+    /// arbitrary or caller-controlled ID can cross the tenant boundary and
+    /// process another user's transaction records.
+    pub const fn assert_authenticated(user_id: i64) -> Self {
+        Self(user_id)
+    }
+}
+
 /// Status pair for ProvenTxReq and Transaction during processAction.
 struct ReqTxStatus {
     req: ProvenTxReqStatus,
@@ -33,10 +55,11 @@ struct ReqTxStatus {
 /// Transaction and Output records.
 pub async fn storage_process_action<S: StorageReaderWriter + ?Sized>(
     storage: &S,
-    user_id: i64,
+    authenticated_user_id: AuthenticatedUserId,
     args: &StorageProcessActionArgs,
     _trx: Option<&TrxToken>,
 ) -> WalletResult<StorageProcessActionResult> {
+    let user_id = authenticated_user_id.0;
     let mut r = StorageProcessActionResult {
         send_with_results: None,
         not_delayed_results: None,
@@ -228,11 +251,35 @@ async fn schedule_send_with<S: StorageReaderWriter + ?Sized>(
     let mut results = Vec::with_capacity(txids.len());
 
     for txid in txids {
+        let transactions = storage
+            .find_transactions(
+                &FindTransactionsArgs {
+                    partial: TransactionPartial {
+                        user_id: Some(user_id),
+                        txid: Some(txid.clone()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                Some(&trx),
+            )
+            .await?;
+        let Some(owned_txid) = transactions
+            .first()
+            .and_then(|transaction| transaction.txid.clone())
+        else {
+            results.push(SendWithResult {
+                txid: txid.clone(),
+                status: ActionResultStatus::Failed,
+            });
+            continue;
+        };
+
         let reqs = storage
             .find_proven_tx_reqs(
                 &FindProvenTxReqsArgs {
                     partial: ProvenTxReqPartial {
-                        txid: Some(txid.clone()),
+                        txid: Some(owned_txid),
                         ..Default::default()
                     },
                     ..Default::default()
@@ -270,19 +317,6 @@ async fn schedule_send_with<S: StorageReaderWriter + ?Sized>(
                     &ProvenTxReqPartial {
                         status: Some(ProvenTxReqStatus::Unsent),
                         batch: batch.clone(),
-                        ..Default::default()
-                    },
-                    Some(&trx),
-                )
-                .await?;
-            let transactions = storage
-                .find_transactions(
-                    &FindTransactionsArgs {
-                        partial: TransactionPartial {
-                            user_id: Some(user_id),
-                            txid: Some(txid.clone()),
-                            ..Default::default()
-                        },
                         ..Default::default()
                     },
                     Some(&trx),
@@ -420,6 +454,39 @@ mod tests {
         (storage, user_id, tx_id, reference)
     }
 
+    async fn insert_test_transaction(
+        storage: &SqliteStorage,
+        user_id: i64,
+        txid: &str,
+        reference: &str,
+        status: TransactionStatus,
+    ) -> i64 {
+        let now = Utc::now().naive_utc();
+        storage
+            .insert_transaction(
+                &Transaction {
+                    created_at: now,
+                    updated_at: now,
+                    transaction_id: 0,
+                    user_id,
+                    proven_tx_id: None,
+                    status,
+                    reference: reference.to_string(),
+                    is_outgoing: true,
+                    satoshis: -1000,
+                    description: "sendWith transaction".to_string(),
+                    version: Some(1),
+                    lock_time: Some(0),
+                    txid: Some(txid.to_string()),
+                    input_beef: Some(vec![0xDE, 0xAD]),
+                    raw_tx: Some(vec![1, 2, 3]),
+                },
+                None,
+            )
+            .await
+            .expect("insert sendWith transaction")
+    }
+
     #[tokio::test]
     async fn test_process_action_creates_proven_tx_req() {
         let (storage, user_id, _tx_id, reference) = setup_test_storage().await;
@@ -439,9 +506,14 @@ mod tests {
             send_with: vec![],
         };
 
-        let result = storage_process_action(&storage, user_id, &args, None)
-            .await
-            .expect("process_action should succeed");
+        let result = storage_process_action(
+            &storage,
+            AuthenticatedUserId::assert_authenticated(user_id),
+            &args,
+            None,
+        )
+        .await
+        .expect("process_action should succeed");
         assert!(result.send_with_results.is_none());
 
         // Verify ProvenTxReq was created
@@ -496,9 +568,14 @@ mod tests {
             send_with: vec![],
         };
 
-        storage_process_action(&storage, user_id, &args, None)
-            .await
-            .expect("process_action nosend should succeed");
+        storage_process_action(
+            &storage,
+            AuthenticatedUserId::assert_authenticated(user_id),
+            &args,
+            None,
+        )
+        .await
+        .expect("process_action nosend should succeed");
 
         // Verify ProvenTxReq has nosend status
         let req_args = FindProvenTxReqsArgs {
@@ -549,9 +626,14 @@ mod tests {
             send_with: vec![],
         };
 
-        storage_process_action(&storage, user_id, &args, None)
-            .await
-            .expect("process_action delayed should succeed");
+        storage_process_action(
+            &storage,
+            AuthenticatedUserId::assert_authenticated(user_id),
+            &args,
+            None,
+        )
+        .await
+        .expect("process_action delayed should succeed");
 
         // Verify ProvenTxReq has unsent status
         let req_args = FindProvenTxReqsArgs {
@@ -603,9 +685,14 @@ mod tests {
             send_with: vec![],
         };
 
-        storage_process_action(&storage, user_id, &args, None)
-            .await
-            .expect("process_action should succeed");
+        storage_process_action(
+            &storage,
+            AuthenticatedUserId::assert_authenticated(user_id),
+            &args,
+            None,
+        )
+        .await
+        .expect("process_action should succeed");
 
         // Verify outputs were updated with txid
         let output_args = FindOutputsArgs {
@@ -626,6 +713,250 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_send_with_does_not_mutate_request_for_another_user() {
+        let (storage, user_a_id, _tx_id, _reference) = setup_test_storage().await;
+        let user_a = storage
+            .find_user_by_identity_key("test_identity_key", None)
+            .await
+            .expect("find user A")
+            .expect("user A exists");
+        let (user_b, _) = storage
+            .find_or_insert_user("victim_identity_key", None)
+            .await
+            .expect("create user B");
+        assert_eq!(user_a.user_id, user_a_id);
+        assert_ne!(user_a.user_id, user_b.user_id);
+        assert_ne!(user_a.identity_key, user_b.identity_key);
+
+        let txid = "3333333333333333333333333333333333333333333333333333333333333333".to_string();
+        insert_test_transaction(
+            &storage,
+            user_b.user_id,
+            &txid,
+            "victim_shared_tx",
+            TransactionStatus::Nosend,
+        )
+        .await;
+        let now = Utc::now().naive_utc();
+        storage
+            .insert_proven_tx_req(
+                &ProvenTxReq {
+                    created_at: now,
+                    updated_at: now,
+                    proven_tx_req_id: 0,
+                    proven_tx_id: None,
+                    status: ProvenTxReqStatus::Nosend,
+                    attempts: 0,
+                    notified: false,
+                    txid: txid.clone(),
+                    batch: Some("victim-batch".to_string()),
+                    history: "[]".to_string(),
+                    notify: "{\"transactionIds\":[]}".to_string(),
+                    raw_tx: vec![1, 2, 3],
+                    input_beef: Some(vec![4, 5, 6]),
+                },
+                None,
+            )
+            .await
+            .expect("insert shared request");
+
+        let req_args = FindProvenTxReqsArgs {
+            partial: ProvenTxReqPartial {
+                txid: Some(txid.clone()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let req_before = storage
+            .find_proven_tx_reqs(&req_args, None)
+            .await
+            .expect("find request before")
+            .into_iter()
+            .next()
+            .expect("request exists before");
+
+        let results = schedule_send_with(&storage, user_a_id, std::slice::from_ref(&txid))
+            .await
+            .expect("classify unauthorized txid");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, ActionResultStatus::Failed);
+
+        let req_after = storage
+            .find_proven_tx_reqs(&req_args, None)
+            .await
+            .expect("find request after")
+            .into_iter()
+            .next()
+            .expect("request exists after");
+        assert_eq!(req_after.proven_tx_req_id, req_before.proven_tx_req_id);
+        assert_eq!(req_after.status, req_before.status);
+        assert_eq!(req_after.batch, req_before.batch);
+    }
+
+    #[tokio::test]
+    async fn test_send_with_fails_without_ownership_after_spent_transaction_is_purged() {
+        // This documents a known behavior change from the ownership fix. `Failed` is
+        // deliberate and security-correct when purge has removed the caller's ownership
+        // evidence; the real repair belongs upstream in purge, not in a looser lookup here.
+        let (storage, user_id, _tx_id, _reference) = setup_test_storage().await;
+        let txid = "4444444444444444444444444444444444444444444444444444444444444444".to_string();
+        let transaction_id = insert_test_transaction(
+            &storage,
+            user_id,
+            &txid,
+            "purged_completed_transaction",
+            TransactionStatus::Completed,
+        )
+        .await;
+        let now = Utc::now().naive_utc();
+        storage
+            .insert_proven_tx_req(
+                &ProvenTxReq {
+                    created_at: now,
+                    updated_at: now,
+                    proven_tx_req_id: 0,
+                    proven_tx_id: None,
+                    status: ProvenTxReqStatus::Completed,
+                    attempts: 1,
+                    notified: true,
+                    txid: txid.clone(),
+                    batch: Some("completed-batch".to_string()),
+                    history: "[]".to_string(),
+                    notify: "{\"transactionIds\":[]}".to_string(),
+                    raw_tx: vec![1, 2, 3],
+                    input_beef: Some(vec![4, 5, 6]),
+                },
+                None,
+            )
+            .await
+            .expect("insert completed request");
+
+        let req_args = FindProvenTxReqsArgs {
+            partial: ProvenTxReqPartial {
+                txid: Some(txid.clone()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let req_before = storage
+            .find_proven_tx_reqs(&req_args, None)
+            .await
+            .expect("find request before purge")
+            .into_iter()
+            .next()
+            .expect("request exists before purge");
+
+        let deleted = sqlx::query("DELETE FROM transactions WHERE transactionId = ?")
+            .bind(transaction_id)
+            .execute(&storage.write_pool)
+            .await
+            .expect("simulate purge_spent deleting the transaction")
+            .rows_affected();
+        assert_eq!(deleted, 1);
+
+        let results = schedule_send_with(&storage, user_id, std::slice::from_ref(&txid))
+            .await
+            .expect("classify sendWith after transaction purge");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, ActionResultStatus::Failed);
+
+        let req_after = storage
+            .find_proven_tx_reqs(&req_args, None)
+            .await
+            .expect("find request after sendWith")
+            .into_iter()
+            .next()
+            .expect("request survives transaction purge");
+        assert_eq!(req_after, req_before);
+    }
+
+    #[tokio::test]
+    async fn test_send_with_allows_user_who_owns_shared_txid() {
+        let (storage, user_a_id, _tx_id, _reference) = setup_test_storage().await;
+        let (user_b, _) = storage
+            .find_or_insert_user("victim_identity_key", None)
+            .await
+            .expect("create user B");
+        assert_ne!(user_a_id, user_b.user_id);
+
+        let txid = "3333333333333333333333333333333333333333333333333333333333333333".to_string();
+        let user_b_tx_id = insert_test_transaction(
+            &storage,
+            user_b.user_id,
+            &txid,
+            "victim_shared_tx",
+            TransactionStatus::Nosend,
+        )
+        .await;
+        let now = Utc::now().naive_utc();
+        let req_id = storage
+            .insert_proven_tx_req(
+                &ProvenTxReq {
+                    created_at: now,
+                    updated_at: now,
+                    proven_tx_req_id: 0,
+                    proven_tx_id: None,
+                    status: ProvenTxReqStatus::Nosend,
+                    attempts: 0,
+                    notified: false,
+                    txid: txid.clone(),
+                    batch: Some("previous-batch".to_string()),
+                    history: "[]".to_string(),
+                    notify: "{\"transactionIds\":[]}".to_string(),
+                    raw_tx: vec![1, 2, 3],
+                    input_beef: Some(vec![4, 5, 6]),
+                },
+                None,
+            )
+            .await
+            .expect("insert shared request");
+
+        let results = schedule_send_with(&storage, user_b.user_id, std::slice::from_ref(&txid))
+            .await
+            .expect("schedule owned txid");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, ActionResultStatus::Sending);
+
+        let req = storage
+            .find_proven_tx_reqs(
+                &FindProvenTxReqsArgs {
+                    partial: ProvenTxReqPartial {
+                        txid: Some(txid),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find scheduled request")
+            .into_iter()
+            .next()
+            .expect("scheduled request exists");
+        assert_eq!(req.proven_tx_req_id, req_id);
+        assert_eq!(req.status, ProvenTxReqStatus::Unsent);
+        assert_eq!(req.batch, Some("previous-batch".to_string()));
+
+        let transaction = storage
+            .find_transactions(
+                &FindTransactionsArgs {
+                    partial: TransactionPartial {
+                        transaction_id: Some(user_b_tx_id),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .expect("find user B transaction")
+            .into_iter()
+            .next()
+            .expect("user B transaction exists");
+        assert_eq!(transaction.status, TransactionStatus::Sending);
+    }
+
+    #[tokio::test]
     async fn test_send_with_releases_nosend_requests_as_a_durable_batch() {
         let (storage, user_id, _tx_id, _reference) = setup_test_storage().await;
         let now = Utc::now().naive_utc();
@@ -633,7 +964,15 @@ mod tests {
             "1111111111111111111111111111111111111111111111111111111111111111".to_string(),
             "2222222222222222222222222222222222222222222222222222222222222222".to_string(),
         ];
-        for txid in &txids {
+        for (index, txid) in txids.iter().enumerate() {
+            insert_test_transaction(
+                &storage,
+                user_id,
+                txid,
+                &format!("batch_transaction_{index}"),
+                TransactionStatus::Nosend,
+            )
+            .await;
             storage
                 .insert_proven_tx_req(
                     &ProvenTxReq {
@@ -660,6 +999,7 @@ mod tests {
         let results = schedule_send_with(&storage, user_id, &txids)
             .await
             .expect("schedule batch");
+        assert_eq!(results.len(), txids.len());
         assert!(results
             .iter()
             .all(|result| result.status == ActionResultStatus::Sending));

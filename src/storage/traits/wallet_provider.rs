@@ -41,6 +41,7 @@ use crate::storage::find_args::{
     UserPartial,
 };
 use crate::storage::sync::get_sync_chunk::{GetSyncChunkArgs, SyncChunkOffsets};
+use crate::storage::sync::process_sync_chunk::AuthenticatedIdentityKey;
 use crate::storage::sync::request_args::{RequestSyncChunkArgs, SyncChunkOffset};
 use crate::storage::sync::sync_map::SyncMap;
 use crate::storage::sync::{ProcessSyncChunkResult, SyncChunk};
@@ -1186,8 +1187,10 @@ impl<T: StorageProvider> WalletStorageProvider for T {
         // EntitySyncState.fromStorage parses the stored syncMap (EntitySyncState.ts:51)
         // and processSyncChunk writes it back (line 411). Rebuilding a fresh
         // SyncMap each chunk discards cross-chunk FK mappings and offsets.
+        // Deliberately key on the authenticated arg, even though the guard above
+        // currently requires it to equal the chunk identity (defence in depth).
         let (user, _) =
-            StorageReaderWriter::find_or_insert_user(self, &chunk.user_identity_key, None).await?;
+            StorageReaderWriter::find_or_insert_user(self, &args.identity_key, None).await?;
         let existing = verify_one_or_none(
             StorageReader::find_sync_states(
                 self,
@@ -1215,6 +1218,7 @@ impl<T: StorageProvider> WalletStorageProvider for T {
 
         let mut result = crate::storage::sync::process_sync_chunk::process_sync_chunk(
             self,
+            AuthenticatedIdentityKey::assert_authenticated(&args.identity_key),
             chunk.clone(),
             &mut sync_map,
             None,
