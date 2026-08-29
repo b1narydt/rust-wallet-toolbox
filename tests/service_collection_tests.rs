@@ -4,6 +4,7 @@ use bsv_wallet_toolbox::error::WalletError;
 use bsv_wallet_toolbox::services::service_collection::ServiceCollection;
 use bsv_wallet_toolbox::services::types::{ServiceCall, MAX_CALL_HISTORY, MAX_RESET_COUNTS};
 use chrono::Utc;
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // Mock provider trait and implementation for testing
@@ -57,48 +58,48 @@ fn make_call(success: bool) -> ServiceCall {
 #[test]
 fn round_robin_cycles_through_three_providers() {
     let mut sc: ServiceCollection<dyn MockProvider> = ServiceCollection::new("test_service");
-    sc.add("ProviderA", Box::new(TestProvider::new("ProviderA")));
-    sc.add("ProviderB", Box::new(TestProvider::new("ProviderB")));
-    sc.add("ProviderC", Box::new(TestProvider::new("ProviderC")));
+    sc.add("ProviderA", Arc::new(TestProvider::new("ProviderA")));
+    sc.add("ProviderB", Arc::new(TestProvider::new("ProviderB")));
+    sc.add("ProviderC", Arc::new(TestProvider::new("ProviderC")));
 
     // First call should be at index 0
-    let (_, name) = sc.service_to_call().unwrap();
-    assert_eq!(name, "ProviderA");
+    assert_eq!(sc.call_order()[0].1.as_ref(), "ProviderA");
 
     // Advance to next
     sc.next();
-    let (_, name) = sc.service_to_call().unwrap();
-    assert_eq!(name, "ProviderB");
+    assert_eq!(sc.call_order()[0].1.as_ref(), "ProviderB");
 
     sc.next();
-    let (_, name) = sc.service_to_call().unwrap();
-    assert_eq!(name, "ProviderC");
+    assert_eq!(sc.call_order()[0].1.as_ref(), "ProviderC");
 
     // Wraps around
     sc.next();
-    let (_, name) = sc.service_to_call().unwrap();
-    assert_eq!(name, "ProviderA");
+    assert_eq!(sc.call_order()[0].1.as_ref(), "ProviderA");
 }
 
 #[test]
 fn move_service_to_last_reorders_correctly() {
     let mut sc: ServiceCollection<dyn MockProvider> = ServiceCollection::new("test_service");
-    sc.add("Alpha", Box::new(TestProvider::new("Alpha")));
-    sc.add("Beta", Box::new(TestProvider::new("Beta")));
-    sc.add("Gamma", Box::new(TestProvider::new("Gamma")));
+    sc.add("Alpha", Arc::new(TestProvider::new("Alpha")));
+    sc.add("Beta", Arc::new(TestProvider::new("Beta")));
+    sc.add("Gamma", Arc::new(TestProvider::new("Gamma")));
 
     // Move Alpha to last
     sc.move_service_to_last("Alpha");
 
     // Order should now be: Beta, Gamma, Alpha
-    let names: Vec<&str> = sc.all_services().map(|(_, n)| n).collect();
+    let names: Vec<String> = sc
+        .call_order()
+        .into_iter()
+        .map(|(_, name)| name.to_string())
+        .collect();
     assert_eq!(names, vec!["Beta", "Gamma", "Alpha"]);
 }
 
 #[test]
 fn add_service_call_success_records_in_history() {
     let mut sc: ServiceCollection<dyn MockProvider> = ServiceCollection::new("test_service");
-    sc.add("ProvA", Box::new(TestProvider::new("ProvA")));
+    sc.add("ProvA", Arc::new(TestProvider::new("ProvA")));
 
     let call = make_call(true);
     sc.add_service_call_success("ProvA", call, Some("result text".to_string()));
@@ -116,7 +117,7 @@ fn add_service_call_success_records_in_history() {
 #[test]
 fn add_service_call_error_increments_error_count() {
     let mut sc: ServiceCollection<dyn MockProvider> = ServiceCollection::new("test_service");
-    sc.add("ProvA", Box::new(TestProvider::new("ProvA")));
+    sc.add("ProvA", Arc::new(TestProvider::new("ProvA")));
 
     let call = make_call(false);
     let err = WalletError::Internal("something failed".to_string());
@@ -138,7 +139,7 @@ fn add_service_call_error_increments_error_count() {
 #[test]
 fn get_service_call_history_with_reset_creates_new_interval() {
     let mut sc: ServiceCollection<dyn MockProvider> = ServiceCollection::new("test_service");
-    sc.add("ProvA", Box::new(TestProvider::new("ProvA")));
+    sc.add("ProvA", Arc::new(TestProvider::new("ProvA")));
 
     // Record two successes
     sc.add_service_call_success("ProvA", make_call(true), None);
@@ -169,7 +170,7 @@ fn get_service_call_history_with_reset_creates_new_interval() {
 #[test]
 fn history_respects_max_call_history_limit() {
     let mut sc: ServiceCollection<dyn MockProvider> = ServiceCollection::new("test_service");
-    sc.add("ProvA", Box::new(TestProvider::new("ProvA")));
+    sc.add("ProvA", Arc::new(TestProvider::new("ProvA")));
 
     // Add more than MAX_CALL_HISTORY calls
     for _ in 0..(MAX_CALL_HISTORY + 10) {
@@ -188,7 +189,7 @@ fn history_respects_max_call_history_limit() {
 #[test]
 fn history_respects_max_reset_counts_limit() {
     let mut sc: ServiceCollection<dyn MockProvider> = ServiceCollection::new("test_service");
-    sc.add("ProvA", Box::new(TestProvider::new("ProvA")));
+    sc.add("ProvA", Arc::new(TestProvider::new("ProvA")));
 
     // Record a call so the provider has history
     sc.add_service_call_success("ProvA", make_call(true), None);
@@ -207,20 +208,24 @@ fn history_respects_max_reset_counts_limit() {
 }
 
 #[test]
-fn empty_collection_returns_none() {
+fn empty_collection_has_empty_call_order() {
     let sc: ServiceCollection<dyn MockProvider> = ServiceCollection::new("empty");
-    assert!(sc.service_to_call().is_none());
+    assert!(sc.call_order().is_empty());
     assert!(sc.is_empty());
     assert_eq!(sc.len(), 0);
 }
 
 #[test]
-fn all_services_iterates_all_providers() {
+fn call_order_iterates_all_providers() {
     let mut sc: ServiceCollection<dyn MockProvider> = ServiceCollection::new("test_service");
-    sc.add("A", Box::new(TestProvider::new("A")));
-    sc.add("B", Box::new(TestProvider::new("B")));
+    sc.add("A", Arc::new(TestProvider::new("A")));
+    sc.add("B", Arc::new(TestProvider::new("B")));
 
-    let names: Vec<&str> = sc.all_services().map(|(_, n)| n).collect();
+    let names: Vec<String> = sc
+        .call_order()
+        .into_iter()
+        .map(|(_, name)| name.to_string())
+        .collect();
     assert_eq!(names, vec!["A", "B"]);
     assert_eq!(sc.len(), 2);
     assert!(!sc.is_empty());

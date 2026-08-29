@@ -60,7 +60,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["full", "test-util"] } # needed for tokio::test(start_paused)
 dotenvy = "0.15"
 # Faucet funding for the funded conformance recorder (tests/record_funded_vectors.rs)
 # only — dev-dependency so the toolbox gains no runtime dependency.
